@@ -1,5 +1,6 @@
 # Decisions log (one line each, newest first)
 
+- 2026-10-13 — Emblem locked: inverted pennant with inner rule, KÁRMÁN / PROGRAM, four-point star; drawn in code per paper; icon-size version drops the text; reference in art/reference/.
 - 2026-10-13 — Branching: the routine develops on its own claude/* branch and pushes the same commits to main; main is the deploy branch and is kept deployable at every commit.
 - 2026-10-13 — Snapshot build: tools/snapshot.js is a dependency-free module folder (topological order, one wrapper per module, no circular imports) so dist/index.html stays one file; fonts stay external links.
 - 2026-10-13 — Deploy check: tools/check.js builds the snapshot, syntax-checks the bundle and opens dev page and snapshot in headless Chromium when Playwright is present; any console error fails the check.
