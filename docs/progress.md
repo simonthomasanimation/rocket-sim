@@ -21,7 +21,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Input recording as (tick, input); deterministic replay function; test that replay reproduces the landing position
 - [x] Restart under one second; manual-paper results card (outcome, time, fuel left, max speed)
 - [x] Placeholder engine noise via Web Audio (skip if awkward)
-- [ ] Gate issue opened
+- [x] Gate issue opened (#2)
 
 ## M2 Orbit
 - [ ] Round body, inverse-square gravity, body-relative coordinates
