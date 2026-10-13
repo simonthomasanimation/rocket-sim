@@ -174,3 +174,6 @@ document.addEventListener('visibilitychange', () => {
 });
 
 surface.onResize(() => { layout(); render(0, 0); });
+
+// Read-only hook for automated playtests (tools/check.js and friends).
+window.__karman = { get flight() { return flight; }, get phase() { return flight.phase; } };

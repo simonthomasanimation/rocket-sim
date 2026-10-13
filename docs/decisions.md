@@ -1,4 +1,5 @@
 # Decisions log (one line each, newest first)
+
 - 2026-10-13 — Lander physics: SI units, flat Moon g = 1.62, dry 2200 kg + 1400 kg fuel, 16 kN, Isp 300 s, throttle 0-100 % ramped at 100 %/s, tilt rate command 60°/s; position is the footpad plane, tilt positive leans right and pushes right.
 - 2026-10-13 — Terrain: flat-ish Moon with seeded shallow craters that are real dips (altitude is radar altitude); the SITE 1 zone (-60 to 140 m) is kept flat so a first-timer can land.
 - 2026-10-13 — Recording: command changes stored as [tick, code]; replays run the same seed through the same fixed-step sim, no state snapshots.
@@ -6,7 +7,6 @@
 - 2026-10-13 — Vertical speed readout is positive upward; the limits are quoted as magnitudes.
 - 2026-10-13 — Manual pages (descent card, flight report) are HTML over the canvas with a 4 px CSS dot screen as halftone; the stamp lands 110→100 % in 80 ms.
 - 2026-10-13 — Placeholder audio: plain Web Audio (filtered noise) behind a mixer with master/music/sfx buses; Tone.js arrives with M8. M toggles mute; audio starts on the first key or touch.
-
 - 2026-10-13 — Emblem locked: inverted pennant with inner rule, KÁRMÁN / PROGRAM, four-point star; drawn in code per paper; icon-size version drops the text; reference in art/reference/.
 - 2026-10-13 — Branching: the routine develops on its own claude/* branch and pushes the same commits to main; main is the deploy branch and is kept deployable at every commit.
 - 2026-10-13 — Snapshot build: tools/snapshot.js is a dependency-free module folder (topological order, one wrapper per module, no circular imports) so dist/index.html stays one file; fonts stay external links.
