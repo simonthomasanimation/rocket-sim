@@ -5,7 +5,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 ## M0 Foundations
 - [x] Folder layout per CLAUDE.md; package.json with `dev` (local server) and `snapshot` (inline to dist/index.html) scripts
 - [x] index.html + src/main.js: full-window canvas, DPR-aware, resize handling
-- [ ] Blueprint paper: #1B3A6B, 8px grid white at 8%, title block lower right (KÁRMÁN PROGRAM / SHEET 1 OF 1 / date) in IBM Plex Mono
+- [x] Blueprint paper: #1B3A6B, 8px grid white at 8%, title block lower right (KÁRMÁN PROGRAM / SHEET 1 OF 1 / date) in IBM Plex Mono
 - [ ] Fonts: IBM Plex Mono, Archivo, Source Sans 3 from Google Fonts with system fallbacks
 - [ ] GitHub Pages workflow publishing dist/ on push to main
 - [ ] docs/decisions.md seeded from CLAUDE.md, dated

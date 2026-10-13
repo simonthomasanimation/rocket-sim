@@ -3,15 +3,23 @@
 // src/core and never reaches this file's DOM calls.
 
 import { createSurface } from './render/surface.js';
+import { drawPaper } from './render/blueprint.js';
+import { mountTitleBlock } from './ui/screens.js';
 
 const surface = createSurface(document.getElementById('stage'));
 
 function render() {
-  const { ctx, width, height, dpr } = surface;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#1B3A6B';
-  ctx.fillRect(0, 0, width, height);
+  drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
 }
 
 surface.onResize(render);
 render();
+
+mountTitleBlock(document.getElementById('title-block'), {
+  program: 'KÁRMÁN PROGRAM',
+  document: 'BLUEPRINT',
+  sheet: 1,
+  of: 1,
+  date: new Date(),
+});
+
