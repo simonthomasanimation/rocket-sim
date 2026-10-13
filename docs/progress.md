@@ -9,7 +9,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Fonts: IBM Plex Mono, Archivo, Source Sans 3 from Google Fonts with system fallbacks
 - [x] GitHub Pages workflow publishing dist/ on push to main
 - [x] docs/decisions.md seeded from CLAUDE.md, dated
-- [ ] Gate issue opened
+- [x] Gate issue opened (#1)
 
 ## M1 Lander
 - [ ] Fixed-timestep loop (60 Hz, accumulator, render interpolation); core in src/core with no DOM
