@@ -12,13 +12,14 @@ export function createCamera() {
     width: 1, height: 1, // flight area in CSS px (viewport minus HUD strip)
     top: 0,          // y offset of the flight area on screen
     minScale: 3, maxScale: 14,
+    groundClearance: 40, // px kept between the surface and the bottom of the flight area
   };
 
   // Where the camera wants to be for the given craft position.
   function target(state) {
     const alt = Math.max(0, state.y);
     const scale = clamp((cam.height * 0.55) / Math.max(alt + 24, 40), cam.minScale, cam.maxScale);
-    const bottomY = Math.max(-12, state.y - (cam.height * 0.62) / scale);
+    const bottomY = Math.max(-cam.groundClearance / scale, state.y - (cam.height * 0.62) / scale);
     return { x: state.x, bottomY, scale };
   }
 

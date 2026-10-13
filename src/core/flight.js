@@ -4,6 +4,7 @@
 
 import { createLanderState, stepLander, lowestPointAltitude, NO_COMMAND, LANDER, MOON } from './lander.js';
 import { createRng } from './rng.js';
+import { createTerrain } from './terrain.js';
 
 export const DEFAULT_START = Object.freeze({ x: 0, y: 150, vx: 3, vy: -6, angle: 0 });
 
@@ -16,18 +17,22 @@ export const LANDING_LIMITS = Object.freeze({
 
 export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, body = MOON, limits = LANDING_LIMITS } = {}) {
   const rng = createRng(seed);
+  const terrain = createTerrain(seed);
   const flight = {
     seed,
     cfg,
     body,
     limits,
     rng,
+    terrain,
     tick: 0,
     phase: 'flying',          // flying | landed | crashed
     state: createLanderState(start),
     prev: null,
     events: [],               // { tick, type } in order: fuelOut, landed, crashed
     stats: { maxSpeed: 0, fuelStart: 0, touchdown: null },
+    // Height of the footpads above the ground directly below (radar altitude).
+    altitude() { return flight.state.y - terrain.height(flight.state.x); },
     step(cmd = NO_COMMAND, dt = 1 / 60) {
       flight.prev = { ...flight.state };
       flight.tick += 1;
@@ -41,7 +46,7 @@ export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, bo
       }
       const speed = Math.hypot(s.vx, s.vy);
       if (speed > flight.stats.maxSpeed) flight.stats.maxSpeed = speed;
-      if (lowestPointAltitude(s, cfg) <= 0) touchdown(flight);
+      if (lowestPointAltitude(s, cfg, terrain.height(s.x)) <= 0) touchdown(flight);
     },
   };
   flight.stats.fuelStart = flight.state.fuel;
@@ -72,7 +77,8 @@ function touchdown(flight) {
     ].filter(Boolean),
   };
   // Rest on the lowest pad; a safe landing settles level, a crash stays as it hit.
-  if (safe) { s.angle = 0; s.y = 0; } else { s.angle = tilt; s.y = Math.abs(Math.sin(tilt)) * cfg.footHalfWidth; }
+  const ground = flight.terrain.height(s.x);
+  if (safe) { s.angle = 0; s.y = ground; } else { s.angle = tilt; s.y = ground + Math.abs(Math.sin(tilt)) * cfg.footHalfWidth; }
   s.vx = 0; s.vy = 0; s.angVel = 0; s.throttle = 0; s.thrust = 0;
   flight.phase = safe ? 'landed' : 'crashed';
   flight.events.push({ tick: flight.tick, type: flight.phase });

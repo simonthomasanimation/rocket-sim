@@ -4,6 +4,7 @@
 
 import { createFixedLoop } from './core/loop.js';
 import { createFlight, interpolated } from './core/flight.js';
+import { predictDescent } from './core/predict.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene } from './render/blueprint.js';
@@ -16,6 +17,7 @@ const surface = createSurface(document.getElementById('stage'));
 const titleBlock = document.getElementById('title-block');
 const camera = createCamera();
 const input = createInput({ touchRoot: document.getElementById('touch-controls') });
+window.addEventListener('touchstart', () => layout(), { passive: true, once: true });
 
 let flight = createFlight({ seed: 1 });
 const loop = createFixedLoop({ hz: 60, step: (dt) => flight.step(input.command(), dt) });
@@ -27,8 +29,13 @@ function restart() {
   lastMetShown = -1;
 }
 
+const touchRoot = document.getElementById('touch-controls');
+const coarsePointer = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null;
 function layout() {
   camera.setViewport(surface.width, Math.max(120, surface.height - HUD_HEIGHT), 0);
+  // Keep the surface clear of the on-screen buttons when they are showing.
+  const buttonsShown = (coarsePointer && coarsePointer.matches) || touchRoot.classList.contains('is-touch');
+  camera.groundClearance = buttonsShown ? 168 : 40;
 }
 layout();
 camera.snap(flight.state);
@@ -37,7 +44,8 @@ function render(alpha, frameDt) {
   const view = interpolated(flight, alpha);
   camera.follow(view, frameDt);
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
-  drawScene(surface.ctx, camera, view, flight.cfg, flight.phase);
+  const prediction = flight.phase === 'flying' ? predictDescent(view, flight.terrain, flight.body.gravity) : null;
+  drawScene(surface.ctx, camera, { state: view, cfg: flight.cfg, phase: flight.phase, terrain: flight.terrain, prediction });
 }
 
 mountTitleBlock(titleBlock, {

@@ -48,9 +48,10 @@ export function twr(s, cfg = LANDER, body = MOON) {
   return (cfg.maxThrust * s.throttle) / (totalMass(s, cfg) * body.gravity);
 }
 
-// Altitude of the lowest footpad above the surface, accounting for tilt.
-export function lowestPointAltitude(s, cfg = LANDER) {
-  return s.y - Math.abs(Math.sin(s.angle)) * cfg.footHalfWidth;
+// Altitude of the lowest footpad above the ground height under the craft,
+// accounting for tilt.
+export function lowestPointAltitude(s, cfg = LANDER, groundHeight = 0) {
+  return s.y - groundHeight - Math.abs(Math.sin(s.angle)) * cfg.footHalfWidth;
 }
 
 export function createLanderState({ x = 0, y = 150, vx = 0, vy = 0, angle = 0, fuel = LANDER.fuelMass } = {}) {

@@ -16,7 +16,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Lander model: mass, fuel, thrust, rotation, center of mass; semi-implicit Euler; flat Moon with uniform gravity
 - [x] Controls: throttle up/down/full/cut, rotate left/right; keyboard and on-screen touch
 - [x] Landing rules: safe if v-speed < 3 m/s, h-speed < 1 m/s, tilt < 10°; else crash; fuel runs out
-- [ ] Blueprint rendering: cutaway lander with hatched fuel, white flame with cyan core, hatched horizon with craters, dashed ballistic descent prediction
+- [x] Blueprint rendering: cutaway lander with hatched fuel, white flame with cyan core, hatched horizon with craters, dashed ballistic descent prediction
 - [ ] HUD strip: altitude and velocity dials, v/h speed readouts, fuel tape, throttle, CAPCOM line with 4 canned messages; accent only on caution/critical
 - [ ] Input recording as (tick, input); deterministic replay function; test that replay reproduces the landing position
 - [ ] Restart under one second; manual-paper results card (outcome, time, fuel left, max speed)
