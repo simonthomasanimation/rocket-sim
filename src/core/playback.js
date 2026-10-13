@@ -1,0 +1,36 @@
+// Playback: runs a recording through a fresh flight, one tick at a time.
+// Kept apart from recording.js so flight.js can record without a circular
+// import.
+
+import { createFlight } from './flight.js';
+import { NO_COMMAND } from './lander.js';
+import { decodeCommand } from './recording.js';
+
+// Plays a recording back through a fresh flight, one tick at a time.
+// `step()` returns false once the recording's flight is over.
+export function createPlayback(recording) {
+  const flight = createFlight({ seed: recording.seed, start: recording.start });
+  const events = recording.events;
+  let cursor = 0;
+  let cmd = NO_COMMAND;
+  return {
+    flight,
+    get command() { return cmd; },
+    step(dt) {
+      while (cursor < events.length && events[cursor][0] <= flight.tick) {
+        cmd = decodeCommand(events[cursor][1]);
+        cursor += 1;
+      }
+      flight.step(cmd, dt);
+      return flight.phase === 'flying';
+    },
+  };
+}
+
+// Run a recording to its end in one go (used by the tests and the ghosts).
+export function replayToEnd(recording, { maxTicks = 60 * 60 * 10, dt = 1 / 60 } = {}) {
+  const playback = createPlayback(recording);
+  let n = 0;
+  while (playback.step(dt) && n < maxTicks) n += 1;
+  return playback.flight;
+}

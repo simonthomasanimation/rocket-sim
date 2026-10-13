@@ -5,6 +5,7 @@
 import { createLanderState, stepLander, lowestPointAltitude, NO_COMMAND, LANDER, MOON } from './lander.js';
 import { createRng } from './rng.js';
 import { createTerrain } from './terrain.js';
+import { createRecorder } from './recording.js';
 
 export const DEFAULT_START = Object.freeze({ x: 0, y: 150, vx: 3, vy: -6, angle: 0 });
 
@@ -18,6 +19,7 @@ export const LANDING_LIMITS = Object.freeze({
 export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, body = MOON, limits = LANDING_LIMITS } = {}) {
   const rng = createRng(seed);
   const terrain = createTerrain(seed);
+  const recorder = createRecorder({ seed, start });
   const flight = {
     seed,
     cfg,
@@ -25,6 +27,8 @@ export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, bo
     limits,
     rng,
     terrain,
+    recorder,
+    start,
     tick: 0,
     phase: 'flying',          // flying | landed | crashed
     state: createLanderState(start),
@@ -33,8 +37,10 @@ export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, bo
     stats: { maxSpeed: 0, fuelStart: 0, touchdown: null },
     // Height of the footpads above the ground directly below (radar altitude).
     altitude() { return flight.state.y - terrain.height(flight.state.x); },
+    recording() { return recorder.toJSON(); },
     step(cmd = NO_COMMAND, dt = 1 / 60) {
       flight.prev = { ...flight.state };
+      if (flight.phase === 'flying') recorder.record(flight.tick, cmd);
       flight.tick += 1;
       if (flight.phase !== 'flying') return;
       const s = flight.state;

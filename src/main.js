@@ -7,6 +7,7 @@ import { createFlight, interpolated } from './core/flight.js';
 import { predictDescent } from './core/predict.js';
 import { computeAlerts } from './core/alerts.js';
 import { createCapcom } from './core/capcom.js';
+import { createPlayback } from './core/playback.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene } from './render/blueprint.js';
@@ -24,21 +25,40 @@ window.addEventListener('touchstart', () => layout(), { passive: true, once: tru
 
 let flight = createFlight({ seed: 1 });
 let alerts = null;
+let playback = null;        // set while a recorded flight is being replayed
+let lastRecording = null;   // the most recent live flight, for replay
 function stepGame(dt) {
-  flight.step(input.command(), dt);
+  if (playback) playback.step(dt);
+  else flight.step(input.command(), dt);
   const prediction = flight.phase === 'flying' ? predictDescent(flight.state, flight.terrain, flight.body.gravity) : null;
   alerts = computeAlerts(flight, prediction);
   capcom.update(flight, alerts);
 }
 const loop = createFixedLoop({ hz: 60, step: stepGame });
 
-function restart() {
-  flight = createFlight({ seed: 1 });
+function beginFlight(next, replaying) {
+  flight = next;
+  playback = replaying || null;
   capcom = createCapcom();
   alerts = null;
   loop.reset();
   camera.snap(flight.state);
   lastMetShown = -1;
+  updateTitleBlock(titleBlock, { document: replaying ? 'REPLAY' : 'BLUEPRINT' });
+}
+
+function restart() {
+  if (!playback && flight.tick > 0) lastRecording = flight.recording();
+  beginFlight(createFlight({ seed: 1 }), null);
+}
+
+// Replay the last live flight from its recording: same seed, same inputs,
+// same landing spot.
+function replay() {
+  if (!playback && flight.tick > 0) lastRecording = flight.recording();
+  if (!lastRecording) return;
+  const pb = createPlayback(lastRecording);
+  beginFlight(pb.flight, pb);
 }
 
 const touchRoot = document.getElementById('touch-controls');
@@ -83,7 +103,10 @@ let lastFrameMs = null;
 function frame(nowMs) {
   const frameDt = lastFrameMs === null ? 0 : Math.min(0.1, (nowMs - lastFrameMs) / 1000);
   lastFrameMs = nowMs;
-  for (const action of input.takeActions()) if (action === 'restart') restart();
+  for (const action of input.takeActions()) {
+    if (action === 'restart') restart();
+    if (action === 'replay') replay();
+  }
   const { alpha } = loop.advance(nowMs / 1000);
   render(alpha, frameDt);
   const metSeconds = Math.floor(flight.state.time);
