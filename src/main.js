@@ -11,12 +11,13 @@ import { createPlayback } from './core/playback.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene } from './render/blueprint.js';
-import { mountTitleBlock, updateTitleBlock } from './ui/screens.js';
+import { mountTitleBlock, updateTitleBlock, mountPage, unmountPage, reportPage, startPage } from './ui/screens.js';
 import { createInput } from './ui/input.js';
 import { createHud, HUD_HEIGHT } from './ui/hud.js';
 
 const surface = createSurface(document.getElementById('stage'));
 const titleBlock = document.getElementById('title-block');
+const pageRoot = document.getElementById('page');
 const camera = createCamera();
 const hud = createHud();
 let capcom = createCapcom();
@@ -36,11 +37,34 @@ function stepGame(dt) {
 }
 const loop = createFixedLoop({ hz: 60, step: stepGame });
 
+let pageOpen = null;        // 'start' | 'report' | null
+let reportDueAt = null;     // flight tick at which the report page opens
+
+function openPage(kind, page) {
+  pageOpen = kind;
+  mountPage(pageRoot, page, handleAction);
+  input.setButtonsVisible(false);
+}
+
+function closePage() {
+  pageOpen = null;
+  unmountPage(pageRoot);
+  input.setButtonsVisible(true);
+  loop.resume();
+}
+
+function handleAction(action) {
+  if (action === 'begin') { closePage(); return; }
+  if (action === 'restart') { closePage(); restart(); return; }
+  if (action === 'replay') { closePage(); replay(); return; }
+}
+
 function beginFlight(next, replaying) {
   flight = next;
   playback = replaying || null;
   capcom = createCapcom();
   alerts = null;
+  reportDueAt = null;
   loop.reset();
   camera.snap(flight.state);
   lastMetShown = -1;
@@ -104,10 +128,25 @@ function frame(nowMs) {
   const frameDt = lastFrameMs === null ? 0 : Math.min(0.1, (nowMs - lastFrameMs) / 1000);
   lastFrameMs = nowMs;
   for (const action of input.takeActions()) {
-    if (action === 'restart') restart();
-    if (action === 'replay') replay();
+    if (pageOpen === 'start' && (action === 'confirm' || action === 'restart')) { closePage(); continue; }
+    if (pageOpen === 'report' && action === 'confirm') { closePage(); restart(); continue; }
+    if (action === 'restart') { closePage(); restart(); }
+    if (action === 'replay') { closePage(); replay(); }
+  }
+  // Any flight command dismisses the start card too.
+  if (pageOpen === 'start') {
+    const c = input.command();
+    if (c.thr || c.rot || c.full || c.cut) closePage();
   }
   const { alpha } = loop.advance(nowMs / 1000);
+  // A crash cuts hard to the report; a landing lets the touchdown settle first.
+  if (flight.phase !== 'flying' && !pageOpen && reportDueAt === null) {
+    reportDueAt = flight.tick + (flight.phase === 'crashed' ? 20 : 75);
+  }
+  if (reportDueAt !== null && !pageOpen && flight.tick >= reportDueAt) {
+    reportDueAt = null;
+    openPage('report', reportPage(flight));
+  }
   render(alpha, frameDt);
   const metSeconds = Math.floor(flight.state.time);
   if (metSeconds !== lastMetShown) {
@@ -117,10 +156,12 @@ function frame(nowMs) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+openPage('start', startPage());
+loop.pause();
 
 // Pause the clock while the tab is hidden; resume cleanly when it comes back.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) loop.pause(); else loop.resume();
+  if (document.hidden) loop.pause(); else if (!pageOpen) loop.resume();
 });
 
 surface.onResize(() => { layout(); render(0, 0); });
