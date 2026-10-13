@@ -20,7 +20,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] HUD strip: altitude and velocity dials, v/h speed readouts, fuel tape, throttle, CAPCOM line with 4 canned messages; accent only on caution/critical
 - [x] Input recording as (tick, input); deterministic replay function; test that replay reproduces the landing position
 - [x] Restart under one second; manual-paper results card (outcome, time, fuel left, max speed)
-- [ ] Placeholder engine noise via Web Audio (skip if awkward)
+- [x] Placeholder engine noise via Web Audio (skip if awkward)
 - [ ] Gate issue opened
 
 ## M2 Orbit

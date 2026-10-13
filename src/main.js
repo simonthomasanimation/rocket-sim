@@ -14,6 +14,8 @@ import { drawPaper, drawScene } from './render/blueprint.js';
 import { mountTitleBlock, updateTitleBlock, mountPage, unmountPage, reportPage, startPage } from './ui/screens.js';
 import { createInput } from './ui/input.js';
 import { createHud, HUD_HEIGHT } from './ui/hud.js';
+import { createMixer } from './audio/mixer.js';
+import { createSfx } from './audio/sfx.js';
 
 const surface = createSurface(document.getElementById('stage'));
 const titleBlock = document.getElementById('title-block');
@@ -23,6 +25,9 @@ const hud = createHud();
 let capcom = createCapcom();
 const input = createInput({ touchRoot: document.getElementById('touch-controls') });
 window.addEventListener('touchstart', () => layout(), { passive: true, once: true });
+const mixer = createMixer();
+const sfx = createSfx(mixer);
+input.onFirstGesture(() => mixer.start());
 
 let flight = createFlight({ seed: 1 });
 let alerts = null;
@@ -120,6 +125,7 @@ mountTitleBlock(titleBlock, {
   of: 1,
   date: new Date(),
   met: 0,
+  audio: 'ON',
 });
 
 let lastMetShown = -1;
@@ -132,6 +138,7 @@ function frame(nowMs) {
     if (pageOpen === 'report' && action === 'confirm') { closePage(); restart(); continue; }
     if (action === 'restart') { closePage(); restart(); }
     if (action === 'replay') { closePage(); replay(); }
+    if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
   }
   // Any flight command dismisses the start card too.
   if (pageOpen === 'start') {
@@ -142,7 +149,9 @@ function frame(nowMs) {
   // A crash cuts hard to the report; a landing lets the touchdown settle first.
   if (flight.phase !== 'flying' && !pageOpen && reportDueAt === null) {
     reportDueAt = flight.tick + (flight.phase === 'crashed' ? 20 : 75);
+    if (flight.phase === 'crashed') sfx.crash(); else sfx.touchdown();
   }
+  sfx.setEngine(flight.phase === 'flying' ? flight.state.thrust / flight.cfg.maxThrust : 0);
   if (reportDueAt !== null && !pageOpen && flight.tick >= reportDueAt) {
     reportDueAt = null;
     openPage('report', reportPage(flight));

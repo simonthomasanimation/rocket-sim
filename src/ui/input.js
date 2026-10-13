@@ -3,7 +3,8 @@
 // { thr, rot, full, cut } and one-shot actions such as 'restart'.
 //
 // Keys: Shift / Up / W throttle up, Ctrl / Down / S throttle down, Z full,
-// X cut, A / Left rotate left, D / Right rotate right, R restart, P replay.
+// X cut, A / Left rotate left, D / Right rotate right, R restart, P replay,
+// M mute.
 
 const KEYS = {
   ShiftLeft: 'thrUp', ShiftRight: 'thrUp', ArrowUp: 'thrUp', KeyW: 'thrUp',
@@ -12,7 +13,7 @@ const KEYS = {
   ArrowLeft: 'rotLeft', KeyA: 'rotLeft',
   ArrowRight: 'rotRight', KeyD: 'rotRight',
 };
-const ACTIONS = { KeyR: 'restart', KeyP: 'replay', Enter: 'confirm', Space: 'confirm', Escape: 'back' };
+const ACTIONS = { KeyR: 'restart', KeyP: 'replay', KeyM: 'mute', Enter: 'confirm', Space: 'confirm', Escape: 'back' };
 
 // On-screen buttons: label, control, and where they sit (left or right cluster).
 const BUTTONS = [

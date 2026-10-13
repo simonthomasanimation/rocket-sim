@@ -29,7 +29,7 @@ function cell(label, value, key) {
 }
 
 // Engineering title block: program name, document, sheet number, date, MET.
-export function mountTitleBlock(el, { program, document: doc, sheet, of, date, met = 0 }) {
+export function mountTitleBlock(el, { program, document: doc, sheet, of, date, met = 0, audio = null }) {
   el.replaceChildren();
   const table = document.createElement('table');
   const head = document.createElement('tr');
@@ -42,6 +42,7 @@ export function mountTitleBlock(el, { program, document: doc, sheet, of, date, m
   table.append(cell('SHEET', `${sheet} OF ${of}`, 'sheet'));
   table.append(cell('DATE', formatDrawingDate(date), 'date'));
   table.append(cell('MET', formatMet(met), 'met'));
+  if (audio !== null) table.append(cell('AUDIO', audio, 'audio'));
   el.append(table);
 }
 
@@ -195,7 +196,7 @@ export function startPage() {
       'Land with vertical speed under 3 m/s, sideways under 1 m/s, within 10° of upright.',
       'THROTTLE: Shift / Up to raise, Ctrl / Down to lower, Z full, X cut.',
       'TILT: A / Left and D / Right. The engine pushes the way the top leans.',
-      'R restarts at any time. P replays the last flight.',
+      'R restarts at any time. P replays the last flight. M mutes the sound.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',
