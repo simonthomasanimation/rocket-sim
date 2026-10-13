@@ -23,3 +23,7 @@ mountTitleBlock(document.getElementById('title-block'), {
   date: new Date(),
 });
 
+// Redraw once the web fonts arrive so canvas text (later) uses the right face.
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(render).catch(() => {});
+}
