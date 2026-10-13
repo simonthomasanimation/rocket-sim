@@ -5,25 +5,37 @@
 import { createFixedLoop } from './core/loop.js';
 import { createFlight, interpolated } from './core/flight.js';
 import { predictDescent } from './core/predict.js';
+import { computeAlerts } from './core/alerts.js';
+import { createCapcom } from './core/capcom.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene } from './render/blueprint.js';
 import { mountTitleBlock, updateTitleBlock } from './ui/screens.js';
 import { createInput } from './ui/input.js';
-
-const HUD_HEIGHT = 112; // px reserved along the bottom for the instrument strip
+import { createHud, HUD_HEIGHT } from './ui/hud.js';
 
 const surface = createSurface(document.getElementById('stage'));
 const titleBlock = document.getElementById('title-block');
 const camera = createCamera();
+const hud = createHud();
+let capcom = createCapcom();
 const input = createInput({ touchRoot: document.getElementById('touch-controls') });
 window.addEventListener('touchstart', () => layout(), { passive: true, once: true });
 
 let flight = createFlight({ seed: 1 });
-const loop = createFixedLoop({ hz: 60, step: (dt) => flight.step(input.command(), dt) });
+let alerts = null;
+function stepGame(dt) {
+  flight.step(input.command(), dt);
+  const prediction = flight.phase === 'flying' ? predictDescent(flight.state, flight.terrain, flight.body.gravity) : null;
+  alerts = computeAlerts(flight, prediction);
+  capcom.update(flight, alerts);
+}
+const loop = createFixedLoop({ hz: 60, step: stepGame });
 
 function restart() {
   flight = createFlight({ seed: 1 });
+  capcom = createCapcom();
+  alerts = null;
   loop.reset();
   camera.snap(flight.state);
   lastMetShown = -1;
@@ -46,6 +58,15 @@ function render(alpha, frameDt) {
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
   const prediction = flight.phase === 'flying' ? predictDescent(view, flight.terrain, flight.body.gravity) : null;
   drawScene(surface.ctx, camera, { state: view, cfg: flight.cfg, phase: flight.phase, terrain: flight.terrain, prediction });
+  const a = alerts || computeAlerts(flight, prediction);
+  hud.update(view, a, capcom.latest, frameDt);
+  hud.draw(surface.ctx, {
+    width: surface.width,
+    height: surface.height,
+    titleBlockWidth: titleBlock.offsetWidth || 240,
+    narrow: surface.width < 720,
+    timeSeconds: performance.now() / 1000,
+  }, view, a, capcom.latest);
 }
 
 mountTitleBlock(titleBlock, {
