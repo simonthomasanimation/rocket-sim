@@ -3,19 +3,33 @@
 // src/core and never reaches this file's DOM calls.
 
 import { createFixedLoop } from './core/loop.js';
+import { createFlight, interpolated } from './core/flight.js';
+import { NO_COMMAND } from './core/lander.js';
 import { createSurface } from './render/surface.js';
-import { drawPaper } from './render/blueprint.js';
+import { createCamera } from './render/camera.js';
+import { drawPaper, drawScene } from './render/blueprint.js';
 import { mountTitleBlock, updateTitleBlock } from './ui/screens.js';
+
+const HUD_HEIGHT = 112; // px reserved along the bottom for the instrument strip
 
 const surface = createSurface(document.getElementById('stage'));
 const titleBlock = document.getElementById('title-block');
+const camera = createCamera();
 
-// Mission elapsed time is counted in ticks so it stays exact and replayable.
-let elapsedTicks = 0;
-const loop = createFixedLoop({ hz: 60, step: () => { elapsedTicks += 1; } });
+let flight = createFlight({ seed: 1 });
+const loop = createFixedLoop({ hz: 60, step: (dt) => flight.step(NO_COMMAND, dt) });
 
-function render() {
+function layout() {
+  camera.setViewport(surface.width, Math.max(120, surface.height - HUD_HEIGHT), 0);
+}
+layout();
+camera.snap(flight.state);
+
+function render(alpha, frameDt) {
+  const view = interpolated(flight, alpha);
+  camera.follow(view, frameDt);
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
+  drawScene(surface.ctx, camera, view, flight.cfg);
 }
 
 mountTitleBlock(titleBlock, {
@@ -28,10 +42,13 @@ mountTitleBlock(titleBlock, {
 });
 
 let lastMetShown = -1;
+let lastFrameMs = null;
 function frame(nowMs) {
-  loop.advance(nowMs / 1000);
-  render();
-  const metSeconds = Math.floor(elapsedTicks / loop.hz);
+  const frameDt = lastFrameMs === null ? 0 : Math.min(0.1, (nowMs - lastFrameMs) / 1000);
+  lastFrameMs = nowMs;
+  const { alpha } = loop.advance(nowMs / 1000);
+  render(alpha, frameDt);
+  const metSeconds = Math.floor(flight.state.time);
   if (metSeconds !== lastMetShown) {
     lastMetShown = metSeconds;
     updateTitleBlock(titleBlock, { met: metSeconds });
@@ -45,4 +62,4 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) loop.pause(); else loop.resume();
 });
 
-surface.onResize(render);
+surface.onResize(() => { layout(); render(0, 0); });

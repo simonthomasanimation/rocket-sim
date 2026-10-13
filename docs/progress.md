@@ -13,7 +13,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 
 ## M1 Lander
 - [x] Fixed-timestep loop (60 Hz, accumulator, render interpolation); core in src/core with no DOM
-- [ ] Lander model: mass, fuel, thrust, rotation, center of mass; semi-implicit Euler; flat Moon with uniform gravity
+- [x] Lander model: mass, fuel, thrust, rotation, center of mass; semi-implicit Euler; flat Moon with uniform gravity
 - [ ] Controls: throttle up/down/full/cut, rotate left/right; keyboard and on-screen touch
 - [ ] Landing rules: safe if v-speed < 3 m/s, h-speed < 1 m/s, tilt < 10°; else crash; fuel runs out
 - [ ] Blueprint rendering: cutaway lander with hatched fuel, white flame with cyan core, hatched horizon with craters, dashed ballistic descent prediction
