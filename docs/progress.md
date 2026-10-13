@@ -12,7 +12,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Gate issue opened (#1)
 
 ## M1 Lander
-- [ ] Fixed-timestep loop (60 Hz, accumulator, render interpolation); core in src/core with no DOM
+- [x] Fixed-timestep loop (60 Hz, accumulator, render interpolation); core in src/core with no DOM
 - [ ] Lander model: mass, fuel, thrust, rotation, center of mass; semi-implicit Euler; flat Moon with uniform gravity
 - [ ] Controls: throttle up/down/full/cut, rotate left/right; keyboard and on-screen touch
 - [ ] Landing rules: safe if v-speed < 3 m/s, h-speed < 1 m/s, tilt < 10°; else crash; fuel runs out
