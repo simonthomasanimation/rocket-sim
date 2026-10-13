@@ -89,3 +89,64 @@ html, body {
   margin: 0;
   font: 400 14px/24px var(--font-mono);
 }
+
+/* On-screen flight controls: stamped rectangles with text labels. Shown on
+   coarse pointers (phones, tablets) or after the first touch anywhere. */
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+}
+@media (pointer: coarse) { .touch-controls { display: block; } }
+.touch-controls.is-touch { display: block; }
+.touch-controls.is-hidden { display: none; }
+
+.touch-cluster {
+  position: absolute;
+  bottom: calc(112px + var(--grid) * 2 + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  gap: var(--grid);
+  pointer-events: auto;
+}
+.touch-left {
+  left: calc(var(--grid) * 2 + env(safe-area-inset-left, 0px));
+  grid-template-columns: 1fr 1fr;
+}
+.touch-right {
+  right: calc(var(--grid) * 2 + env(safe-area-inset-right, 0px));
+  grid-template-columns: 1fr 1fr;
+}
+
+.stamp-button {
+  appearance: none;
+  margin: 0;
+  width: 72px;
+  height: 56px;
+  border: var(--stroke-structure) solid var(--bp-ink);
+  border-radius: 2px;
+  background: var(--bp-paper);
+  color: var(--bp-ink);
+  font: 500 13px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+.stamp-button.is-down {
+  background: var(--bp-ink);
+  color: var(--bp-paper);
+}
+
+/* Narrow sheets (phones): the title block moves to the top right corner so
+   the instrument strip and the on-screen controls keep the bottom. */
+@media (max-width: 720px) {
+  .title-block {
+    bottom: auto;
+    top: calc(var(--grid) * 2 + env(safe-area-inset-top, 0px));
+  }
+  .title-block th { font-size: 12px; }
+}
