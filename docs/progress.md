@@ -3,7 +3,7 @@
 Rules: work top to bottom. Tick a task only when it is committed and the deployed build still runs. When every task of a milestone is ticked, open a GitHub issue titled "Gate: M<n> ready to play" with how to play it, and stop working on later milestones until the owner closes that issue. Open issues from the owner come before new tasks. Add tasks here when you discover them; never delete one, strike it through with a reason.
 
 ## M0 Foundations
-- [ ] Folder layout per CLAUDE.md; package.json with `dev` (local server) and `snapshot` (inline to dist/index.html) scripts
+- [x] Folder layout per CLAUDE.md; package.json with `dev` (local server) and `snapshot` (inline to dist/index.html) scripts
 - [ ] index.html + src/main.js: full-window canvas, DPR-aware, resize handling
 - [ ] Blueprint paper: #1B3A6B, 8px grid white at 8%, title block lower right (KÁRMÁN PROGRAM / SHEET 1 OF 1 / date) in IBM Plex Mono
 - [ ] Fonts: IBM Plex Mono, Archivo, Source Sans 3 from Google Fonts with system fallbacks

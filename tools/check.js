@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+// Deploy check: builds the snapshot, syntax-checks the bundle, then (when
+// Playwright and a Chromium are available) opens both the dev page and the
+// snapshot headlessly and fails on any page error or console error.
+// Usage: node tools/check.js [--shot DIR]
+
+import fs from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { bundle, buildSnapshot } from './snapshot.js';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const shotDir = process.argv.includes('--shot') ? process.argv[process.argv.indexOf('--shot') + 1] : null;
+
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
+
+function serve() {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://x');
+      let file = path.join(root, decodeURIComponent(url.pathname));
+      if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
+      if (!file.startsWith(root) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' });
+      fs.createReadStream(file).pipe(res);
+    });
+    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
+  });
+}
+
+async function openAndWatch(browser, url, label) {
+  const problems = [];
+  const warnings = [];
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
+  page.on('pageerror', (e) => problems.push(`${label}: page error: ${e.message}`));
+  page.on('console', (m) => {
+    if (m.type() === 'error') problems.push(`${label}: console error: ${m.text()}`);
+    else if (m.type() === 'warning') warnings.push(`${label}: console warning: ${m.text()}`);
+  });
+  page.on('requestfailed', (r) => warnings.push(`${label}: request failed: ${r.url()} (${r.failure()?.errorText})`));
+  await page.goto(url, { waitUntil: 'load' });
+  await page.waitForTimeout(600);
+  const canvas = await page.evaluate(() => {
+    const c = document.querySelector('canvas');
+    return c ? { w: c.width, h: c.height } : null;
+  });
+  if (!canvas || canvas.w === 0 || canvas.h === 0) problems.push(`${label}: no sized canvas on the page`);
+  if (shotDir) {
+    fs.mkdirSync(shotDir, { recursive: true });
+    await page.screenshot({ path: path.join(shotDir, `${label}.png`) });
+  }
+  await page.close();
+  return { problems, warnings };
+}
+
+async function main() {
+  const { generated, bytes } = buildSnapshot();
+  console.log(`snapshot: dist/index.html ${(bytes / 1024).toFixed(1)} kB from ${generated.join(', ')}`);
+  if (bytes > 2 * 1024 * 1024) { console.error('snapshot exceeds the 2 MB asset budget'); process.exit(1); }
+
+  const tmp = path.join(root, 'dist', '.bundle-check.js');
+  fs.writeFileSync(tmp, bundle('src/main.js'));
+  const syntax = spawnSync(process.execPath, ['--check', tmp], { encoding: 'utf8' });
+  fs.unlinkSync(tmp);
+  if (syntax.status !== 0) { console.error(syntax.stderr); process.exit(1); }
+  console.log('bundle: syntax ok');
+
+  let playwright;
+  try { playwright = createRequire(import.meta.url)('playwright'); } catch { playwright = null; }
+  if (!playwright) { console.log('browser check skipped (playwright not installed)'); return; }
+
+  const { server, port } = await serve();
+  let browser;
+  try {
+    browser = await playwright.chromium.launch();
+  } catch (e) {
+    console.log(`browser check skipped (${e.message.split('\n')[0]})`);
+    server.close();
+    return;
+  }
+  const results = [
+    await openAndWatch(browser, `http://127.0.0.1:${port}/index.html`, 'dev'),
+    await openAndWatch(browser, `http://127.0.0.1:${port}/dist/index.html`, 'snapshot'),
+  ];
+  await browser.close();
+  server.close();
+  const problems = results.flatMap((r) => r.problems);
+  const warnings = results.flatMap((r) => r.warnings);
+  warnings.forEach((w) => console.log(`warn: ${w}`));
+  if (problems.length) { problems.forEach((p) => console.error(`FAIL: ${p}`)); process.exit(1); }
+  console.log('browser: dev page and snapshot load without console errors');
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });
