@@ -7,7 +7,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] index.html + src/main.js: full-window canvas, DPR-aware, resize handling
 - [x] Blueprint paper: #1B3A6B, 8px grid white at 8%, title block lower right (KÁRMÁN PROGRAM / SHEET 1 OF 1 / date) in IBM Plex Mono
 - [x] Fonts: IBM Plex Mono, Archivo, Source Sans 3 from Google Fonts with system fallbacks
-- [ ] GitHub Pages workflow publishing dist/ on push to main
+- [x] GitHub Pages workflow publishing dist/ on push to main
 - [ ] docs/decisions.md seeded from CLAUDE.md, dated
 - [ ] Gate issue opened
 
