@@ -60,14 +60,34 @@ function drawCreases(ctx, W, H, px) {
 
 export const STROKE = { structure: 1.5, annotation: 0.75 };
 
-export function drawScene(ctx, cam, state, cfg) {
+export function drawScene(ctx, cam, state, cfg, phase = 'flying') {
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, cam.top, cam.width, cam.height);
   ctx.clip();
   drawGround(ctx, cam);
-  drawLander(ctx, cam, state, cfg);
+  drawLander(ctx, cam, state, cfg, phase);
+  if (phase !== 'flying') drawOutcomeLabel(ctx, cam, state, cfg, phase);
   ctx.restore();
+}
+
+// Typewriter label beside the craft once it is down. Accent only for a crash.
+function drawOutcomeLabel(ctx, cam, s, cfg, phase) {
+  const p = cam.toScreen(s.x, s.y);
+  const crashed = phase === 'crashed';
+  const x = Math.round(p.x + (cfg.footHalfWidth + 2) * cam.scale);
+  const y = Math.round(p.y - 2 * cam.scale);
+  ctx.strokeStyle = crashed ? BLUEPRINT.accent : BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  ctx.moveTo(Math.round(p.x + cfg.footHalfWidth * cam.scale) + 0.5, y + 0.5);
+  ctx.lineTo(x + 0.5, y + 0.5);
+  ctx.stroke();
+  ctx.fillStyle = crashed ? BLUEPRINT.accent : BLUEPRINT.ink;
+  ctx.font = '500 12px "IBM Plex Mono", "Courier Prime", monospace';
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign = 'left';
+  ctx.fillText(crashed ? 'IMPACT' : 'TOUCHDOWN', x + 4, y - 2);
 }
 
 // The horizon: one structure line for the surface, nothing more yet.
@@ -85,7 +105,7 @@ function drawGround(ctx, cam) {
 // A first outline of the lander: descent box, cabin, engine bell, two legs.
 // Drawn in body space (metres, y up from the footpads) around the footpad
 // centre, rotated by the tilt. The cutaway drawing replaces this later.
-function drawLander(ctx, cam, s, cfg) {
+function drawLander(ctx, cam, s, cfg, phase = 'flying') {
   const p = cam.toScreen(s.x, s.y);
   const k = cam.scale;
   ctx.save();
@@ -101,6 +121,7 @@ function drawLander(ctx, cam, s, cfg) {
     ctx.closePath();
     ctx.stroke();
   };
+  if (phase === 'crashed') ctx.setLineDash([3, 3]); // a broken drawing for a broken craft
   // Descent stage body.
   poly([[-2.1, 1.3], [2.1, 1.3], [2.1, 3.6], [-2.1, 3.6]]);
   // Cabin.

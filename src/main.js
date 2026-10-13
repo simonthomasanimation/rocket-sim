@@ -37,7 +37,7 @@ function render(alpha, frameDt) {
   const view = interpolated(flight, alpha);
   camera.follow(view, frameDt);
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
-  drawScene(surface.ctx, camera, view, flight.cfg);
+  drawScene(surface.ctx, camera, view, flight.cfg, flight.phase);
 }
 
 mountTitleBlock(titleBlock, {

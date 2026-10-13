@@ -1,40 +1,88 @@
 // One flight of the lander from release to touchdown. Owns the lander state,
-// keeps the previous tick for render interpolation, and will later own the
-// landing rules and the input recording. No DOM.
+// keeps the previous tick for render interpolation, judges the landing and
+// collects the figures for the results card. No DOM.
 
-import { createLanderState, stepLander, NO_COMMAND, LANDER, MOON } from './lander.js';
+import { createLanderState, stepLander, lowestPointAltitude, NO_COMMAND, LANDER, MOON } from './lander.js';
 import { createRng } from './rng.js';
 
 export const DEFAULT_START = Object.freeze({ x: 0, y: 150, vx: 3, vy: -6, angle: 0 });
 
-export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, body = MOON } = {}) {
+// A touchdown is safe when all three hold at the moment of contact.
+export const LANDING_LIMITS = Object.freeze({
+  verticalSpeed: 3,            // m/s
+  horizontalSpeed: 1,          // m/s
+  tilt: (10 * Math.PI) / 180,  // radians
+});
+
+export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, body = MOON, limits = LANDING_LIMITS } = {}) {
   const rng = createRng(seed);
   const flight = {
     seed,
     cfg,
     body,
+    limits,
     rng,
     tick: 0,
     phase: 'flying',          // flying | landed | crashed
     state: createLanderState(start),
     prev: null,
+    events: [],               // { tick, type } in order: fuelOut, landed, crashed
+    stats: { maxSpeed: 0, fuelStart: 0, touchdown: null },
     step(cmd = NO_COMMAND, dt = 1 / 60) {
       flight.prev = { ...flight.state };
-      if (flight.phase !== 'flying') { flight.tick += 1; return; }
-      stepLander(flight.state, cmd, dt, cfg, body);
-      // Until the landing rules arrive, the surface simply stops the craft.
-      if (flight.state.y <= 0) {
-        flight.state.y = 0;
-        flight.state.vx = 0;
-        flight.state.vy = 0;
-        flight.state.angVel = 0;
-        flight.phase = 'landed';
-      }
       flight.tick += 1;
+      if (flight.phase !== 'flying') return;
+      const s = flight.state;
+      const hadFuel = s.fuel > 0;
+      stepLander(s, cmd, dt, cfg, body);
+      if (hadFuel && s.fuel <= 0) {
+        s.throttle = 0;
+        flight.events.push({ tick: flight.tick, type: 'fuelOut' });
+      }
+      const speed = Math.hypot(s.vx, s.vy);
+      if (speed > flight.stats.maxSpeed) flight.stats.maxSpeed = speed;
+      if (lowestPointAltitude(s, cfg) <= 0) touchdown(flight);
     },
   };
+  flight.stats.fuelStart = flight.state.fuel;
   flight.prev = { ...flight.state };
   return flight;
+}
+
+// Judge the contact and freeze the craft on the surface.
+function touchdown(flight) {
+  const s = flight.state;
+  const { limits, cfg } = flight;
+  const tilt = normalizeAngle(s.angle);
+  const vSpeed = -s.vy;             // positive = descending
+  const hSpeed = Math.abs(s.vx);
+  const safe = vSpeed < limits.verticalSpeed && hSpeed < limits.horizontalSpeed && Math.abs(tilt) < limits.tilt;
+  flight.stats.touchdown = {
+    verticalSpeed: vSpeed,
+    horizontalSpeed: hSpeed,
+    tilt,
+    time: s.time,
+    fuel: s.fuel,
+    x: s.x,
+    safe,
+    reasons: [
+      vSpeed >= limits.verticalSpeed ? 'verticalSpeed' : null,
+      hSpeed >= limits.horizontalSpeed ? 'horizontalSpeed' : null,
+      Math.abs(tilt) >= limits.tilt ? 'tilt' : null,
+    ].filter(Boolean),
+  };
+  // Rest on the lowest pad; a safe landing settles level, a crash stays as it hit.
+  if (safe) { s.angle = 0; s.y = 0; } else { s.angle = tilt; s.y = Math.abs(Math.sin(tilt)) * cfg.footHalfWidth; }
+  s.vx = 0; s.vy = 0; s.angVel = 0; s.throttle = 0; s.thrust = 0;
+  flight.phase = safe ? 'landed' : 'crashed';
+  flight.events.push({ tick: flight.tick, type: flight.phase });
+  flight.prev = { ...s };
+}
+
+export function normalizeAngle(a) {
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a < -Math.PI) a += 2 * Math.PI;
+  return a;
 }
 
 // State as seen alpha of the way from the previous tick to the current one.
