@@ -9,7 +9,7 @@ import { decodeCommand } from './recording.js';
 // Plays a recording back through a fresh flight, one tick at a time.
 // `step()` returns false once the recording's flight is over.
 export function createPlayback(recording) {
-  const flight = createFlight({ seed: recording.seed, scenario: recording.scenario });
+  const flight = createFlight({ seed: recording.seed, scenario: recording.scenario, design: recording.design || null });
   const events = recording.events;
   let cursor = 0;
   let cmd = NO_COMMAND;

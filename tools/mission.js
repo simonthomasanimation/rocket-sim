@@ -14,8 +14,8 @@ import { propagate } from '../src/core/kepler.js';
 const NONE = { thr: 0, rot: 0, full: 0, cut: 0, stage: 0, hold: 0, warp: 0, chute: 0 };
 const deg = (d) => (d * Math.PI) / 180;
 
-export function flyMission({ seed = 1, log = () => {}, stopAt = null } = {}) {
-  const f = createFlight({ seed, scenario: 'earthLaunch' });
+export function flyMission({ seed = 1, log = () => {}, stopAt = null, design = null } = {}) {
+  const f = createFlight({ seed, scenario: design ? 'designEarth' : 'earthLaunch', design });
   const step = (cmd = {}) => f.step({ ...NONE, ...cmd });
   // A burn tick that drops a dry stage when there is another to light.
   const burn = (cmd = {}) => step({ ...cmd, full: 1, stage: f.state.fuel <= 0 && f.state.stage < f.cfg.stages.length - 1 ? 1 : 0 });

@@ -31,7 +31,7 @@ export function decodeCommand(code) {
 export const NO_COMMAND_CODE = encodeCommand(NO_COMMAND);
 
 // Records command changes as [tick, code] pairs.
-export function createRecorder({ seed, scenario }) {
+export function createRecorder({ seed, scenario, design = null }) {
   const events = [];
   let lastCode = NO_COMMAND_CODE;
   let ticks = 0; // ticks recorded so far, so an unfinished flight replays up to "now"
@@ -44,7 +44,9 @@ export function createRecorder({ seed, scenario }) {
       events.push([tick, code]);
     },
     toJSON() {
-      return { version: RECORDING_VERSION, seed, scenario, ticks, events: events.slice() };
+      const out = { version: RECORDING_VERSION, seed, scenario, ticks, events: events.slice() };
+      if (design) out.design = JSON.parse(JSON.stringify(design)); // a design flight carries its rocket
+      return out;
     },
   };
 }

@@ -111,4 +111,33 @@ export const SCENARIOS = {
   },
 };
 
-export const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'moonReturn', 'reentry'];
+// The design on the vellum sheet: its stages, mass and engines come from
+// the builder (createFlight takes the design); the recording keeps a copy.
+SCENARIOS.designEarth = {
+  id: 'designEarth',
+  go: 'goLaunch',
+  name: 'DESIGN, EARTH',
+  craft: 'design',
+  body: 'earth',
+  onPad: true,
+  section: 'SECTION 4 — VEHICLE ASSEMBLY',
+  goal: 'fly',
+  goalText: 'Fly what you drew: orbit, the Moon, or home again, as far as its stages take it.',
+  brief: 'The design on the vellum sheet (B), on Pad 1, Earth.',
+  start: (body, terrain) => ({ x: 0, y: body.radius + terrain.height(0), vx: 0, vy: 0, angle: 0 }),
+};
+SCENARIOS.designMoon = {
+  id: 'designMoon',
+  go: 'goLaunch',
+  name: 'DESIGN, MOON',
+  craft: 'design',
+  body: 'moon',
+  onPad: true,
+  section: 'SECTION 4 — VEHICLE ASSEMBLY',
+  goal: 'fly',
+  goalText: 'Fly what you drew from the Moon: a hop, an orbit, or the way home.',
+  brief: 'The design on the vellum sheet (B), on the Moon.',
+  start: (body, terrain) => ({ x: 0, y: body.radius + terrain.height(0), vx: 0, vy: 0, angle: 0 }),
+};
+
+export const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'moonReturn', 'reentry', 'designEarth', 'designMoon'];

@@ -52,7 +52,7 @@ export const ROCKET3 = Object.freeze({
     { name: 'STAGE 1', dryMass: 2600, fuelMass: 18000, maxThrust: 400000, isp: 280, height: 18.0, radius: 1.8, footHalfWidth: 3.0 },
     { name: 'STAGE 2', dryMass: 800, fuelMass: 3200, maxThrust: 30000, isp: 310, height: 7.0, radius: 1.3, footHalfWidth: 2.6 },
     { name: 'STAGE 3', dryMass: 150, fuelMass: 700, maxThrust: 8000, isp: 310, height: 5.3, radius: 1.0, footHalfWidth: 1.6 },
-    { name: 'CAPSULE', dryMass: 750, fuelMass: 0, maxThrust: 0, isp: 0, height: 2.4, radius: 1.0, footHalfWidth: 1.2, capsule: true },
+    { name: 'CAPSULE', dryMass: 750, fuelMass: 0, maxThrust: 0, isp: 0, height: 2.4, radius: 1.0, footHalfWidth: 1.2, capsule: true, shield: true, chute: true },
   ],
   throttleRate: 1.0,
   maxRotRate: Math.PI / 6,
@@ -126,7 +126,7 @@ export function createCraftState(cfg, { x = 0, y = 0, vx = 0, vy = 0, angle = 0,
     stage,          // index of the live stage, 0 = bottom
     fuel: fuel === null ? cfg.stages[stage].fuelMass : fuel, // kg left in the live stage
     thrust: 0,      // N produced on the last step, for the drawing and HUD
-    chute: 0,       // 0 stowed, 3 drogue out, 4 main reefed, 1 main full, 2 torn away
+    chute: 0,       // 0 stowed, 3 drogue out, 4 main reefed, 1 main full, 2 torn away (a stage with `chute` only)
     chuteT: 0,      // s since the current canopy came out
     heat: 0,        // entry heating as a fraction of what the craft can take
     broken: 0,      // 1 once the heat has torn the craft apart
@@ -187,7 +187,7 @@ export function stepCraft(s, cmd, dt, cfg, body, groundRadius = null) {
   // MAIN_HEIGHT above the ground, the main comes out reefed (a narrow
   // cone, a fifth of its drag) for REEF_TIME, then blooms to full over
   // BLOOM_TIME.
-  if (cmd.chute && s.chute === 0 && activeStage(s, cfg).capsule) { s.chute = Math.hypot(s.vx, s.vy) > CHUTE_MAX_SPEED ? 2 : 3; s.chuteT = 0; }
+  if (cmd.chute && s.chute === 0 && activeStage(s, cfg).chute) { s.chute = Math.hypot(s.vx, s.vy) > CHUTE_MAX_SPEED ? 2 : 3; s.chuteT = 0; }
   if (s.chute === 3 || s.chute === 4) {
     s.chuteT += dt;
     if (s.chute === 3 && Math.hypot(s.vx, s.vy) < MAIN_SPEED && Math.hypot(s.x, s.y) - (groundRadius || body.radius) < MAIN_HEIGHT) { s.chute = 4; s.chuteT = 0; }
@@ -225,7 +225,7 @@ export function dragFactor(s, cfg) {
   const st = activeStage(s, cfg);
   const radius = st.radius || 2.4;
   let cdA = 0.5 * Math.PI * radius * radius;
-  if (st.capsule) cdA += canopyCdA(s);
+  if (st.chute) cdA += canopyCdA(s);
   return cdA / (2 * totalMass(s, cfg));
 }
 // Drag area of whatever canopy is out.
@@ -252,8 +252,13 @@ export const CHUTE_MAX_SPEED = 250; // m/s; the drogue opened faster than this t
 
 // Heating limits for rho * v^3: a bare stack chars at the first, a capsule
 // flying shield-first holds to the second (a return from the Moon reaches
-// about 60 % of it).
+// about 60 % of it). Heating only counts once the craft is fast enough to
+// heat the air in front of it: nothing under HEAT_SPEED_0, the full
+// rho * v^3 from HEAT_SPEED_1 up, so a brisk climb through thick air is
+// safe and an entry from orbit (1,400 m/s and up) is as it always was.
 export const HEAT_BARE = 3e7;
+export const HEAT_SPEED_0 = 500;  // m/s
+export const HEAT_SPEED_1 = 1000; // m/s
 export const HEAT_SHIELDED = 2.5e8;
 
 // Heat flux measure rho * v^3 at the craft.
@@ -261,14 +266,16 @@ export function heatFlux(s, body) {
   const rho = densityAt(body, Math.hypot(s.x, s.y));
   if (rho <= 0) return 0;
   const v = Math.hypot(s.vx, s.vy);
-  return rho * v * v * v;
+  const ramp = Math.max(0, Math.min(1, (v - HEAT_SPEED_0) / (HEAT_SPEED_1 - HEAT_SPEED_0)));
+  return rho * v * v * v * ramp;
 }
 
-// The heat shield counts only on the capsule stage, flying alone, with its
-// base within 60 degrees of retrograde.
+// The heat shield counts only on the stage that carries one (the capsule
+// between its shield and its parachute), flying alone, with its base
+// within 60 degrees of retrograde.
 export function isShielded(s, cfg) {
   const st = activeStage(s, cfg);
-  if (!st.capsule) return false;
+  if (!st.shield) return false;
   const v = Math.hypot(s.vx, s.vy);
   if (v < 1) return true;
   const retro = Math.atan2(-s.vx, -s.vy);

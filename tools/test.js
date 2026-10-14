@@ -227,6 +227,41 @@ test('the six presets compile without a red-pencil note, and a design survives a
   assert.deepEqual(loose.stack[1].radials, [{ id: 'legs-s', count: 4, drop: 'early' }]);
 });
 
+test('a design from the sheet flies: it lifts off, stages, records its rocket, and replays', () => {
+  const d = PRESETS.find((p) => p.name.startsWith('KP-4'));
+  const f = createFlight({ seed: 3, scenario: 'designEarth', design: d });
+  assert.equal(f.cfg.drawing, 'parts');
+  assert.equal(f.cfg.stages[0].kind, 'boosters');
+  assert.equal(f.phase, 'pad');
+  const FULL = { ...NONE, full: 1, warp: 0, chute: 0 };
+  for (let i = 0; i < 60 * 40; i++) f.step({ ...FULL, stage: f.state.fuel <= 0 && f.state.stage < f.cfg.stages.length - 1 ? 1 : 0 });
+  assert.equal(f.phase, 'flying');
+  assert.ok(f.altitude() > 5000, `altitude ${f.altitude()}`);
+  assert.ok(f.state.stage >= 1, 'the boosters have dropped');
+  assert.ok(f.debris.length >= 1);
+  const rec = f.recording();
+  assert.ok(rec.design && rec.design.stack.length === d.stack.length, 'the recording carries the design');
+  const again = replayToEnd(rec);
+  assert.ok(Math.abs(again.state.x - f.state.x) < 1e-6 && Math.abs(again.state.y - f.state.y) < 1e-6, 'the replay rebuilds the same rocket');
+  // An empty sheet is a craft that sits on the pad, not a crash.
+  const e = createFlight({ seed: 1, scenario: 'designMoon', design: { name: 'NOTHING', stack: [] } });
+  for (let i = 0; i < 120; i++) e.step(FULL);
+  assert.equal(e.phase, 'pad');
+  // The capsule's shield and chute come from its parts: a capsule without a shield burns like a bare stack.
+  const bare = createFlight({ seed: 1, scenario: 'designEarth', design: { name: 'BARE', stack: ['engine-s-vac', 'tank-s-short', 'capsule-s'] } });
+  assert.equal(bare.cfg.stages[0].capsule, true);
+  assert.equal(bare.cfg.stages[0].shield, false);
+  assert.equal(bare.cfg.stages[0].chute, false);
+});
+
+test('the KP-3 built from parts flies the reference mission as well (about ten seconds)', () => {
+  const { report, flight } = flyMission({ seed: 1, design: KP3_DESIGN });
+  assert.equal(flight.cfg.drawing, 'parts');
+  assert.ok(report.moon.fuel > 0, 'landed on the Moon with fuel to spare');
+  assert.equal(report.home.phase, 'landed', `came home ${report.home.phase}`);
+  assert.ok(report.home.heat > 0.1 && report.home.heat < 1, `peak heat ${report.home.heat.toFixed(2)}`);
+});
+
 test('fixed loop steps in whole ticks and caps catch-up', () => {
   let n = 0;
   const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: () => { n += 1; } });

@@ -49,7 +49,7 @@ export const KP3_DESIGN = Object.freeze(createDesign('KP-3 LUNAR RETURN', [
 // strap-ons, a vacuum stage, a capsule.
 export const KP4_DESIGN = Object.freeze(createDesign('KP-4 ORBITAL CAPSULE', [
   'engine-m-lift',
-  { id: 'tank-m-long', radials: [{ id: 'booster-m', count: 2 }, { id: 'fins', count: 2 }] },
+  { id: 'tank-m-long', radials: [{ id: 'booster-s', count: 2 }, { id: 'fins', count: 2 }] },
   'decoupler-m',
   'engine-s-vac',
   'tank-s-long',
@@ -60,10 +60,10 @@ export const KP4_DESIGN = Object.freeze(createDesign('KP-4 ORBITAL CAPSULE', [
 ]));
 
 // 5. A satellite carrier: the beeper module under a nose cone on a
-// two-stage medium rocket. Mission 7 wants it in a given orbit.
+// two-stage medium rocket, no strap-ons. Mission 7 wants it in a given orbit.
 export const KP5_DESIGN = Object.freeze(createDesign('KP-5 SATELLITE CARRIER', [
   'engine-m-lift',
-  { id: 'tank-m-long', radials: [{ id: 'booster-s', count: 2 }, { id: 'fins', count: 2 }] },
+  { id: 'tank-m-long', radials: [{ id: 'fins', count: 2 }] },
   'decoupler-m',
   'engine-trim',
   'tank-s-short',

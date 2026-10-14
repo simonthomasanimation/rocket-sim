@@ -13,6 +13,7 @@ import { createRecorder } from './recording.js';
 import { propagate } from './kepler.js';
 import { RAILS, railsAllowed } from './warp.js';
 import { progradeAngle } from './craft.js';
+import { compileDesign, validateDesign } from './parts.js';
 
 // A touchdown is safe when all three hold at the moment of contact. Under
 // a parachute the capsule may come down harder and at any angle; on water
@@ -28,9 +29,17 @@ export const LANDING_LIMITS = Object.freeze({
 // A periapsis this far above the mean radius clears every crater rim: orbit.
 export const ORBIT_MARGIN = 1000; // m
 
-export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_LIMITS } = {}) {
+export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_LIMITS, design = null } = {}) {
   const scn = SCENARIOS[scenario] || SCENARIOS.descent;
-  const cfg = CRAFTS[scn.craft];
+  // A design from the vellum sheet is compiled into the stage list here;
+  // a design with nothing to fire is still a craft, it just sits on the pad.
+  let cfg = CRAFTS[scn.craft];
+  let kept = null;
+  if (scn.craft === 'design') {
+    kept = validateDesign(design || { name: 'EMPTY', stack: [] });
+    cfg = compileDesign(kept);
+    if (!cfg.stages.length) cfg.stages.push({ name: 'EMPTY', kind: 'stack', dryMass: 100, fuelMass: 0, maxThrust: 0, isp: 0, height: 1, radius: 1, footHalfWidth: 1.1, capsule: false, shield: false, chute: false, crew: 0, legs: false, parts: [], radials: [] });
+  }
   const body = BODIES[scn.body || 'moon'];
   const rng = createRng(seed);
   // One terrain per body, made on first use (the Moon's craters are a
@@ -38,7 +47,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
   const terrains = {};
   const terrainOf = (b) => { if (!terrains[b.id]) terrains[b.id] = createTerrain(seed, b); return terrains[b.id]; };
   const terrain = terrainOf(body);
-  const recorder = createRecorder({ seed, scenario: scn.id });
+  const recorder = createRecorder({ seed, scenario: scn.id, design: kept });
   const state = createCraftState(cfg, scn.start(body, terrain));
   const flight = {
     seed,

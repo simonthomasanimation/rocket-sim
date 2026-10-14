@@ -4,6 +4,8 @@
 import { labelAlpha } from './camera.js';
 import { craftHeight, footHalfWidth, activeStage, progradeAngle, canopyBloom } from '../core/craft.js';
 import { BODIES, ESCAPE_RADIUS } from '../core/body.js';
+import { designGeometry, partById } from '../core/parts.js';
+import { drawPart } from './partart.js';
 
 export const BLUEPRINT = {
   paper: '#1B3A6B',
@@ -1149,7 +1151,8 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
   if (s.thrust > 0 && phase === 'flying') {
     const st = activeStage(s, cfg);
     const bell = cfg.drawing === 'lander' ? 0.95 : st.radius * 0.8;
-    drawFlame(ctx, k, s.thrust / st.maxThrust, s.time, bell, cfg.drawing === 'lander' ? 0.5 : 0.1);
+    if (cfg.drawing === 'parts') drawPartsFlames(ctx, k, s, cfg);
+    else drawFlame(ctx, k, s.thrust / st.maxThrust, s.time, bell, cfg.drawing === 'lander' ? 0.5 : 0.1);
   }
   if (s.broken) {
     // The pieces are debris now; here only the point where it came apart.
@@ -1162,6 +1165,7 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
   ctx.lineWidth = STROKE.structure;
   if (phase === 'crashed') ctx.setLineDash([3, 3]); // a broken drawing for a broken craft
   if (cfg.drawing === 'lander') drawLander(ctx, k, s, cfg);
+  else if (cfg.drawing === 'parts') drawPartsStack(ctx, k, s, cfg, s.stage, 0, BLUEPRINT.ink);
   else drawRocketStack(ctx, k, s, cfg, s.stage, 0, BLUEPRINT.ink, STROKE.structure);
   ctx.setLineDash([]);
   if (phase === 'flying' && s.heat > 0.08) drawHullHeat(ctx, k, s, cfg);
@@ -1350,7 +1354,8 @@ function drawDebris(ctx, cam, d, cfg, inset = false) {
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
   if (d.broken) ctx.setLineDash([3, 3]); // torn pieces
-  drawRocketStack(ctx, cam.scale, { stage: d.stage, fuel: 0 }, cfg, d.stage, d.stage, BLUEPRINT.inkPale, STROKE.annotation, true);
+  if (cfg.drawing === 'parts') drawPartsStack(ctx, cam.scale, { stage: d.stage, fuel: 0 }, cfg, d.stage, d.stage, BLUEPRINT.inkPale, true);
+  else drawRocketStack(ctx, cam.scale, { stage: d.stage, fuel: 0 }, cfg, d.stage, d.stage, BLUEPRINT.inkPale, STROKE.annotation, true);
   ctx.setLineDash([]);
   ctx.restore();
 }
@@ -1479,6 +1484,88 @@ function drawRocketStack(ctx, k, s, cfg, from, stop, ink, weight, alone = false)
       ctx.setLineDash(dash);
     }
     y += st.height;
+  }
+}
+
+// --- A rocket built from parts -----------------------------------------------
+// The design's parts drawn from their own files (render/partart.js), in
+// the craft frame: metres, y up from the live stage's base plane. Stages
+// from `from` to the top, or stage `stop` alone for a dropped one. A
+// boosters stage has no stack parts of its own: it is its pairs, hung on
+// the stage they ride.
+let geometryCache = { design: null, geo: null };
+function geometryOf(cfg) {
+  if (geometryCache.design !== cfg.design) geometryCache = { design: cfg.design, geo: designGeometry(cfg.design) };
+  return geometryCache.geo;
+}
+// Height of a stage's base plane above the stack's base.
+function stageBase(cfg, geo, i) {
+  const st = cfg.stages[i];
+  if (st.parts.length) return Math.min(...st.parts.map((idx) => geo.parts[idx].bottom));
+  return i + 1 < cfg.stages.length ? stageBase(cfg, geo, i + 1) : 0;
+}
+function drawPartsStack(ctx, k, s, cfg, from, stop, ink, alone = false) {
+  if (!cfg.design) return;
+  const geo = geometryOf(cfg);
+  const top = alone ? stop : cfg.stages.length - 1;
+  const base = stageBase(cfg, geo, from);
+  const u = k / 10; // px per decimetre, the drawings' unit
+  for (let i = from; i <= top; i++) {
+    const st = cfg.stages[i];
+    for (const idx of st.parts) {
+      const g = geo.parts[idx];
+      drawPart(ctx, g.id, ink, 0, -(g.top - base) * k, u);
+    }
+    for (const r of st.radials) {
+      const g = geo.radials.find((q) => q.index === r.on && q.id === r.id);
+      if (!g) continue;
+      drawPart(ctx, g.id, ink, g.offset * k, -(g.top - base) * k, u);
+      drawPart(ctx, g.id, ink, -g.offset * k, -(g.top - base) * k, u, { flip: true });
+    }
+  }
+  if (!alone && k >= 4) drawPartsFuel(ctx, k, s, cfg, geo, base);
+}
+// The fuel level of the live stage's tanks as a pale line across each tank
+// (the tanks' own hatching is static), from full to empty as it burns.
+function drawPartsFuel(ctx, k, s, cfg, geo, base) {
+  const st = cfg.stages[s.stage];
+  if (!st.fuelMass) return;
+  const frac = Math.max(0, Math.min(1, s.fuel / st.fuelMass));
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  for (const idx of st.parts) {
+    const p = partById(cfg.design.stack[idx].id);
+    if (p.category !== 'tank') continue;
+    const g = geo.parts[idx];
+    const y = g.bottom + (g.top - g.bottom) * frac - base;
+    polyline(ctx, k, [[-g.halfW * 0.8, y], [g.halfW * 0.8, y]]);
+  }
+}
+// Flames under every engine that burns: the live stage's bell on the axis
+// and, while boosters ride, one under each booster.
+function drawPartsFlames(ctx, k, s, cfg) {
+  const st = activeStage(s, cfg);
+  const f = s.thrust / st.maxThrust;
+  const geo = geometryOf(cfg);
+  const base = stageBase(cfg, geo, s.stage);
+  let coreThrust = 0;
+  for (const idx of st.parts) { const p = partById(cfg.design.stack[idx].id); if (p.category === 'engine') coreThrust += p.thrust; }
+  // The stage after a boosters stage holds the core engines that burn with them.
+  if (st.kind === 'boosters' && s.stage + 1 < cfg.stages.length) {
+    for (const idx of cfg.stages[s.stage + 1].parts) { const p = partById(cfg.design.stack[idx].id); if (p.category === 'engine') coreThrust += p.thrust; }
+  }
+  if (coreThrust > 0) drawFlame(ctx, k, f, s.time, st.radius * 0.6, 0.1);
+  for (const r of st.radials) {
+    const p = partById(r.id);
+    if (p.category !== 'booster') continue;
+    const g = geo.radials.find((q) => q.index === r.on && q.id === r.id);
+    if (!g) continue;
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(side * g.offset * k, 0);
+      drawFlame(ctx, k, f, s.time + side, g.halfW * 0.9, g.bottom - base + 0.1);
+      ctx.restore();
+    }
   }
 }
 

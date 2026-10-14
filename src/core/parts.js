@@ -394,13 +394,43 @@ export function compileDesign(design, { gravity = 9.80665 } = {}) {
   return {
     id: 'design',
     name: design.name,
-    drawing: 'rocket',
+    drawing: 'parts',
+    design: cloneDesign(design),
     stages,
     throttleRate: 1.0,
     maxRotRate: Math.PI / 6,
     rotAccel: Math.PI / 2,
     warnings,
   };
+}
+
+// Where every part and radial pair of a design sits, in metres from the
+// stack's base plane on the axis: the geometry both the drafting table and
+// the flight drawing use. Radial pairs hang on their host with their feet
+// level with the engine under it (boosters, legs) or with the host (fins).
+export function designGeometry(design) {
+  const parts = [];
+  let y = 0;
+  design.stack.forEach((e, i) => {
+    const p = partById(e.id);
+    parts.push({ index: i, id: e.id, bottom: y, top: y + p.height, halfW: partRadius(p) });
+    y += p.height;
+  });
+  const radials = [];
+  design.stack.forEach((e, i) => {
+    const host = parts[i];
+    const below = i > 0 && partById(design.stack[i - 1].id).category === 'engine' ? parts[i - 1] : null;
+    let lane = 0;
+    for (const r of e.radials) {
+      const p = partById(r.id);
+      const bottom = p.category === 'structure' && !p.legs ? host.bottom : below ? below.bottom : host.bottom;
+      const halfW = partRadius(p);
+      const offset = host.halfW + lane * (2 * halfW + 0.4) + halfW; // the pair's axis distance from the stack axis
+      radials.push({ index: i, id: r.id, count: r.count, drop: r.drop, bottom, top: bottom + p.height, halfW, offset, hostR: host.halfW });
+      lane += 1;
+    }
+  });
+  return { parts, radials, height: y };
 }
 
 // The staging list as the builder prints it: one row per step in firing

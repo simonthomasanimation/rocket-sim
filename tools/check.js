@@ -104,6 +104,23 @@ async function openAndWatch(browser, url, label) {
     k.closeBuilder();
     await new Promise((r) => setTimeout(r, 300));
     if (k.doc !== 'blueprint') return `builder did not close (${k.doc})`;
+    // Launch the KP-4 preset from the sheet: the flight is built from the
+    // design, drawn from its parts, lifts off under full throttle, drops
+    // its boosters, and its recording carries the rocket.
+    k.openBuilder();
+    await new Promise((r) => setTimeout(r, 200));
+    const kp4 = Array.from(document.querySelectorAll('.vellum-designs li')).find((li) => li.textContent.includes('KP-4'));
+    if (!kp4) return 'no KP-4 preset in the list';
+    kp4.querySelector('button').click();
+    k.launchDesign('designEarth');
+    await new Promise((r) => setTimeout(r, 300));
+    if (k.doc !== 'blueprint' || k.scenario !== 'designEarth' || k.phase !== 'pad') return `launch state ${k.doc} ${k.scenario} ${k.phase}`;
+    if (k.flight.cfg.drawing !== 'parts' || k.flight.cfg.name !== 'KP-4 ORBITAL CAPSULE') return `craft ${k.flight.cfg.name} ${k.flight.cfg.drawing}`;
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', key: 'z', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 2500));
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyZ', key: 'z', bubbles: true }));
+    if (k.phase !== 'flying' || k.flight.altitude() < 20) return `did not lift off: ${k.phase} at ${k.flight.altitude().toFixed(0)} m`;
+    if (!k.flight.recording().design) return 'the recording does not carry the design';
     return n >= 0 ? null : 'bad';
   });
   if (built) problems.push(`${label}: builder: ${built}`);

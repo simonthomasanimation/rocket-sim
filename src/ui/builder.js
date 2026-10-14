@@ -279,6 +279,8 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
     panel.append(el('h1', 'vellum-title', design.name));
 
     const bar = el('div', 'vellum-buttons');
+    bar.append(button('LAUNCH: EARTH', () => launch('designEarth')));
+    bar.append(button('LAUNCH: MOON', () => launch('designMoon')));
     bar.append(button('NEW', () => { design = createDesign('UNTITLED'); selected = null; changed(); }));
     bar.append(button('FLIGHT PLAN', () => onAction('newStart'), 'N'));
     panel.append(bar);
@@ -414,7 +416,7 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
     io.append(button('EXPORT JSON', () => exportJson()));
     io.append(button('IMPORT JSON', () => importJson()));
     panel.append(io);
-    panel.append(el('p', 'vellum-caption', 'Drag parts from the catalog onto the axis; a tap puts one on top. Boosters, fins and legs hang on a tank. Drag a part off the sheet to remove it. Decouplers divide the stages.'));
+    panel.append(el('p', 'vellum-caption', 'Drag parts from the catalog onto the axis; a tap puts one on top. Boosters, fins and legs hang on a tank. Drag a part off the sheet to remove it. Decouplers divide the stages. LAUNCH (or Enter) takes the design to Pad 1 as it stands.'));
     showNote();
   }
   function button(label, fn, key) {
@@ -425,6 +427,15 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
     b.addEventListener('click', fn);
     return b;
   }
+  // To the pad: the design is handed to the flight as it stands.
+  function launch(scenarioId) {
+    const cfg = compileDesign(design);
+    if (!cfg.stages.some((st) => st.maxThrust > 0)) { note('NOTHING TO FIRE: ADD AN ENGINE'); return; }
+    if (!design.stack.some((e) => partById(e.id).category === 'command')) { note('NOTHING TO STEER WITH: ADD A CAPSULE OR PROBE CORE'); return; }
+    autosave();
+    onAction('launch', scenarioId);
+  }
+
   // --- Saving ---------------------------------------------------------------
   function persistSaved() {
     if (store && !store.write(SAVED_KEY, saved)) note('STORAGE REFUSED THE SAVE');
@@ -557,6 +568,7 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
       if (action === 'remove') { removeSelected(); return true; }
       if (action === 'back' || action === 'newStart') { onAction('newStart'); return true; }
       if (action === 'build') return true;
+      if (action === 'confirm') { launch('designEarth'); return true; }
       return false;
     },
     // For automated playtests: add a part as a tap on the catalog would.

@@ -68,7 +68,10 @@ function parse(text) {
 export function partImage(id, color, pxPerUnit, showNodes = false) {
   const text = texts.get(id);
   if (!text) { loadPartText(id).catch(() => {}); return null; }
-  const k = Math.max(0.25, Math.round(pxPerUnit * 8) / 8);
+  // Sizes are quantised to quarter octaves (the stroke scales by under a
+  // tenth between steps) so a continuous zoom does not rasterise a new
+  // image every frame, and capped so a tank never becomes a huge bitmap.
+  const k = Math.pow(2, Math.round(Math.log2(Math.max(0.2, Math.min(8, pxPerUnit))) * 4) / 4);
   const key = `${id}|${color}|${k}|${showNodes ? 1 : 0}`;
   let img = images.get(key);
   if (img) return img.complete && img.naturalWidth > 0 ? img : null;
@@ -81,6 +84,7 @@ export function partImage(id, color, pxPerUnit, showNodes = false) {
   img.decoding = 'async';
   img.onload = notify;
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  if (images.size > 600) { const oldest = images.keys().next().value; images.delete(oldest); }
   images.set(key, img);
   return img.complete && img.naturalWidth > 0 ? img : null;
 }

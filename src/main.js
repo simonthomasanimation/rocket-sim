@@ -50,7 +50,7 @@ try { storage = window.localStorage; storage.getItem('karman.probe'); } catch { 
 const store = createStore(storage);
 
 // The builder (vellum document): its chrome lives in #vellum, its drafting on the canvas.
-const builder = createBuilder({ canvas: surface.canvas, root: document.getElementById('vellum'), store, onAction: (a) => { if (a === 'newStart') closeBuilder(); } });
+const builder = createBuilder({ canvas: surface.canvas, root: document.getElementById('vellum'), store, onAction: (a, value) => { if (a === 'newStart') closeBuilder(); else if (a === 'launch') launchDesign(value); } });
 
 let scenarioId = 'descent';
 let flight = createFlight({ seed: 1, scenario: scenarioId });
@@ -215,6 +215,14 @@ function closeBuilder() {
   updateTitleBlock(titleBlock, { sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}` });
   showPlan();
 }
+// LAUNCH on the vellum: straight to the pad with the design as it stands.
+function launchDesign(id) {
+  if (!SCENARIOS[id] || SCENARIOS[id].craft !== 'design') return;
+  if (doc === 'vellum') { builder.close(); input.setMode('flight'); turnTo('blueprint'); }
+  if (pageOpen) { pageOpen = null; unmountPage(pageRoot); input.setButtonsVisible(true); }
+  scenarioId = id;
+  restart();
+}
 
 function showPlan() {
   if (replay) exitReplay(false);
@@ -254,7 +262,7 @@ function restart() {
   userPaused = false;
   if (replay) exitReplay(false);
   else if (flight.tick > 0) lastRecording = flight.recording();
-  flight = createFlight({ seed: 1, scenario: scenarioId });
+  flight = createFlight({ seed: 1, scenario: scenarioId, design: builder.design });
   capcom = createCapcom();
   alerts = null;
   shortPrediction = null;
@@ -708,6 +716,6 @@ window.__karman = {
   get doc() { return doc; },
   get builder() { return builder; },
   get store() { return store; },
-  openBuilder, closeBuilder,
+  openBuilder, closeBuilder, launchDesign,
   scenarios: Object.keys(SCENARIOS),
 };
