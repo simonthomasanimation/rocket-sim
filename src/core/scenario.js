@@ -79,6 +79,19 @@ export const SCENARIOS = {
       return { x: 0, y: r, vx: circularSpeed(body, r), vy: 0, angle: Math.PI / 2, stage: 1 };
     },
   },
+  moonReturn: {
+    id: 'moonReturn',
+    go: 'goLaunch',
+    name: 'MOON RETURN',
+    craft: 'rocket3',
+    body: 'moon',
+    onPad: true,
+    section: 'SECTION 3 — EARTH TO MOON',
+    goal: 'land',
+    goalText: 'Get home: climb to a low lunar orbit, burn prograde until the map shows a path that dives past Earth with PE between 15 and 35 km, hold retrograde (G) through the air, open the chute (P) under 250 m/s.',
+    brief: 'The KP-3 capsule on its ascent stage, sitting on the Moon with a full tank.',
+    start: (body, terrain) => ({ x: 0, y: body.radius + terrain.height(0), vx: 0, vy: 0, angle: 0, stage: 2 }),
+  },
   reentry: {
     id: 'reentry',
     go: 'goOrbit',
@@ -98,4 +111,4 @@ export const SCENARIOS = {
   },
 };
 
-export const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'reentry'];
+export const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'moonReturn', 'reentry'];
