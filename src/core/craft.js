@@ -40,7 +40,25 @@ export const ROCKET = Object.freeze({
   rotAccel: Math.PI / 2,
 });
 
-export const CRAFTS = { lander: LANDER, rocket: ROCKET };
+// The M3 three-stage rocket: a first stage for the climb out of Earth's
+// atmosphere into orbit, a second stage that flies to the Moon and lands on
+// it, and an ascent stage with the capsule (heat shield and parachute) that
+// comes home.
+export const ROCKET3 = Object.freeze({
+  id: 'rocket3',
+  name: 'KP-3',
+  drawing: 'rocket',
+  stages: [
+    { name: 'STAGE 1', dryMass: 2600, fuelMass: 18000, maxThrust: 400000, isp: 280, height: 18.0, radius: 1.8, footHalfWidth: 3.0 },
+    { name: 'STAGE 2', dryMass: 800, fuelMass: 2600, maxThrust: 30000, isp: 310, height: 7.0, radius: 1.3, footHalfWidth: 2.6 },
+    { name: 'STAGE 3', dryMass: 900, fuelMass: 700, maxThrust: 8000, isp: 310, height: 7.7, radius: 1.0, footHalfWidth: 1.6, capsule: true },
+  ],
+  throttleRate: 1.0,
+  maxRotRate: Math.PI / 6,
+  rotAccel: Math.PI / 2,
+});
+
+export const CRAFTS = { lander: LANDER, rocket: ROCKET, rocket3: ROCKET3 };
 
 export function activeStage(s, cfg) {
   return cfg.stages[s.stage];

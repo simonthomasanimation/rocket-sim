@@ -41,8 +41,7 @@ export function createCapcom() {
     // Call once per tick with the flight and its current alerts.
     update(flight, alerts) {
       const t = flight.tick;
-      const scn = flight.scenario.id;
-      if (t >= 60) say(scn === 'launch' ? 'goLaunch' : scn === 'orbit' ? 'goOrbit' : 'goDescent', t);
+      if (t >= 60) say(flight.scenario.go || 'goDescent', t);
       for (const ev of flight.events) {
         if (ev.type === 'liftoff') say('liftoff', t);
         else if (ev.type === 'staged') say('staged', t);

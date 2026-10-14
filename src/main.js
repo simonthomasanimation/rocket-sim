@@ -11,6 +11,7 @@ import { buildTimeline, sampleTimeline } from './core/timeline.js';
 import { deltaV, twr, activeStage, progradeAngle } from './core/craft.js';
 import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
 import { WARP_LADDER, maxWarpIndex } from './core/warp.js';
+import { BODIES, bodyState, childrenOf } from './core/body.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene, drawDetail } from './render/blueprint.js';
@@ -35,7 +36,6 @@ input.onFirstGesture(() => mixer.start());
 
 let scenarioId = 'descent';
 let flight = createFlight({ seed: 1, scenario: scenarioId });
-camera.bodyRadius = flight.body.radius;
 let alerts = null;
 let replay = null;          // { timeline, cursor, speed, playing } while replaying
 let lastRecording = null;   // the most recent live flight, for replay
@@ -152,7 +152,7 @@ function restart() {
   lastMetShown = -1;
   stampTitleBlock(titleBlock, null);
   setWarp(0);
-  updateTitleBlock(titleBlock, { document: 'BLUEPRINT', sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}` });
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT', sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}`, soi: flight.body.name });
 }
 
 // --- Replay -------------------------------------------------------------------
@@ -264,10 +264,10 @@ function currentScene(alpha) {
   if (replay) {
     const sample = sampleTimeline(replay.timeline, replay.cursor);
     const src = replay.timeline.flight;
-    return { view: sample.state, phase: sample.phase, alerts: sample.alerts, capcom: sample.capcom, src, debris: sample.debris, hold: 0 };
+    return { view: sample.state, phase: sample.phase, alerts: sample.alerts, capcom: sample.capcom, src, debris: sample.debris, hold: 0, clock: sample.clock };
   }
   const view = interpolated(flight, alpha);
-  return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight, debris: flight.debris, hold: input.hold };
+  return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight, debris: flight.debris, hold: input.hold, clock: flight.clock };
 }
 
 // How far the predicted path reaches from the craft (up, down, sideways in
@@ -290,13 +290,29 @@ function extentOf(view, prediction) {
   return { up, down, side };
 }
 
+// The other bodies as seen from the current one: its children and its
+// parent, at their places on the clock.
+function otherBodies(src, clock) {
+  const out = [];
+  for (const child of childrenOf(src.body)) {
+    const p = bodyState(child, clock);
+    out.push({ body: child, terrain: src.terrainOf(child), offset: { x: p.x, y: p.y } });
+  }
+  if (src.body.parent) {
+    const p = bodyState(src.body, clock);
+    out.push({ body: BODIES[src.body.parent], terrain: src.terrainOf(BODIES[src.body.parent]), offset: { x: -p.x, y: -p.y } });
+  }
+  return out;
+}
+
 function render(alpha, frameDt) {
   const scene = currentScene(alpha);
   const { view, phase, src } = scene;
+  camera.bodyRadius = src.body.radius;
   const prediction = phase === 'flying' ? predictCoast(view, src.body, src.terrain) : null;
   camera.follow(view, frameDt, extentOf(view, prediction));
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
-  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body: src.body, terrain: src.terrain, prediction, debris: scene.debris });
+  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body: src.body, terrain: src.terrain, prediction, debris: scene.debris, others: otherBodies(src, scene.clock) });
   // Detail inset: the vehicle full-frame whenever the main view draws it small.
   const isNarrow = narrow();
   const box = isNarrow
@@ -335,6 +351,7 @@ mountTitleBlock(titleBlock, {
   of: SCENARIO_ORDER.length,
   date: new Date(),
   met: 0,
+  soi: 'MOON',
   warp: '×1',
   audio: 'ON',
 });
@@ -416,7 +433,7 @@ function frame(nowMs) {
   const metSeconds = Math.floor(scene.view.time);
   if (metSeconds !== lastMetShown) {
     lastMetShown = metSeconds;
-    updateTitleBlock(titleBlock, { met: metSeconds });
+    updateTitleBlock(titleBlock, { met: metSeconds, soi: scene.src.body.name });
   }
   requestAnimationFrame(frame);
 }

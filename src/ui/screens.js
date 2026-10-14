@@ -31,7 +31,7 @@ function cell(label, value, key) {
 }
 
 // Engineering title block: program name, document, sheet number, date, MET, warp, audio.
-export function mountTitleBlock(el, { program, document: doc, sheet, of, date, met = 0, warp = null, audio = null }) {
+export function mountTitleBlock(el, { program, document: doc, sheet, of, date, met = 0, soi = null, warp = null, audio = null }) {
   el.replaceChildren();
   const table = document.createElement('table');
   const head = document.createElement('tr');
@@ -44,6 +44,7 @@ export function mountTitleBlock(el, { program, document: doc, sheet, of, date, m
   table.append(cell('SHEET', `${sheet} OF ${of}`, 'sheet'));
   table.append(cell('DATE', formatDrawingDate(date), 'date'));
   table.append(cell('MET', formatMet(met), 'met'));
+  if (soi !== null) table.append(cell('SOI', soi, 'soi'));
   if (warp !== null) table.append(cell('WARP', warp, 'warp'));
   if (audio !== null) table.append(cell('AUDIO', audio, 'audio'));
   el.append(table);

@@ -9,7 +9,7 @@ import { encodeCommand, decodeCommand } from '../src/core/recording.js';
 import { replayToEnd } from '../src/core/playback.js';
 import { buildTimeline, sampleTimeline } from '../src/core/timeline.js';
 import { createFixedLoop } from '../src/core/loop.js';
-import { MOON, circularSpeed, gravityAt } from '../src/core/body.js';
+import { MOON, EARTH, circularSpeed, gravityAt, bodyState, orbitalPeriod } from '../src/core/body.js';
 import { createCraftState, rk4Step, ROCKET, deltaV } from '../src/core/craft.js';
 import { elementsOf } from '../src/core/orbit.js';
 import { predictCoast } from '../src/core/predict.js';
@@ -130,12 +130,38 @@ test('a long flight is kept on a strided tape', () => {
   assert.equal(tl.at(tl.length - 1).state.x, f.state.x);
 });
 
-test('burning straight up with the lander leaves lunar space', () => {
+test('burning straight up with the lander leaves the Moon far behind', () => {
   const f = createFlight({ seed: 1, scenario: 'descent' });
   let n = 0;
-  while ((f.phase === 'flying') && n < 60 * 3600) { f.step({ ...NONE, full: 1 }); n += 1; }
-  assert.equal(f.phase, 'escaped');
-  assert.ok(f.radius() > 3 * MOON.radius);
+  while (f.phase === 'flying' && f.radius() < MOON.soi && n < 60 * 3600 * 4) { f.step({ ...NONE, full: 1 }); n += 1; }
+  assert.ok(f.radius() >= MOON.soi, `only reached ${(f.radius() / 1000).toFixed(0)} km`);
+});
+
+test('the Earth-Moon system is on the shared scale', () => {
+  assert.ok(Math.abs(gravityAt(EARTH, 0, EARTH.radius).ay + 9.81) < 1e-9);
+  const days = orbitalPeriod(MOON) / 86400;
+  assert.ok(days > 8 && days < 9.5, `Moon period ${days.toFixed(2)} days`);
+  assert.ok(MOON.soi > 6e6 && MOON.soi < 7.5e6, `Moon SOI ${(MOON.soi / 1000).toFixed(0)} km`);
+  const a = bodyState(MOON, 0); const b = bodyState(MOON, 1000);
+  assert.ok(Math.abs(Math.hypot(a.x, a.y) - MOON.orbitRadius) < 1 && Math.abs(Math.hypot(b.x, b.y) - MOON.orbitRadius) < 1);
+  // Velocity agrees with the motion over a second.
+  const c = bodyState(MOON, 1);
+  assert.ok(Math.abs((c.x - a.x) - a.vx) < 0.01 && Math.abs((c.y - a.y) - a.vy) < 0.01);
+});
+
+test('the Earth has a flat pad on land and seas between continents', () => {
+  const t = createTerrain(5, EARTH);
+  assert.ok(t.continents.length >= 4, `${t.continents.length} continents`);
+  const pad = t.height(0);
+  for (let x = t.site.from; x <= t.site.to; x += 5) assert.equal(t.height(x), pad);
+  assert.ok(pad > 0, 'the pad is on land');
+  let water = 0; let land = 0;
+  for (let s = -t.circumference / 2; s < t.circumference / 2; s += 20000) { if (t.isWater(s)) water += 1; else land += 1; }
+  assert.ok(water > 20 && land > 20, `${water} water samples, ${land} land samples`);
+  const f = createFlight({ seed: 1, scenario: 'earthLaunch' });
+  assert.equal(f.body.id, 'earth');
+  assert.equal(f.phase, 'pad');
+  assert.ok(f.altitude() < 1 && f.altitude() > -1);
 });
 
 test('terrain is flat across the landing site, seeded and wraps round', () => {

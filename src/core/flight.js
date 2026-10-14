@@ -4,7 +4,7 @@
 // results card. No DOM.
 
 import { CRAFTS, createCraftState, stepCraft, runEngine, commandedThrottle, lowestPointAltitude, footHalfWidth, totalMass, rk4Step, NO_COMMAND } from './craft.js';
-import { MOON, ESCAPE_RADII, upAngle, normalizeAngle } from './body.js';
+import { BODIES, ESCAPE_RADIUS, upAngle, normalizeAngle } from './body.js';
 import { SCENARIOS } from './scenario.js';
 import { elementsOf } from './orbit.js';
 import { createRng } from './rng.js';
@@ -21,22 +21,29 @@ export const LANDING_LIMITS = Object.freeze({
 // A periapsis this far above the mean radius clears every crater rim: orbit.
 export const ORBIT_MARGIN = 1000; // m
 
-export function createFlight({ seed = 1, scenario = 'descent', body = MOON, limits = LANDING_LIMITS } = {}) {
+export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_LIMITS } = {}) {
   const scn = SCENARIOS[scenario] || SCENARIOS.descent;
   const cfg = CRAFTS[scn.craft];
+  const body = BODIES[scn.body || 'moon'];
   const rng = createRng(seed);
-  const terrain = createTerrain(seed, body);
+  // One terrain per body, made on first use (the Moon's craters are a
+  // long list and an Earth flight may never visit them).
+  const terrains = {};
+  const terrainOf = (b) => { if (!terrains[b.id]) terrains[b.id] = createTerrain(seed, b); return terrains[b.id]; };
+  const terrain = terrainOf(body);
   const recorder = createRecorder({ seed, scenario: scn.id });
   const state = createCraftState(cfg, scn.start(body, terrain));
   const flight = {
     seed,
     scenario: scn,
     cfg,
-    body,
+    body,                     // the body whose sphere of influence the craft is in
     limits,
     rng,
-    terrain,
+    terrain,                  // that body's terrain
+    terrainOf,
     recorder,
+    clock: 0,                 // s since the scenario began; bodies move on this, also on the pad
     tick: 0,
     phase: scn.onPad ? 'pad' : 'flying',   // pad | flying | landed | crashed | escaped
     state,
@@ -49,7 +56,7 @@ export function createFlight({ seed = 1, scenario = 'descent', body = MOON, limi
     up() { return upAngle(flight.state.x, flight.state.y); },
     tilt() { return normalizeAngle(flight.state.angle - flight.up()); },
     // Height of the base plane above the ground directly below (radar altitude).
-    altitude() { return flight.radius() - terrain.groundRadiusAt(flight.state.x, flight.state.y); },
+    altitude() { return flight.radius() - flight.terrain.groundRadiusAt(flight.state.x, flight.state.y); },
     // Vertical (positive up) and horizontal (positive clockwise, +x at the pad) speed over the ground.
     groundSpeeds() {
       const s = flight.state;
@@ -62,6 +69,7 @@ export function createFlight({ seed = 1, scenario = 'descent', body = MOON, limi
       flight.prev = { ...flight.state };
       if (flight.phase === 'pad' || flight.phase === 'flying') recorder.record(flight.tick, cmd);
       flight.tick += 1;
+      flight.clock += dt;
       stepDebris(flight, dt);
       if (flight.phase === 'pad' && !liftoff(flight, cmd, dt)) return;
       if (flight.phase !== 'flying') return;
@@ -93,7 +101,7 @@ export function createFlight({ seed = 1, scenario = 'descent', body = MOON, limi
         flight.events.push({ tick: flight.tick, type: 'orbit' });
       }
       if (lowestPointAltitude(alt, flight.tilt(), s, cfg) <= 0) touchdown(flight);
-      else if (flight.radius() > ESCAPE_RADII * body.radius) {
+      else if (!flight.body.parent && flight.radius() > ESCAPE_RADIUS) {
         flight.phase = 'escaped';
         flight.events.push({ tick: flight.tick, type: 'escaped' });
       }
@@ -134,7 +142,7 @@ function stepDebris(flight, dt) {
     d.angle = normalizeAngle(d.angle + d.angVel * dt);
     d.age += dt;
     const r = Math.hypot(d.x, d.y);
-    if (r <= terrain.groundRadiusAt(d.x, d.y) || r > ESCAPE_RADII * body.radius || d.age > 240) flight.debris.splice(i, 1);
+    if (r <= terrain.groundRadiusAt(d.x, d.y) || d.age > 240) flight.debris.splice(i, 1);
   }
 }
 

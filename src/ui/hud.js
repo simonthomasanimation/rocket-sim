@@ -21,11 +21,14 @@ const ALT_RANGES = [
   { max: 20000, ticks: [0, 5, 10, 15, 20], unit: 'KM' },
   { max: 200000, ticks: [0, 50, 100, 150, 200], unit: 'KM' },
   { max: 600000, ticks: [0, 200, 400, 600], unit: 'KM' },
+  { max: 6000000, ticks: [0, 2000, 4000, 6000], unit: 'KM' },
+  { max: 60000000, ticks: [0, 20, 40, 60], unit: 'MM' },
 ];
 const VEL_RANGES = [
   { max: 30, ticks: [0, 10, 20, 30], unit: 'M/S' },
   { max: 300, ticks: [0, 100, 200, 300], unit: 'M/S' },
   { max: 1000, ticks: [0, 250, 500, 750, 1000], unit: 'M/S' },
+  { max: 4000, ticks: [0, 1000, 2000, 3000, 4000], unit: 'M/S' },
 ];
 
 function chooseRange(ranges, current, value) {
@@ -79,7 +82,7 @@ export function createHud() {
     const ar = ALT_RANGES[altRange];
     const vr = VEL_RANGES[velRange];
     const altVal = Math.max(0, alerts.altitude);
-    const altText = ar.unit === 'M' ? `${altVal.toFixed(0)} M` : `${(altVal / 1000).toFixed(altVal < 100000 ? 1 : 0)} KM`;
+    const altText = ar.unit === 'M' ? `${altVal.toFixed(0)} M` : altVal < 1e6 ? `${(altVal / 1000).toFixed(altVal < 100000 ? 1 : 0)} KM` : `${(altVal / 1e6).toFixed(2)} MM`;
     // Two layouts on the 8px grid: one row, or two rows for phones.
     const L = narrow
       ? { r: 4.5 * G, d1: 6 * G, d2: 16 * G, rx: 22 * G, rw: 12 * G, t1: 37 * G, t2: 43 * G, row2: 11 * G, rose: 6 * G, ox: 12 * G, ow: 12 * G, sx: 26 * G, sw: 12 * G, stack: 41 * G, cap: 999 * G }

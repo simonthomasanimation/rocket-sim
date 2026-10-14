@@ -39,7 +39,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Milestone build kept in snapshots/m2-orbit.html
 
 ## M3 Earth–Moon
-- [ ] Scaled Earth–Moon system on shared scale rules; Moon orbits Earth
+- [x] Scaled Earth–Moon system on shared scale rules; Moon orbits Earth
 - [ ] Thin Earth atmosphere with simple drag; dashed atmosphere ring
 - [ ] Patched conics: SOI spheres, handoff, prediction across SOI changes with encounter marker
 - [ ] Time warp 1x–100,000x: on-rails ladder above the ×64 physics ladder per docs/time-warp-reference.md; per-body caps by height, no rails warp in an atmosphere or with the engine on; warp-to-event (Ap, Pe, SOI, atmosphere entry, time)

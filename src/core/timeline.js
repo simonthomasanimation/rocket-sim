@@ -31,7 +31,7 @@ export function buildTimeline(recording, { maxTicks = 60 * 60 * 90, maxFrames = 
     const alerts = computeAlerts(flight, prediction);
     capcom.update(flight, alerts);
     if (force || flight.tick % stride === 0) {
-      frames.push({ tick: flight.tick, state: { ...flight.state }, debris: flight.debris.map((d) => ({ ...d })), phase: flight.phase, alerts, capcom: capcom.latest });
+      frames.push({ tick: flight.tick, clock: flight.clock, state: { ...flight.state }, debris: flight.debris.map((d) => ({ ...d })), phase: flight.phase, alerts, capcom: capcom.latest });
     }
   }
 

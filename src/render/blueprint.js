@@ -66,13 +66,19 @@ export const STROKE = { structure: 1.5, annotation: 0.75 };
 export const STRATA = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
 export const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
 
-// scene: { state, cfg, phase, body, terrain, prediction, debris }
+// scene: { state, cfg, phase, body, terrain, prediction, debris, others }
+// others: [{ body, terrain, offset: { x, y } }] bodies drawn at an offset
+// from the current body's centre (the Moon seen from Earth, and the reverse).
 export function drawScene(ctx, cam, scene) {
-  const { state, cfg, phase, body, terrain, prediction, debris } = scene;
+  const { state, cfg, phase, body, terrain, prediction, debris, others } = scene;
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, cam.top, cam.width, cam.height);
   ctx.clip();
+  for (const o of others || []) {
+    const shifted = shiftedCamera(cam, o.offset.x, o.offset.y);
+    drawBody(ctx, shifted, o.body, o.terrain, { x: state.x - o.offset.x, y: state.y - o.offset.y }, true);
+  }
   drawBody(ctx, cam, body, terrain, state);
   drawAltitudeRuler(ctx, cam, body, terrain, state);
   if (phase === 'flying' && prediction) drawPrediction(ctx, cam, prediction, body);
@@ -253,17 +259,42 @@ export function formatDistance(m) {
   return `${sign}${(a / 1000).toFixed(0)} KM`;
 }
 
-// The Moon: its surface as one structure line following the terrain,
-// diagonal hatching beneath it when close, stipple across the disc when far,
-// basins circled with hatched rims, small crater rims ticked, the landing
-// site bracketed and the pad with its gantry.
-function drawBody(ctx, cam, body, terrain, state) {
+// A camera whose world origin sits at an offset from the real one: used to
+// draw a second body at its place relative to the current one.
+function shiftedCamera(cam, ox, oy) {
+  return {
+    scale: cam.scale, rot: cam.rot, width: cam.width, height: cam.height, top: cam.top, left: cam.left || 0,
+    toScreen: (wx, wy) => cam.toScreen(wx + ox, wy + oy),
+    toScreenVec: cam.toScreenVec,
+    toWorld: (sx, sy) => { const p = cam.toWorld(sx, sy); return { x: p.x - ox, y: p.y - oy }; },
+    frameAt: cam.frameAt,
+  };
+}
+
+// A body: its surface as one structure line following the terrain, diagonal
+// hatching beneath it when close, stipple (Moon) or contour lines (Earth)
+// when far, basins circled with hatched rims, small crater rims ticked, the
+// landing site bracketed and the pad with its gantry. `far` is a body other
+// than the one the craft orbits: drawn whole, without the ground furniture.
+function drawBody(ctx, cam, body, terrain, state, far = false) {
   const R = body.radius;
   const s = cam.scale;
   const W = cam.width; const H = cam.height;
   const thetaC = Math.atan2(state.x, state.y);
   const diag = Math.hypot(W, H);
-  const half = Math.min(Math.PI, (diag / s) / R + 0.002);
+  const centre = cam.toScreen(0, 0);
+  if (far) {
+    // Off the sheet entirely, or too small to be more than a dot.
+    const Rpx = R * s;
+    if (centre.x < -Rpx - 40 || centre.x > W + Rpx + 40 || centre.y < cam.top - Rpx - 40 || centre.y > cam.top + H + Rpx + 40) return;
+    if (Rpx < 2) {
+      ctx.strokeStyle = BLUEPRINT.ink; ctx.lineWidth = STROKE.annotation;
+      ctx.beginPath(); ctx.arc(centre.x, centre.y, 2.5, 0, Math.PI * 2); ctx.stroke();
+      label(ctx, body.name, centre.x + 7, centre.y + 5, 'left', BLUEPRINT.inkPale);
+      return;
+    }
+  }
+  const half = far ? Math.PI : Math.min(Math.PI, (diag / s) / R + 0.002);
   const full = half >= Math.PI;
   let n = Math.ceil((2 * half) / (2 / (s * R)));
   n = Math.max(32, Math.min(3000, n));
@@ -290,6 +321,49 @@ function drawBody(ctx, cam, body, terrain, state) {
   }
   if (full) ctx.closePath();
   ctx.stroke();
+
+  // Earth: contour lines across the continents at round heights, and a
+  // dashed line under the sea.
+  if (body.texture === 'earth') {
+    const levels = [100, 200, 400, 800];
+    ctx.lineWidth = STROKE.annotation;
+    for (const level of levels) {
+      if (level * s < 5) continue;
+      ctx.strokeStyle = BLUEPRINT.inkPale;
+      ctx.globalAlpha = Math.min(1, (level * s - 5) / 10);
+      ctx.beginPath();
+      let pen = false;
+      for (let k = 0; k <= n; k++) {
+        const th = theta0 + k * dTheta;
+        const h = terrain.height(th * R);
+        if (h >= level) {
+          const r = R + level;
+          const p = cam.toScreen(Math.sin(th) * r, Math.cos(th) * r);
+          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+          pen = true;
+        } else pen = false;
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    if (s >= 0.02) {
+      ctx.strokeStyle = BLUEPRINT.inkPale;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      let pen = false;
+      const off = Math.min(6, Math.max(3, 2 * s)) / s;
+      for (let k = 0; k <= n; k++) {
+        const th = theta0 + k * dTheta;
+        if (terrain.isWater(th * R)) {
+          const p = cam.toScreen(Math.sin(th) * (R - off), Math.cos(th) * (R - off));
+          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+          pen = true;
+        } else pen = false;
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
 
   // Hatch band under the surface: 45-degree strokes between "down" and
   // "along", anchored to arc positions so they scroll with the ground.
@@ -347,7 +421,7 @@ function drawBody(ctx, cam, body, terrain, state) {
 
   // Surface ticks: distance along the ground from the pad, at a round step,
   // so sideways motion and horizontal scale read at every zoom.
-  {
+  if (!far) {
     const step = niceStep(s, 90, 220);
     const arc0 = Math.floor(((thetaC - half) * R) / step) * step;
     const arc1 = (thetaC + half) * R;
@@ -437,7 +511,7 @@ function drawBody(ctx, cam, body, terrain, state) {
   }
 
   // Landing site brackets, the pad and its gantry.
-  if (s >= 0.08) {
+  if (!far && s >= 0.08) {
     ctx.lineWidth = STROKE.annotation;
     ctx.strokeStyle = BLUEPRINT.ink;
     const site = terrain.site;

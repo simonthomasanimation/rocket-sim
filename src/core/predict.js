@@ -5,7 +5,7 @@
 
 import { rk4Step } from './craft.js';
 import { elementsOf } from './orbit.js';
-import { ESCAPE_RADII } from './body.js';
+import { ESCAPE_RADIUS } from './body.js';
 
 // options: maxTime (s) stops early, used by the alert rules which only care
 // about the next few seconds; maxSteps bounds the work per call.
@@ -49,7 +49,7 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
       break;
     }
     points.push({ x: s.x, y: s.y, t });
-    if (r > ESCAPE_RADII * R) { escaped = true; break; }
+    if (r > (Number.isFinite(body.soi) ? body.soi : ESCAPE_RADIUS)) { escaped = true; break; }
     const ang = Math.atan2(s.x, s.y);
     let d = ang - prevAngle;
     if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
