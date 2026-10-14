@@ -1,5 +1,6 @@
 # Decisions log (one line each, newest first)
 
+- 2026-10-14 — Milestone 3 gate closed by the owner after a day of playtest fixes (camera, warp, rings, ghosts, instruments). Milestone 4, the builder, is next.
 - 2026-10-14 — No closest-approach ghost: a body drawn where it will be at the path's nearest pass read as a second Moon (owner). Only the encounter ghost (where the path enters a sphere) is drawn, as a dotted disc with MOON WILL BE HERE AT T-…, never with a sphere ring. The core helper closestApproach stays for a later transfer gauge (M6).
 - 2026-10-14 — View lock: L pins the craft to the middle of the sheet (and the map) at any zoom, kept across flights until pressed again. Predicted path segments fade by 30 % per change of sphere (floor 30 %) so overlapping loops read in time order; the ghost of a body where the path enters its sphere always gets a disc and a name.
 - 2026-10-14 — Warp and the engine: an open throttle blocks the rails only while there is fuel to burn; the physics warp is capped at ×8 while the engine burns (a tank at ×64 is gone in seconds, and a Moon-bound path turns into an escape before the player can cut); every refused warp press gets a CAPCOM reason.
