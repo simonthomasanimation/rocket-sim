@@ -12,7 +12,7 @@ import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene } from './render/blueprint.js';
 import { mountTitleBlock, updateTitleBlock, mountPage, unmountPage, reportPage, startPage } from './ui/screens.js';
-import { createInput } from './ui/input.js';
+import { createInput, keyLabels } from './ui/input.js';
 import { createHud, HUD_HEIGHT } from './ui/hud.js';
 import { createTransport } from './ui/transport.js';
 import { createMixer } from './audio/mixer.js';
@@ -56,7 +56,7 @@ function closePage() {
   pageOpen = null;
   unmountPage(pageRoot);
   input.setButtonsVisible(true);
-  if (!replay) loop.resume();
+  if (!replay && !userPaused) loop.resume();
 }
 
 function handleAction(action) {
@@ -65,7 +65,16 @@ function handleAction(action) {
   if (action === 'replay') { closePage(); startReplay(); return; }
 }
 
+// P holds the live flight; P again (or any restart) lets it go.
+let userPaused = false;
+function togglePause() {
+  userPaused = !userPaused;
+  if (userPaused) loop.pause(); else loop.resume();
+  updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : 'BLUEPRINT' });
+}
+
 function restart() {
+  userPaused = false;
   if (replay) exitReplay(false);
   else if (flight.tick > 0) lastRecording = flight.recording();
   flight = createFlight({ seed: 1 });
@@ -73,6 +82,7 @@ function restart() {
   alerts = null;
   reportDueAt = null;
   loop.reset();
+  if (!pageOpen) loop.resume();
   camera.snap(flight.state);
   lastMetShown = -1;
   updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
@@ -111,7 +121,7 @@ function exitReplay(showReport = true) {
   camera.snap(flight.state);
   updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
   if (showReport && finished.phase !== 'flying') openPage('report', reportPage(finished));
-  else if (showReport) loop.resume(); // the live flight carries on where it was
+  else if (showReport && !userPaused) loop.resume(); // the live flight carries on where it was
 }
 
 function onTransport(action, value) {
@@ -226,6 +236,7 @@ function frame(nowMs) {
     if (pageOpen === 'report' && action === 'confirm') { closePage(); restart(); continue; }
     if (action === 'restart') { closePage(); restart(); }
     if (action === 'replay') { closePage(); startReplay(); }
+    if (action === 'pause' && !pageOpen) togglePause();
     if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
   }
   // Any flight command dismisses the start card too.
@@ -260,10 +271,14 @@ function frame(nowMs) {
 requestAnimationFrame(frame);
 openPage('start', startPage());
 loop.pause();
+// Relabel the card with the keys as printed on this keyboard, once known.
+keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX']).then((keys) => {
+  if (pageOpen === 'start') openPage('start', startPage(keys));
+});
 
 // Pause the clock while the tab is hidden; resume cleanly when it comes back.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) loop.pause(); else if (!pageOpen && !replay) loop.resume();
+  if (document.hidden) loop.pause(); else if (!pageOpen && !replay && !userPaused) loop.resume();
 });
 
 surface.onResize(() => { layout(); render(0, 0); });

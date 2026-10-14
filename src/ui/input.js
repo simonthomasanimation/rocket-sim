@@ -2,14 +2,18 @@
 // tick for the simulation. The sim never sees key codes, only the command
 // { thr, rot, full, cut } and one-shot actions such as 'restart'.
 //
-// Keys: Shift / Up / W throttle up, Ctrl / Down / S throttle down, Z full,
-// X cut, A / Left rotate left, D / Right rotate right, R restart, P replay,
-// M mute.
+// Flight controls are read by physical key position (e.code) so WASD on a
+// QWERTY keyboard is ZQSD on a French one without any setup: Shift / Up /
+// W-position throttle up, Ctrl / Down / S throttle down, Z-position full,
+// X cut, A-position / Left rotate left, D / Right rotate right.
+//
+// One-shot actions are read by the letter actually typed (e.key) so the key
+// marked M mutes on every layout: R restart, P pause, M mute, V replay.
 //
 // In replay mode the keys become a transport: J play backwards (again for
-// faster), K pause, L play forwards (again for faster), Space play/pause,
-// Left / Right (or , and .) step one tick and repeat while held, Home / End
-// jump to the start / end, Esc exits.
+// faster), K or P pause, L play forwards (again for faster), Space
+// play/pause, Left / Right (or , and .) step one tick and repeat while held,
+// Home / End jump to the start / end, Esc exits.
 
 const KEYS = {
   ShiftLeft: 'thrUp', ShiftRight: 'thrUp', ArrowUp: 'thrUp', KeyW: 'thrUp',
@@ -18,14 +22,34 @@ const KEYS = {
   ArrowLeft: 'rotLeft', KeyA: 'rotLeft',
   ArrowRight: 'rotRight', KeyD: 'rotRight',
 };
-const ACTIONS = { KeyR: 'restart', KeyP: 'replay', KeyM: 'mute', Enter: 'confirm', Space: 'confirm', Escape: 'back' };
-const REPLAY_ACTIONS = {
-  KeyJ: 'rev', KeyK: 'pause', KeyL: 'fwd', Space: 'toggle',
-  ArrowLeft: 'stepBack', Comma: 'stepBack', ArrowRight: 'stepFwd', Period: 'stepFwd',
+// Actions by typed character (layout-aware) and by physical code.
+const ACTIONS_BY_KEY = { r: 'restart', p: 'pause', m: 'mute', v: 'replay' };
+const ACTIONS_BY_CODE = { Enter: 'confirm', Space: 'confirm', Escape: 'back' };
+const REPLAY_BY_KEY = { j: 'rev', k: 'pause', p: 'pause', l: 'fwd', ',': 'stepBack', '.': 'stepFwd', r: 'restart', m: 'mute' };
+const REPLAY_BY_CODE = {
+  Space: 'toggle', ArrowLeft: 'stepBack', ArrowRight: 'stepFwd',
   Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit',
-  KeyR: 'restart', KeyM: 'mute',
 };
 const REPEATABLE = new Set(['stepBack', 'stepFwd']);
+
+function actionFor(e, byKey, byCode) {
+  const typed = typeof e.key === 'string' && e.key.length === 1 ? e.key.toLowerCase() : null;
+  return (typed && byKey[typed]) || byCode[e.code] || null;
+}
+
+// Labels for physical keys as printed on this keyboard (Chrome exposes the
+// layout map; elsewhere fall back to the QWERTY letters).
+export async function keyLabels(codes) {
+  const out = {};
+  for (const c of codes) out[c] = c.replace(/^Key/, '');
+  try {
+    if (navigator.keyboard && navigator.keyboard.getLayoutMap) {
+      const map = await navigator.keyboard.getLayoutMap();
+      for (const c of codes) { const k = map.get(c); if (k) out[c] = k.toUpperCase(); }
+    }
+  } catch { /* keep the fallback */ }
+  return out;
+}
 
 // On-screen buttons: label, control, and where they sit (left or right cluster).
 const BUTTONS = [
@@ -54,7 +78,7 @@ export function createInput({ touchRoot } = {}) {
 
   window.addEventListener('keydown', (e) => {
     if (mode === 'replay') {
-      const action = REPLAY_ACTIONS[e.code];
+      const action = actionFor(e, REPLAY_BY_KEY, REPLAY_BY_CODE);
       if (!action) return;
       e.preventDefault();
       if (e.repeat && !REPEATABLE.has(action)) return;
@@ -62,11 +86,11 @@ export function createInput({ touchRoot } = {}) {
       actions.push(action);
       return;
     }
-    if (e.repeat) { if (KEYS[e.code] || ACTIONS[e.code]) e.preventDefault(); return; }
+    const action = actionFor(e, ACTIONS_BY_KEY, ACTIONS_BY_CODE);
+    if (e.repeat) { if (KEYS[e.code] || action) e.preventDefault(); return; }
     gesture();
     const control = KEYS[e.code];
     if (control) { held.add(control); e.preventDefault(); return; }
-    const action = ACTIONS[e.code];
     if (action) { actions.push(action); e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => {

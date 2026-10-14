@@ -163,7 +163,7 @@ export function reportPage(flight) {
   const deg = (limits.tilt * 180) / Math.PI;
   const buttons = [
     { label: 'FLY AGAIN', key: 'R', action: 'restart' },
-    { label: 'WATCH REPLAY', key: 'P', action: 'replay' },
+    { label: 'WATCH REPLAY', key: 'V', action: 'replay' },
   ];
   if (!td) {
     // No touchdown: the flight climbed out of the training area.
@@ -208,7 +208,9 @@ export function reportPage(flight) {
   };
 }
 
-export function startPage() {
+// keys: labels for KeyW, KeyS, KeyA, KeyD, KeyZ, KeyX as printed on the
+// player's keyboard (see keyLabels in input.js).
+export function startPage(keys = { KeyW: 'W', KeyS: 'S', KeyA: 'A', KeyD: 'D', KeyZ: 'Z', KeyX: 'X' }) {
   return {
     section: 'SECTION 1 — LUNAR DESCENT TRAINER',
     title: 'DESCENT CARD',
@@ -216,9 +218,9 @@ export function startPage() {
     lines: [
       'You are 150 m above the Moon, drifting and sinking.',
       'Land with vertical speed under 3 m/s, sideways under 1 m/s, within 10° of upright.',
-      'THROTTLE: Shift / Up to raise, Ctrl / Down to lower, Z full, X cut.',
-      'TILT: A / Left and D / Right. The engine pushes the way the top leans.',
-      'R restarts at any time. P replays the last flight. M mutes the sound.',
+      `THROTTLE: ${keys.KeyW} or Up to raise, ${keys.KeyS} or Down to lower (Shift / Ctrl work too). ${keys.KeyZ} full, ${keys.KeyX} cut.`,
+      `TILT: ${keys.KeyA} / Left and ${keys.KeyD} / Right. The engine pushes the way the top leans.`,
+      'P pauses. R restarts at any time. V replays the last flight. M mutes the sound.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',
