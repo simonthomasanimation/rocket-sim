@@ -1731,29 +1731,70 @@ const ALTITUDE_BANDS = [
   [Infinity, 64],
 ];
 
+// Highest physics warp while the engine burns: at x64 a whole tank goes in
+// a few real seconds and a path set to meet the Moon balloons into an
+// escape before the player can cut (owner's report, 14 Oct).
+const BURN_WARP = 8;
+
+function burning(flight) {
+  const s = flight.state;
+  return s.throttle > 0 && s.fuel > 0;
+}
+
 // Highest physics warp allowed for the flight right now.
 function maxPhysicsWarp(flight) {
   if (flight.phase !== 'flying') return 64;
+  let cap = 64;
   // Under a canopy there is nothing left to fly: the descent may run at x64.
   const chute = flight.state.chute;
-  if (chute && chute !== 2) return 64;
-  const alt = flight.altitude();
-  for (const [limit, cap] of ALTITUDE_BANDS) if (alt < limit) return cap;
-  return 64;
+  if (!(chute && chute !== 2)) {
+    const alt = flight.altitude();
+    for (const [limit, c] of ALTITUDE_BANDS) if (alt < limit) { cap = c; break; }
+  }
+  if (burning(flight)) cap = Math.min(cap, BURN_WARP);
+  return cap;
 }
 
 // Whether rails level `level` (1..4) may run right now: coasting with the
 // engine off, no parachute out, clear of any atmosphere and above the floor.
 function railsAllowed(flight, level) {
-  if (level < 1 || level > RAILS.length) return false;
-  if (flight.phase !== 'flying') return false;
+  return railsBlocker(flight, level) === null;
+}
+
+// Why rails level `level` may not run right now, in CAPCOM's words, or null
+// when it may. An open throttle only counts while there is fuel to burn:
+// a tank run dry with the throttle still at full is a coast, and the
+// warp must not stay stuck at x64 for it (owner's report, 14 Oct).
+function railsBlocker(flight, level) {
+  if (level < 1 || level > RAILS.length) return 'No such warp.';
+  if (flight.phase !== 'flying') return 'Rails warp is for a flight under way.';
   const s = flight.state;
-  if (s.throttle > 0 || s.thrust > 0 || (s.chute && s.chute !== 2)) return false;
+  if ((s.throttle > 0 && s.fuel > 0) || s.thrust > 0) return 'Throttle is open. Rails warp needs the engine shut: cut it first.';
+  if (s.chute && s.chute !== 2) return 'Rails warp is off under a canopy. Ride it down at x64.';
   const body = flight.body;
   const alt = flight.radius() - body.radius;
-  if (body.atmosphere && alt < body.atmosphere.height + 2000) return false;
+  if (body.atmosphere && alt < body.atmosphere.height + 2000) return `Still in the air. Rails warp from ${Math.round((body.atmosphere.height + 2000) / 1000)} km up.`;
   const floor = RAILS[level - 1].floors[body.id];
-  return floor !== undefined && alt >= floor;
+  if (floor === undefined) return 'No rails warp here.';
+  if (alt < floor) return `Too low for x${RAILS[level - 1].rate.toLocaleString('en')} here: it needs ${Math.round(floor / 1000)} km over the ${body.name.toLowerCase()}.`;
+  return null;
+}
+
+// Why the warp will not go above the highest level allowed right now, in
+// CAPCOM's words, or null when the top of the ladder is open.
+function warpLimitReason(flight, eventIn = Infinity) {
+  const cap = maxPhysicsWarp(flight);
+  if (cap < 64) {
+    if (burning(flight) && cap === BURN_WARP) return `Engine burning: the warp holds at x${BURN_WARP} so the burn stays in hand. Cut it for more.`;
+    return `Too close to the ground for more than x${cap}.`;
+  }
+  for (let level = 1; level <= RAILS.length; level++) {
+    const why = railsBlocker(flight, level);
+    if (why) return why;
+    const step = RAILS[level - 1].rate / 60;
+    if (eventIn < step * 3) return `An event is coming up in ${Math.round(eventIn)} s: the warp holds here until it is past.`;
+  }
+  return null;
 }
 
 // Index on the ladder of the highest warp allowed. `eventIn` is the time
@@ -1779,8 +1820,12 @@ __exports.WARP_LADDER = WARP_LADDER;
 __exports.PHYSICS_LEVELS = PHYSICS_LEVELS;
 __exports.railsLevel = railsLevel;
 __exports.ALTITUDE_BANDS = ALTITUDE_BANDS;
+__exports.BURN_WARP = BURN_WARP;
+__exports.burning = burning;
 __exports.maxPhysicsWarp = maxPhysicsWarp;
 __exports.railsAllowed = railsAllowed;
+__exports.railsBlocker = railsBlocker;
+__exports.warpLimitReason = warpLimitReason;
 __exports.maxWarpIndex = maxWarpIndex;
 return __exports;
 })();
@@ -2467,6 +2512,13 @@ function createCapcom() {
   return {
     log,
     get latest() { return log[log.length - 1] || null; },
+    // A line said on request (the game explaining a refused control, for
+    // instance); unlike the bank it may be said again later.
+    remark(text, tick) {
+      const last = log[log.length - 1];
+      if (last && last.text === text && tick - last.tick < 300) return;
+      log.push({ key: `remark${tick}`, text, tick, critical: false });
+    },
     // Call once per tick with the flight and its current alerts.
     update(flight, alerts) {
       const t = flight.tick;
@@ -5986,7 +6038,7 @@ const { createCapcom } = __m("src/core/capcom.js");
 const { buildTimeline, sampleTimeline } = __m("src/core/timeline.js");
 const { deltaV, twr, activeStage, progradeAngle, dragFactor, MAIN_HEIGHT } = __m("src/core/craft.js");
 const { SCENARIOS, SCENARIO_ORDER } = __m("src/core/scenario.js");
-const { WARP_LADDER, maxWarpIndex, railsLevel } = __m("src/core/warp.js");
+const { WARP_LADDER, maxWarpIndex, railsLevel, warpLimitReason, burning } = __m("src/core/warp.js");
 const { BODIES, bodyState, childrenOf } = __m("src/core/body.js");
 const { createSurface } = __m("src/render/surface.js");
 const { createCamera } = __m("src/render/camera.js");
@@ -6028,7 +6080,8 @@ let lastRecording = null;   // the most recent live flight, for replay
 const SPEEDS = WARP_LADDER.slice(0, 13); // the replay shuttle stops at x64
 const WARPS = WARP_LADDER;
 let warp = 0;
-let lastPrediction = null;  // the drawn (long) prediction: event times for the warp rules
+let lastPrediction = null;
+let hadEncounter = null;    // body id of the encounter on the last frame's path, for the burn calls  // the drawn (long) prediction: event times for the warp rules
 let warpTo = null;          // { at: clock, name } while warping to an event
 // Time to the next hard event on the predicted path, if one is known.
 function eventIn() {
@@ -6177,7 +6230,17 @@ function setPaused(value) {
 function togglePause() { setPaused(!userPaused); }
 // Right arrow: a notch faster, or play again from pause. Left arrow: a
 // notch slower, down to x1 (Space is the pause).
-function warpUp() { warpTo = null; if (userPaused) setPaused(false); else setWarp(warp + 1); }
+function warpUp() {
+  warpTo = null;
+  if (userPaused) { setPaused(false); return; }
+  const before = warp;
+  setWarp(warp + 1);
+  // A press that gets nowhere is answered: CAPCOM says what holds the warp.
+  if (warp === before && warp < WARPS.length - 1) {
+    const why = warpLimitReason(flight, eventIn());
+    if (why) capcom.remark(why, flight.tick);
+  }
+}
 function warpDown() { warpTo = null; if (!userPaused) setWarp(warp - 1); }
 
 function restart() {
@@ -6393,7 +6456,17 @@ function render(alpha, frameDt) {
   const { view, phase, src, body, terrain } = scene;
   aimCamera(body, terrain, view);
   const prediction = phase === 'flying' ? predictCoast(view, body, terrain, { drag: dragFactor(view, src.cfg), clock: scene.clock, terrainOf: src.terrainOf }) : null;
-  if (!replay) lastPrediction = prediction;
+  if (!replay) {
+    lastPrediction = prediction;
+    // An encounter gained or lost while the engine burns is called at once:
+    // the moment to cut is the moment the Moon lands on the path.
+    const enc = prediction && prediction.encounter ? prediction.encounter.body : null;
+    if (phase === 'flying' && burning(flight)) {
+      if (enc && !hadEncounter) capcom.remark(`${BODIES[enc].name} is on your path. Cut the engine now to keep it.`, flight.tick);
+      else if (!enc && hadEncounter) capcom.remark(`${BODIES[hadEncounter].name} encounter lost: the burn has gone long. Cut the engine and re-plan on the map.`, flight.tick);
+    }
+    hadEncounter = enc;
+  }
   const extent = extentOf(view, prediction);
   lastExtent = extent;
   camera.follow(view, frameDt, extent);
