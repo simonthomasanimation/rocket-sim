@@ -434,12 +434,15 @@ function render(alpha, frameDt) {
     return scene;
   }
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
-  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body, terrain, prediction, debris: scene.debris, others: otherBodies(src, body, scene.clock) });
   // Detail inset: the vehicle full-frame whenever the main view draws it small.
   const isNarrow = narrow();
   const box = isNarrow
     ? { x: surface.width - 16 - 136, y: 16 + (titleBlock.offsetHeight || 170) + 8, w: 136, h: 168 }
     : { x: surface.width - 16 - 240, y: 16, w: 240, h: 272 };
+  // Corners the sheet's edge pointers keep clear of: the inset and the title block.
+  const tb = titleBlock.getBoundingClientRect();
+  const avoid = [box, { x: tb.left, y: tb.top, w: tb.width, h: tb.height }];
+  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body, terrain, prediction, debris: scene.debris, others: otherBodies(src, body, scene.clock), avoid });
   drawDetail(surface.ctx, camera, { state: view, cfg: src.cfg, phase, debris: scene.debris }, box);
   const a = scene.alerts || alerts || computeAlerts(src, prediction);
   hud.update(view, a, scene.capcom, frameDt);

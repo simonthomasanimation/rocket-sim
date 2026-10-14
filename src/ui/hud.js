@@ -118,13 +118,14 @@ export function createHud() {
     if (info.stages) stack(ctx, L.stack, oy + 11 * G, info.stages);
 
     // CAPCOM line: in the strip when there is room, else top left of the
-    // sheet beside the title block, wrapped onto two lines.
+    // sheet beside the title block; wrapped onto two lines either way, so a
+    // long call is not cut short when the strip is narrow.
     const capRight = width - titleBlockWidth - 2 * G;
     const inStrip = !narrow && capRight - L.cap > 160;
     const cx = inStrip ? L.cap : 2 * G;
     const cy = inStrip ? top + 7 * G : 3 * G;
     const maxW = inStrip ? capRight - L.cap : width - 5 * G - titleBlockWidth;
-    capcom(ctx, cx, cy, maxW, capcomLine, capcomRevealed, capcomLine && capcomLine.critical ? (blink2 ? 'critical' : 'none') : 'none', inStrip ? 1 : 2);
+    capcom(ctx, cx, cy, maxW, capcomLine, capcomRevealed, capcomLine && capcomLine.critical ? (blink2 ? 'critical' : 'none') : 'none', 2);
     if (camera) drawScaleBar(ctx, camera, 3 * G, 10 * G);
     if (info.paused) banner(ctx, width / 2, narrow ? 22 * G : 4 * G, 'PAUSED   SPACE TO RESUME');
     ctx.restore();

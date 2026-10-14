@@ -52,6 +52,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Quicker descent under the canopy (owner request, 2026-10-14): ×64 allowed at any height under a canopy, E warps to the main chute under the drogue and to touchdown once the main is full, the main coming out drops the warp so it can be seen
 - [x] Finding the way in space (owner request, 2026-10-14): the Moon's sphere and the edge of Earth's reach drawn as rings whenever on the sheet, edge pointers with name and distance to bodies off the sheet, the body named when it is a dot, the end of a path marked (leaves Earth's reach, in accent, or prediction ends), CAPCOM warns of an escape
 - [x] Earth landscape (owner request, 2026-10-14): coastal pad, plains and hill country, mountain ranges to 4.5 km with contour lines, islands, seas with water lines and labels; the camera frames against the local ground
+- [x] Sheet tidy-up on small screens (2026-10-14): edge pointers keep clear of the title block and the Detail A inset, run along the horizon rather than into the ground when the body is below it, and are not drawn for the body the craft is standing on; the far-side ground label is printed once, not twice; a long CAPCOM call wraps onto two lines in the strip instead of being cut short
 
 ## M4 Builder
 - [ ] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class)

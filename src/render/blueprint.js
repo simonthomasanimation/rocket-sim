@@ -69,11 +69,13 @@ export const CHUTE_RADIUS = 7;   // canopy radius, metres
 export const CHUTE_RISE = 14;    // canopy centre above the craft's top, metres
 export const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
 
-// scene: { state, cfg, phase, body, terrain, prediction, debris, others }
+// scene: { state, cfg, phase, body, terrain, prediction, debris, others, avoid }
 // others: [{ body, terrain, offset: { x, y } }] bodies drawn at an offset
 // from the current body's centre (the Moon seen from Earth, and the reverse).
+// avoid: [{ x, y, w, h }] screen rectangles taken by the sheet furniture
+// (the Detail A inset, the title block) that edge pointers keep clear of.
 export function drawScene(ctx, cam, scene) {
-  const { state, cfg, phase, body, terrain, prediction, debris, others } = scene;
+  const { state, cfg, phase, body, terrain, prediction, debris, others, avoid } = scene;
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, cam.top, cam.width, cam.height);
@@ -85,10 +87,19 @@ export function drawScene(ctx, cam, scene) {
   drawBody(ctx, cam, body, terrain, state);
   // Pointers to the bodies that are off the sheet: the one the craft
   // orbits, and the others (the Moon from Earth's sphere, Earth from the Moon's).
+  // No pointer to the body the craft is standing on or skimming: with the
+  // ground within a sheet's height below, the altitude ruler says it all.
   {
     const craft = cam.toScreen(state.x, state.y);
-    drawEdgePointer(ctx, cam, body, cam.toScreen(0, 0), craft, Math.hypot(state.x, state.y));
-    for (const o of others || []) drawEdgePointer(ctx, cam, o.body, cam.toScreen(o.offset.x, o.offset.y), craft, Math.hypot(state.x - o.offset.x, state.y - o.offset.y));
+    const r = Math.hypot(state.x, state.y);
+    const gr = terrain.groundRadiusAt(state.x, state.y);
+    const ground = cam.toScreen((state.x / r) * gr, (state.y / r) * gr);
+    // The ground reads as a horizon line only when the disc dwarfs the sheet.
+    const horizon = body.radius * cam.scale > 4 * Math.max(cam.width, cam.height);
+    const floorY = horizon && ground.y > cam.top && ground.y < cam.top + cam.height ? ground.y : Infinity;
+    const opts = { avoid: avoid || [], floorY };
+    if ((r - gr) * cam.scale > cam.height) drawEdgePointer(ctx, cam, body, cam.toScreen(0, 0), craft, r, opts);
+    for (const o of others || []) drawEdgePointer(ctx, cam, o.body, cam.toScreen(o.offset.x, o.offset.y), craft, Math.hypot(state.x - o.offset.x, state.y - o.offset.y), opts);
   }
   drawAltitudeRuler(ctx, cam, body, terrain, state);
   if (phase === 'flying' && prediction) drawPrediction(ctx, cam, prediction, body);
@@ -463,6 +474,9 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
     const band = s >= 0.25 ? Math.min(48, Math.max(16, 4 * s)) : 0;
     ctx.strokeStyle = BLUEPRINT.ink;
     ctx.lineWidth = STROKE.annotation;
+    const placed = []; // label spots taken: round the far side of a small
+                       // body the ticks from both directions meet, and one
+                       // label there is enough
     for (let arc = arc0; arc <= arc1; arc += step) {
       const wrapped = terrain.wrap(arc);
       const theta = wrapped / R;
@@ -475,6 +489,8 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
       ctx.stroke();
       const lx = p.x - f.up.x * (band + 14); const ly = p.y - f.up.y * (band + 14);
       if (lx < 120) continue; // the altitude ruler's column
+      if (placed.some((q) => Math.hypot(q.x - lx, q.y - ly) < 56)) continue;
+      placed.push({ x: lx, y: ly });
       label(ctx, Math.abs(wrapped) < 1 ? 'PAD' : formatDistance(wrapped), lx, ly + 5, 'center', BLUEPRINT.inkPale);
     }
   }
@@ -639,23 +655,48 @@ function drawReachRing(ctx, cam, centre, radius, text) {
 // short arrow along the direction from the craft, with the body's name and
 // the distance to its centre, so a craft far out in space can always find
 // the way home. Nothing is drawn while the body's disc is on the sheet.
-function drawEdgePointer(ctx, cam, body, centre, craft, distance) {
+// opts.avoid: rectangles of sheet furniture to keep clear of; opts.floorY:
+// the ground line's screen y when it is on the sheet, which a pointer
+// stays above so it never prints over the surface and its labels.
+function drawEdgePointer(ctx, cam, body, centre, craft, distance, opts = {}) {
   const W = cam.width; const H = cam.height;
   const rp = body.radius * cam.scale;
   if (centre.x > -rp && centre.x < W + rp && centre.y > cam.top - rp && centre.y < cam.top + H + rp) return;
   const dx = centre.x - craft.x; const dy = centre.y - craft.y;
   const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len; const uy = dy / len;
+  let ux = dx / len; let uy = dy / len;
   // Where the ray from the craft leaves the sheet, inset from the edge.
   const inset = 28;
-  const left = inset; const right = W - inset; const top = cam.top + inset; const bottom = cam.top + H - inset;
+  const left = inset; const right = W - inset; const top = cam.top + inset;
+  let bottom = cam.top + H - inset;
+  let ox = craft.x; let oy = craft.y;
+  // With the ground drawn as a horizon, a body below it gets its pointer
+  // along the horizon instead of into the dirt, from a point above the line.
+  if (Number.isFinite(opts.floorY) && opts.floorY - 44 < bottom) {
+    bottom = opts.floorY - 44;
+    if (oy > bottom) oy = bottom;
+    if (uy > 0) { ux = Math.sign(ux) || 1; uy = 0; }
+  }
+  if (bottom <= top) return;
   let t = Infinity;
-  if (ux > 0) t = Math.min(t, (right - craft.x) / ux); else if (ux < 0) t = Math.min(t, (left - craft.x) / ux);
-  if (uy > 0) t = Math.min(t, (bottom - craft.y) / uy); else if (uy < 0) t = Math.min(t, (top - craft.y) / uy);
+  if (ux > 0) t = Math.min(t, (right - ox) / ux); else if (ux < 0) t = Math.min(t, (left - ox) / ux);
+  if (uy > 0) t = Math.min(t, (bottom - oy) / uy); else if (uy < 0) t = Math.min(t, (top - oy) / uy);
   if (!Number.isFinite(t) || t <= 0) return;
-  let px = craft.x + ux * t; let py = craft.y + uy * t;
-  // Keep clear of the Detail A inset in the top right corner.
-  if (px > W - 270 && py < cam.top + 300) { py = cam.top + 300; px = Math.min(px, W - inset); }
+  let px = ox + ux * t; let py = oy + uy * t;
+  // Keep clear of the furniture (the Detail A inset, the title block): slide
+  // the tip the shortest way out of any rectangle it lands in, along the edge.
+  for (const r of opts.avoid || []) {
+    const pad = 10;
+    if (px < r.x - pad || px > r.x + r.w + pad || py < r.y - pad || py > r.y + r.h + pad) continue;
+    const ways = [];
+    if (r.y - pad >= top) ways.push({ x: px, y: r.y - pad, d: py - (r.y - pad) });
+    if (r.y + r.h + pad <= bottom) ways.push({ x: px, y: r.y + r.h + pad, d: r.y + r.h + pad - py });
+    if (r.x - pad >= left) ways.push({ x: r.x - pad, y: py, d: px - (r.x - pad) });
+    if (r.x + r.w + pad <= right) ways.push({ x: r.x + r.w + pad, y: py, d: r.x + r.w + pad - px });
+    if (!ways.length) return;
+    ways.sort((a, b) => a.d - b.d);
+    px = ways[0].x; py = ways[0].y;
+  }
   ctx.strokeStyle = BLUEPRINT.ink;
   ctx.lineWidth = STROKE.structure;
   ctx.beginPath();
@@ -664,8 +705,19 @@ function drawEdgePointer(ctx, cam, body, centre, craft, distance) {
   ctx.moveTo(px, py); ctx.lineTo(px - ux * 7 + uy * 4, py - uy * 7 - ux * 4);
   ctx.stroke();
   const align = px > W * 0.66 ? 'right' : px < W * 0.33 ? 'left' : 'center';
-  const ly = py - uy * 22 + (uy < 0 ? 16 : 4);
-  label(ctx, `${body.name} ${formatDistance(distance)}`, px - ux * 10, ly, align, BLUEPRINT.ink);
+  // The label sits beyond the tail of the arrow, above the shaft when the
+  // arrow is level; either way it takes the first baseline whose box stays
+  // off the furniture and on the sheet.
+  const name = `${body.name} ${formatDistance(distance)}`;
+  const lx = px - ux * 10;
+  const lw = name.length * 7.3;
+  const x0 = align === 'right' ? lx - lw : align === 'left' ? lx : lx - lw / 2;
+  const level = Math.abs(uy) < 0.35;
+  const options = level ? [py - 8, py + 18] : [py - uy * 22 + (uy < 0 ? 16 : 4), py + 18, py - 8];
+  const clear = (y) => y - 10 >= cam.top && y + 3 <= cam.top + H
+    && !(opts.avoid || []).some((r) => x0 < r.x + r.w && x0 + lw > r.x && y - 10 < r.y + r.h && y + 3 > r.y);
+  const ly = options.find(clear) ?? options[0];
+  label(ctx, name, lx, ly, align, BLUEPRINT.ink);
 }
 
 // Earth's ground furniture (see drawBody). `hs` holds the height at each of
