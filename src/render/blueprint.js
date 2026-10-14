@@ -62,6 +62,8 @@ function drawCreases(ctx, W, H, px) {
 // stroke widths stay in pixels (1.5 structure, 0.75 annotation).
 
 export const STROKE = { structure: 1.5, annotation: 0.75 };
+// Depths of the strata lines drawn inside a body, metres.
+export const STRATA = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
 export const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
 
 // scene: { state, cfg, phase, body, terrain, prediction, debris }
@@ -138,6 +140,26 @@ function drawAltitudeRuler(ctx, cam, body, terrain, state) {
     ctx.moveTo(x - (major ? 8 : 4), Math.round(y) + 0.5); ctx.lineTo(x + (major ? 8 : 4), Math.round(y) + 0.5);
     ctx.stroke();
     label(ctx, major ? 'GROUND' : formatDistance(h), x + 10, y + 5, 'left', major ? BLUEPRINT.ink : BLUEPRINT.inkPale);
+  }
+  // Below ground the ruler names the strata lines.
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.setLineDash([3, 5]);
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, groundY); ctx.lineTo(x + 0.5, bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (const d of STRATA) {
+    const px = d * s;
+    const y = groundY + px;
+    if (px < 14 || y > bottom) continue;
+    const alpha = Math.min(1, (px - 14) / 20);
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(x - 4, Math.round(y) + 0.5); ctx.lineTo(x + 4, Math.round(y) + 0.5);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    label(ctx, `-${formatDistance(d)}`, x + 10, y + 5, 'left', BLUEPRINT.inkPale, alpha);
   }
 }
 
@@ -288,6 +310,59 @@ function drawBody(ctx, cam, body, terrain, state) {
     }
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }
+
+  // Strata: dashed depth lines inside the body, concentric with the
+  // surface, at a fixed ladder of depths. They bunch up as the view zooms
+  // out and spread as it zooms in, so the zoom is never silent. Labelled on
+  // the altitude ruler (see drawAltitudeRuler).
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.setLineDash([3, 5]);
+  const bottomPx = cam.top + H;
+  for (const d of STRATA) {
+    const px = d * s;
+    if (px < 14 || d >= R) continue;
+    const top = cam.toScreen(Math.sin(thetaC) * (R - d), Math.cos(thetaC) * (R - d));
+    if (top.y > bottomPx + 20 && !full) continue;
+    const m = Math.max(48, Math.min(600, n));
+    const dT = (2 * half) / m;
+    ctx.globalAlpha = Math.min(1, (px - 14) / 20) * 0.7;
+    ctx.beginPath();
+    for (let k = 0; k <= m; k++) {
+      const th = theta0 + k * dT;
+      const p = cam.toScreen(Math.sin(th) * (R - d), Math.cos(th) * (R - d));
+      if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    }
+    if (full) ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // Surface ticks: distance along the ground from the pad, at a round step,
+  // so sideways motion and horizontal scale read at every zoom.
+  {
+    const step = niceStep(s, 90, 220);
+    const arc0 = Math.floor(((thetaC - half) * R) / step) * step;
+    const arc1 = (thetaC + half) * R;
+    const band = s >= 0.25 ? Math.min(48, Math.max(16, 4 * s)) : 0;
+    ctx.strokeStyle = BLUEPRINT.ink;
+    ctx.lineWidth = STROKE.annotation;
+    for (let arc = arc0; arc <= arc1; arc += step) {
+      const wrapped = terrain.wrap(arc);
+      const theta = wrapped / R;
+      const p = surfaceAt(theta);
+      if (p.x < -40 || p.x > W + 40 || p.y < cam.top - 20 || p.y > cam.top + H + 20) continue;
+      const f = cam.frameAt(theta);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - f.up.x * 7, p.y - f.up.y * 7);
+      ctx.stroke();
+      const lx = p.x - f.up.x * (band + 14); const ly = p.y - f.up.y * (band + 14);
+      if (lx < 120) continue; // the altitude ruler's column
+      label(ctx, Math.abs(wrapped) < 1 ? 'PAD' : formatDistance(wrapped), lx, ly + 5, 'center', BLUEPRINT.inkPale);
+    }
   }
 
   // Basins: circled, with hatch ticks round the rim, labelled when readable.

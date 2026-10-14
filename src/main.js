@@ -253,7 +253,7 @@ function layout() {
   // Keep the surface clear of the on-screen buttons when they are showing.
   const buttonsShown = !replay && ((coarsePointer && coarsePointer.matches) || touchRoot.classList.contains('is-touch'));
   const cluster = touchRoot.querySelector('.touch-right');
-  camera.groundClearance = replay ? transport.height + 32 : buttonsShown ? (cluster ? cluster.offsetHeight : 168) + 40 : 40;
+  camera.groundClearance = replay ? transport.height + 48 : buttonsShown ? (cluster ? cluster.offsetHeight : 168) + 56 : 96;
 }
 layout();
 camera.snap(flight.state);
@@ -270,24 +270,31 @@ function currentScene(alpha) {
   return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight, debris: flight.debris, hold: input.hold };
 }
 
-// How far the predicted path gets from the craft, for the camera's framing.
-function reachOf(view, prediction) {
-  if (!prediction) return 0;
-  let reach = 0;
+// How far the predicted path reaches from the craft (up, down, sideways in
+// the local frame, metres), for the camera's framing.
+function extentOf(view, prediction) {
+  if (!prediction) return null;
+  const r = Math.hypot(view.x, view.y) || 1;
+  const ux = view.x / r; const uy = view.y / r;
+  let up = 0; let down = 0; let side = 0;
   const pts = prediction.points;
   const stride = Math.max(1, Math.floor(pts.length / 400));
   for (let i = 0; i < pts.length; i += stride) {
-    const d = Math.hypot(pts[i].x - view.x, pts[i].y - view.y);
-    if (d > reach) reach = d;
+    const dx = pts[i].x - view.x; const dy = pts[i].y - view.y;
+    const radial = dx * ux + dy * uy;
+    const along = Math.abs(dx * uy - dy * ux);
+    if (radial > up) up = radial;
+    if (-radial > down) down = -radial;
+    if (along > side) side = along;
   }
-  return reach;
+  return { up, down, side };
 }
 
 function render(alpha, frameDt) {
   const scene = currentScene(alpha);
   const { view, phase, src } = scene;
   const prediction = phase === 'flying' ? predictCoast(view, src.body, src.terrain) : null;
-  camera.follow(view, frameDt, reachOf(view, prediction));
+  camera.follow(view, frameDt, extentOf(view, prediction));
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
   drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body: src.body, terrain: src.terrain, prediction, debris: scene.debris });
   // Detail inset: the vehicle full-frame whenever the main view draws it small.

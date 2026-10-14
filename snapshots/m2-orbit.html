@@ -1801,40 +1801,54 @@ function createCamera() {
     width: 1, height: 1, // flight area in CSS px (viewport minus HUD strip)
     top: 0,              // y offset of the flight area on screen
     minScale: 0.0004, maxScale: 14,
-    groundClearance: 40, // px kept between the surface and the bottom of the flight area
+    groundClearance: 96, // px kept between the surface and the bottom of the flight area, room for the strata
     zoomBias: 0,         // log2 of the player's zoom multiplier; 0 = automatic
     bodyRadius: 1,
   };
 
-  // Where the camera wants to be for the given craft position. `reach` is
-  // how far (m) the predicted path gets from the craft; 0 when unknown.
-  function target(state, reach = 0) {
+  // Where the camera wants to be for the given craft position. `extent` is
+  // how far (m) the predicted path reaches from the craft: up (away from
+  // the body), down (towards it) and to the side; null when unknown.
+  function target(state, extent = null) {
     const R = cam.bodyRadius;
     const r = Math.hypot(state.x, state.y);
     const rot = Math.atan2(state.x, state.y);
     const alt = Math.max(0, r - R);
-    const H = cam.height;
-    // Near the ground the view is the M1 lander's: never under 3 px/m. A
-    // predicted path that goes further than the altitude (a hop, an orbit)
-    // zooms out until it fits.
+    const H = cam.height; const W = cam.width;
+    const c = cam.groundClearance; const pad = 24;
+    // Near the ground the view is the M1 lander's: never under 3 px/m.
     let scale = (H * 0.55) / Math.max(alt + 24, 40);
     if (alt < 300) scale = Math.max(scale, 3);
-    if (reach > alt + 24) scale = Math.min(scale, (0.45 * Math.min(cam.width, H)) / reach);
+    if (extent) {
+      // Fit the path: above the craft into the room left over the pinned
+      // ground (or over the craft once it sits at 62 % of the height),
+      // sideways into half the width, and round the body when the path
+      // goes further down than the ground.
+      if (extent.up > 0) {
+        let sa = (H - c - pad) / (alt + extent.up);
+        if (alt * sa + c > H * 0.62) sa = Math.min(sa, (H * 0.38 - pad) / extent.up);
+        scale = Math.min(scale, sa);
+      }
+      // (A path ending on the ground reaches about `alt` down; only one that
+      // goes round the body reaches further.)
+      if (extent.down > alt + 100) scale = Math.min(scale, (H - c - pad) / (r + R + extent.up));
+      if (extent.side > 0) scale = Math.min(scale, (W / 2 - pad) / extent.side);
+    }
     scale = clamp(scale * Math.pow(2, cam.zoomBias), cam.minScale, cam.maxScale);
     // Ground as a line: pin it near the bottom. Moon as a disc: show it all.
     // Blend by how much of the disc fits in the view.
-    const asLine = Math.min(alt * scale + cam.groundClearance, H * 0.62);
-    const asDisc = Math.min((r + R) * scale + cam.groundClearance, H * 0.62);
+    const asLine = Math.min(alt * scale + c, H * 0.62);
+    const asDisc = Math.min((r + R) * scale + c, H * 0.62);
     const t = clamp(1 - (R * scale - H / 3) / (H - H / 3), 0, 1);
     const lift = asLine + (asDisc - asLine) * t;
     return { x: state.x, y: state.y, rot, scale, lift };
   }
 
   cam.setViewport = (width, height, top = 0) => { cam.width = width; cam.height = height; cam.top = top; };
-  cam.snap = (state, reach = 0) => { Object.assign(cam, target(state, reach)); };
+  cam.snap = (state, extent = null) => { Object.assign(cam, target(state, extent)); };
   // Ease towards the target; dt is frame time in seconds.
-  cam.follow = (state, dt, reach = 0) => {
-    const t = target(state, reach);
+  cam.follow = (state, dt, extent = null) => {
+    const t = target(state, extent);
     const k = 1 - Math.exp(-dt * 4);
     cam.x += (t.x - cam.x) * k;
     cam.y += (t.y - cam.y) * k;
@@ -1951,6 +1965,8 @@ function drawCreases(ctx, W, H, px) {
 // stroke widths stay in pixels (1.5 structure, 0.75 annotation).
 
 const STROKE = { structure: 1.5, annotation: 0.75 };
+// Depths of the strata lines drawn inside a body, metres.
+const STRATA = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
 const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
 
 // scene: { state, cfg, phase, body, terrain, prediction, debris }
@@ -2027,6 +2043,26 @@ function drawAltitudeRuler(ctx, cam, body, terrain, state) {
     ctx.moveTo(x - (major ? 8 : 4), Math.round(y) + 0.5); ctx.lineTo(x + (major ? 8 : 4), Math.round(y) + 0.5);
     ctx.stroke();
     label(ctx, major ? 'GROUND' : formatDistance(h), x + 10, y + 5, 'left', major ? BLUEPRINT.ink : BLUEPRINT.inkPale);
+  }
+  // Below ground the ruler names the strata lines.
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.setLineDash([3, 5]);
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, groundY); ctx.lineTo(x + 0.5, bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (const d of STRATA) {
+    const px = d * s;
+    const y = groundY + px;
+    if (px < 14 || y > bottom) continue;
+    const alpha = Math.min(1, (px - 14) / 20);
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(x - 4, Math.round(y) + 0.5); ctx.lineTo(x + 4, Math.round(y) + 0.5);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    label(ctx, `-${formatDistance(d)}`, x + 10, y + 5, 'left', BLUEPRINT.inkPale, alpha);
   }
 }
 
@@ -2177,6 +2213,59 @@ function drawBody(ctx, cam, body, terrain, state) {
     }
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }
+
+  // Strata: dashed depth lines inside the body, concentric with the
+  // surface, at a fixed ladder of depths. They bunch up as the view zooms
+  // out and spread as it zooms in, so the zoom is never silent. Labelled on
+  // the altitude ruler (see drawAltitudeRuler).
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.setLineDash([3, 5]);
+  const bottomPx = cam.top + H;
+  for (const d of STRATA) {
+    const px = d * s;
+    if (px < 14 || d >= R) continue;
+    const top = cam.toScreen(Math.sin(thetaC) * (R - d), Math.cos(thetaC) * (R - d));
+    if (top.y > bottomPx + 20 && !full) continue;
+    const m = Math.max(48, Math.min(600, n));
+    const dT = (2 * half) / m;
+    ctx.globalAlpha = Math.min(1, (px - 14) / 20) * 0.7;
+    ctx.beginPath();
+    for (let k = 0; k <= m; k++) {
+      const th = theta0 + k * dT;
+      const p = cam.toScreen(Math.sin(th) * (R - d), Math.cos(th) * (R - d));
+      if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    }
+    if (full) ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // Surface ticks: distance along the ground from the pad, at a round step,
+  // so sideways motion and horizontal scale read at every zoom.
+  {
+    const step = niceStep(s, 90, 220);
+    const arc0 = Math.floor(((thetaC - half) * R) / step) * step;
+    const arc1 = (thetaC + half) * R;
+    const band = s >= 0.25 ? Math.min(48, Math.max(16, 4 * s)) : 0;
+    ctx.strokeStyle = BLUEPRINT.ink;
+    ctx.lineWidth = STROKE.annotation;
+    for (let arc = arc0; arc <= arc1; arc += step) {
+      const wrapped = terrain.wrap(arc);
+      const theta = wrapped / R;
+      const p = surfaceAt(theta);
+      if (p.x < -40 || p.x > W + 40 || p.y < cam.top - 20 || p.y > cam.top + H + 20) continue;
+      const f = cam.frameAt(theta);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - f.up.x * 7, p.y - f.up.y * 7);
+      ctx.stroke();
+      const lx = p.x - f.up.x * (band + 14); const ly = p.y - f.up.y * (band + 14);
+      if (lx < 120) continue; // the altitude ruler's column
+      label(ctx, Math.abs(wrapped) < 1 ? 'PAD' : formatDistance(wrapped), lx, ly + 5, 'center', BLUEPRINT.inkPale);
+    }
   }
 
   // Basins: circled, with hatch ticks round the rim, labelled when readable.
@@ -2687,6 +2776,7 @@ function drawSecondStage(ctx, k, st, y, frac, ink, weight, capsule) {
 __exports.BLUEPRINT = BLUEPRINT;
 __exports.drawPaper = drawPaper;
 __exports.STROKE = STROKE;
+__exports.STRATA = STRATA;
 __exports.MONO = MONO;
 __exports.drawScene = drawScene;
 __exports.drawScaleBar = drawScaleBar;
@@ -4196,7 +4286,7 @@ function layout() {
   // Keep the surface clear of the on-screen buttons when they are showing.
   const buttonsShown = !replay && ((coarsePointer && coarsePointer.matches) || touchRoot.classList.contains('is-touch'));
   const cluster = touchRoot.querySelector('.touch-right');
-  camera.groundClearance = replay ? transport.height + 32 : buttonsShown ? (cluster ? cluster.offsetHeight : 168) + 40 : 40;
+  camera.groundClearance = replay ? transport.height + 48 : buttonsShown ? (cluster ? cluster.offsetHeight : 168) + 56 : 96;
 }
 layout();
 camera.snap(flight.state);
@@ -4213,24 +4303,31 @@ function currentScene(alpha) {
   return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight, debris: flight.debris, hold: input.hold };
 }
 
-// How far the predicted path gets from the craft, for the camera's framing.
-function reachOf(view, prediction) {
-  if (!prediction) return 0;
-  let reach = 0;
+// How far the predicted path reaches from the craft (up, down, sideways in
+// the local frame, metres), for the camera's framing.
+function extentOf(view, prediction) {
+  if (!prediction) return null;
+  const r = Math.hypot(view.x, view.y) || 1;
+  const ux = view.x / r; const uy = view.y / r;
+  let up = 0; let down = 0; let side = 0;
   const pts = prediction.points;
   const stride = Math.max(1, Math.floor(pts.length / 400));
   for (let i = 0; i < pts.length; i += stride) {
-    const d = Math.hypot(pts[i].x - view.x, pts[i].y - view.y);
-    if (d > reach) reach = d;
+    const dx = pts[i].x - view.x; const dy = pts[i].y - view.y;
+    const radial = dx * ux + dy * uy;
+    const along = Math.abs(dx * uy - dy * ux);
+    if (radial > up) up = radial;
+    if (-radial > down) down = -radial;
+    if (along > side) side = along;
   }
-  return reach;
+  return { up, down, side };
 }
 
 function render(alpha, frameDt) {
   const scene = currentScene(alpha);
   const { view, phase, src } = scene;
   const prediction = phase === 'flying' ? predictCoast(view, src.body, src.terrain) : null;
-  camera.follow(view, frameDt, reachOf(view, prediction));
+  camera.follow(view, frameDt, extentOf(view, prediction));
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
   drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body: src.body, terrain: src.terrain, prediction, debris: scene.debris });
   // Detail inset: the vehicle full-frame whenever the main view draws it small.
