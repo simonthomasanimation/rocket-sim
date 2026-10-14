@@ -62,6 +62,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Reading a path with several loops (owner question, 2026-10-14): each segment of the predicted path after a change of sphere is drawn fainter on both documents, so the order of overlapping loops (before the flyby, round the Moon, after) is visible at a glance
 - [x] Altitude readout in the dial's unit (owner question, 2026-10-14): between 1,000 and 6,000 km the dial is marked in km but the number said MM (1.56 MM over the Moon); it now says 1560 KM, and MM only once the dial itself is in MM
 - [x] Closest-approach ghost dropped (owner request, 2026-10-14): the "MOON AT T-… / YOUR PATH PASSES … OFF" ghost with its sphere ring looked exactly like the real Moon; removed from the sheet and the map. The Moon's path ring stays, and so does the ghost where the path actually enters the Moon's sphere, now a disc and a name only, no sphere ring
+- [x] Test battery (owner request, 2026-10-14): 28 core tests, the deploy check, and a headless battery flying all seven starts through the map, replay, pause, zoom, pan, lock, warp, staging, parachutes and the report pages on the dev page, the offline snapshot and a phone-sized view, with no console errors at 60 fps. Two finds fixed: the report said NaN% fuel for the capsule (no tank), and at a fine zoom far from the pad every ground tick read the same whole kilometre (now 1642.01, 1642.02 …)
 
 ## M4 Builder
 - [ ] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class)

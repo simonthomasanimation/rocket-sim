@@ -119,6 +119,15 @@ export function drawScene(ctx, cam, scene) {
   ctx.restore();
 }
 
+// A ground tick's label: whole metres or kilometres as usual, but far from
+// the pad at a fine zoom the kilometres keep enough decimals to tell the
+// ticks apart (a 10 m step 1642 km out reads 1642.01, 1642.02, ...).
+function tickText(m, step) {
+  if (Math.abs(m) < 10000 || step >= 1000) return formatDistance(m);
+  const digits = Math.min(3, Math.max(0, Math.ceil(-Math.log10(step / 1000))));
+  return `${(m / 1000).toFixed(digits)} KM`;
+}
+
 // A round number of metres that spans between 48 and 120 px at this zoom.
 function niceStep(scale, minPx = 48, maxPx = 120) {
   let step = 1;
@@ -504,7 +513,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
       if (lx < 120) continue; // the altitude ruler's column
       if (placed.some((q) => Math.hypot(q.x - lx, q.y - ly) < 56)) continue;
       placed.push({ x: lx, y: ly });
-      label(ctx, Math.abs(wrapped) < 1 ? 'PAD' : formatDistance(wrapped), lx, ly + 5, 'center', BLUEPRINT.inkPale);
+      label(ctx, Math.abs(wrapped) < 1 ? 'PAD' : tickText(wrapped, step), lx, ly + 5, 'center', BLUEPRINT.inkPale);
     }
   }
 

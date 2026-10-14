@@ -197,7 +197,7 @@ export function reportPage(flight) {
   const landed = flight.phase === 'landed';
   const s = flight.state;
   const stage = flight.cfg.stages[s.stage];
-  const fuelPct = Math.round((s.fuel / stage.fuelMass) * 100);
+  const fuelPct = stage.fuelMass > 0 ? Math.round((s.fuel / stage.fuelMass) * 100) : 0; // a capsule has no tank
   const limits = flight.limits;
   const deg = (limits.tilt * 180) / Math.PI;
   const section = flight.scenario.section;
@@ -267,7 +267,7 @@ export function orbitPage(flight) {
   const o = flight.stats.orbit;
   const s = flight.state;
   const stage = flight.cfg.stages[s.stage];
-  const fuelPct = Math.round((s.fuel / stage.fuelMass) * 100);
+  const fuelPct = stage.fuelMass > 0 ? Math.round((s.fuel / stage.fuelMass) * 100) : 0; // a capsule has no tank
   return {
     section: flight.scenario.section,
     title: 'ORBIT REPORT',
