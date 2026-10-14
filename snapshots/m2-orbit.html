@@ -1829,9 +1829,10 @@ function createCamera() {
         if (alt * sa + c > H * 0.62) sa = Math.min(sa, (H * 0.38 - pad) / extent.up);
         scale = Math.min(scale, sa);
       }
-      // (A path ending on the ground reaches about `alt` down; only one that
-      // goes round the body reaches further.)
-      if (extent.down > alt + 100) scale = Math.min(scale, (H - c - pad) / (r + R + extent.up));
+      // (A path ending on the ground reaches about `alt` down, a few hundred
+      // metres more over a basin; only one that goes round the body reaches
+      // a good fraction of a radius further.)
+      if (extent.down > alt + R / 4) scale = Math.min(scale, (H - c - pad) / (r + R + extent.up));
       if (extent.side > 0) scale = Math.min(scale, (W / 2 - pad) / extent.side);
     }
     scale = clamp(scale * Math.pow(2, cam.zoomBias), cam.minScale, cam.maxScale);
@@ -2086,7 +2087,12 @@ function drawDetail(ctx, cam, { state, cfg, phase, debris }, box) {
     const b = -((d.x - state.x) * ax + (d.y - state.y) * ay);
     back = Math.max(back, Math.min(b, 2.5 * st.height));
   }
-  const kTarget = (box.h * 0.6) / (h + back);
+  // Framed on the whole vehicle as it left the pad (never less than 55 %
+  // of it), so a stage that is left alone stays the size it was rather
+  // than jumping up to fill the box.
+  const whole = cfg.stages.reduce((sum, st) => sum + st.height, 0);
+  const framed = Math.max(h, 0.55 * whole);
+  const kTarget = (box.h * 0.6) / (framed + back);
   const offTarget = (h - back) / 2;          // metres from the base to the framed midpoint
   if (!inset.k) { inset.k = kTarget; inset.offset = offTarget; }
   inset.k += (kTarget - inset.k) * 0.12;

@@ -44,9 +44,10 @@ export function createCamera() {
         if (alt * sa + c > H * 0.62) sa = Math.min(sa, (H * 0.38 - pad) / extent.up);
         scale = Math.min(scale, sa);
       }
-      // (A path ending on the ground reaches about `alt` down; only one that
-      // goes round the body reaches further.)
-      if (extent.down > alt + 100) scale = Math.min(scale, (H - c - pad) / (r + R + extent.up));
+      // (A path ending on the ground reaches about `alt` down, a few hundred
+      // metres more over a basin; only one that goes round the body reaches
+      // a good fraction of a radius further.)
+      if (extent.down > alt + R / 4) scale = Math.min(scale, (H - c - pad) / (r + R + extent.up));
       if (extent.side > 0) scale = Math.min(scale, (W / 2 - pad) / extent.side);
     }
     scale = clamp(scale * Math.pow(2, cam.zoomBias), cam.minScale, cam.maxScale);

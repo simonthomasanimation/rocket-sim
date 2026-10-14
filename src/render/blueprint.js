@@ -183,7 +183,12 @@ export function drawDetail(ctx, cam, { state, cfg, phase, debris }, box) {
     const b = -((d.x - state.x) * ax + (d.y - state.y) * ay);
     back = Math.max(back, Math.min(b, 2.5 * st.height));
   }
-  const kTarget = (box.h * 0.6) / (h + back);
+  // Framed on the whole vehicle as it left the pad (never less than 55 %
+  // of it), so a stage that is left alone stays the size it was rather
+  // than jumping up to fill the box.
+  const whole = cfg.stages.reduce((sum, st) => sum + st.height, 0);
+  const framed = Math.max(h, 0.55 * whole);
+  const kTarget = (box.h * 0.6) / (framed + back);
   const offTarget = (h - back) / 2;          // metres from the base to the framed midpoint
   if (!inset.k) { inset.k = kTarget; inset.offset = offTarget; }
   inset.k += (kTarget - inset.k) * 0.12;
