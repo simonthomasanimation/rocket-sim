@@ -65,7 +65,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Test battery (owner request, 2026-10-14): 28 core tests, the deploy check, and a headless battery flying all seven starts through the map, replay, pause, zoom, pan, lock, warp, staging, parachutes and the report pages on the dev page, the offline snapshot and a phone-sized view, with no console errors at 60 fps. Two finds fixed: the report said NaN% fuel for the capsule (no tank), and at a fine zoom far from the pad every ground tick read the same whole kilometre (now 1642.01, 1642.02 …)
 
 ## M4 Builder
-- [ ] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class)
+- [x] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class): src/core/parts.js holds 33 parts in seven categories and three sizes, the stacking rules, and the compiler that turns a design into the stage list the flight core flies with the red-pencil warnings; src/core/designs.js holds the KP-3 as the first preset (it compiles to within 3 % of the hand-tuned rocket)
 - [ ] Part SVGs in art/parts per CLAUDE.md rules; catalog icon from same file
 - [ ] Vellum document: catalog column, drag-and-drop stacking, radial boosters, decouplers define stages, reorderable staging list
 - [ ] Stats panel: mass, launch TWR, dV per stage and total; red-pencil warnings

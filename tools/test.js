@@ -10,13 +10,15 @@ import { replayToEnd } from '../src/core/playback.js';
 import { buildTimeline, sampleTimeline } from '../src/core/timeline.js';
 import { createFixedLoop } from '../src/core/loop.js';
 import { BODIES, MOON, EARTH, circularSpeed, gravityAt, bodyState, orbitalPeriod, densityAt } from '../src/core/body.js';
-import { createCraftState, rk4Step, ROCKET, deltaV } from '../src/core/craft.js';
+import { createCraftState, rk4Step, ROCKET, ROCKET3, deltaV } from '../src/core/craft.js';
 import { elementsOf } from '../src/core/orbit.js';
 import { predictCoast, closestApproach } from '../src/core/predict.js';
 import { createTerrain } from '../src/core/terrain.js';
 import { WARP_LADDER, PHYSICS_LADDER, maxPhysicsWarp, maxWarpIndex, railsAllowed, railsBlocker, warpLimitReason, RAILS, PHYSICS_LEVELS } from '../src/core/warp.js';
 import { propagate } from '../src/core/kepler.js';
 import { flyMission } from './mission.js';
+import { PARTS, SIZES, CATEGORIES, partById, createDesign, addPart, addRadial, stackRefusal, radialRefusal, compileDesign, designStats, designMass } from '../src/core/parts.js';
+import { KP3_DESIGN } from '../src/core/designs.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -57,6 +59,81 @@ test('a zoom the player sets holds as the craft climbs, and 0 hands the view bac
   for (let i = 0; i < 600; i++) cam.follow(high, 1 / 60, { up: 24000, down: 25600, side: 200000 });
   assert.ok(cam.scale < auto && cam.scale < held, 'after 0 the automatic zoom follows the flight again');
   assert.equal(cam.offX, 0);
+});
+
+test('the parts catalog: about thirty parts, three sizes, every field in order', () => {
+  assert.ok(PARTS.length >= 30 && PARTS.length <= 36, `${PARTS.length} parts`);
+  const ids = new Set();
+  const cats = new Set(CATEGORIES.map((c) => c.id));
+  for (const p of PARTS) {
+    assert.ok(!ids.has(p.id), `duplicate id ${p.id}`); ids.add(p.id);
+    assert.ok(cats.has(p.category), `${p.id}: category ${p.category}`);
+    assert.ok(SIZES[p.size], `${p.id}: size ${p.size}`);
+    assert.ok(p.mass > 0 && p.height > 0 && p.name && p.text && p.tier >= 1, `${p.id}: mass, height, name, text, tier`);
+    for (const n of ['top', 'bottom']) assert.ok(p.nodes[n] === null || SIZES[p.nodes[n]], `${p.id}: ${n} node`);
+    if (p.category === 'engine' || p.category === 'booster') assert.ok(p.thrust > 0 && p.isp > 0, `${p.id}: thrust and isp`);
+    if (p.category === 'tank' || p.category === 'booster') assert.ok(p.fuel > 0, `${p.id}: fuel`);
+    if (p.nodes.radial === 'attach') assert.ok(!p.nodes.top && !p.nodes.bottom, `${p.id}: a radial part has no stack nodes`);
+  }
+  for (const c of CATEGORIES) assert.ok(PARTS.some((p) => p.category === c.id), `${c.id} is empty`);
+  assert.equal(PARTS.filter((p) => p.tier === 1).length >= 12, true, 'enough tier-1 parts to build a first rocket');
+});
+
+test('the KP-3 built from parts matches the hand-tuned KP-3 within a few percent', () => {
+  const cfg = compileDesign(KP3_DESIGN);
+  assert.equal(cfg.stages.length, ROCKET3.stages.length);
+  cfg.stages.forEach((st, i) => {
+    const ref = ROCKET3.stages[i];
+    assert.ok(Math.abs(st.dryMass - ref.dryMass) <= 0.03 * Math.max(ref.dryMass, 1), `${st.name}: dry ${st.dryMass} vs ${ref.dryMass}`);
+    assert.equal(st.fuelMass, ref.fuelMass, `${st.name}: fuel`);
+    assert.equal(st.maxThrust, ref.maxThrust, `${st.name}: thrust`);
+    assert.equal(st.isp, ref.isp, `${st.name}: isp`);
+    assert.equal(st.radius, ref.radius, `${st.name}: radius`);
+    assert.ok(Math.abs(st.height - ref.height) < 0.6, `${st.name}: height`);
+    assert.equal(!!st.capsule, !!ref.capsule);
+  });
+  assert.equal(cfg.stages[3].name, 'CAPSULE');
+  assert.ok(cfg.stages[3].shield && cfg.stages[3].chute);
+  assert.equal(cfg.warnings.length, 0, JSON.stringify(cfg.warnings));
+  // The design's delta-v agrees with what the flight core says of the compiled craft.
+  const stats = designStats(KP3_DESIGN);
+  const fromCore = deltaV(createCraftState(cfg), cfg);
+  assert.ok(Math.abs(stats.deltaV - fromCore) < 1e-6, `${stats.deltaV} vs ${fromCore}`);
+  assert.equal(stats.mass, designMass(KP3_DESIGN));
+  assert.ok(stats.launchTwr > 1.4 && stats.launchTwr < 1.7);
+});
+
+test('stacking rules: nodes, radial hosts, and the red-pencil warnings', () => {
+  const d = createDesign('TEST');
+  assert.equal(addPart(d, 'fins'), 'RADIAL PART: HANGS ON A TANK');
+  assert.equal(addPart(d, 'engine-s-lift'), null);
+  assert.equal(addPart(d, 'tank-s-long'), null);
+  assert.equal(addRadial(d, 0, 'booster-s'), 'KV-20 SUSTAINER TAKES NO RADIAL PARTS');
+  assert.equal(addRadial(d, 1, 'tank-s-short'), 'STACK PART: GOES ON TOP');
+  assert.equal(addRadial(d, 1, 'booster-s'), null);
+  assert.equal(addRadial(d, 1, 'booster-s'), 'ALREADY FITTED');
+  assert.equal(addPart(d, 'nose-s'), null);
+  assert.equal(stackRefusal(d, 'tank-s-short'), 'NOTHING STACKS ON A NOSE CONE S');
+  assert.equal(radialRefusal(d, 9, 'fins'), 'NOTHING THERE');
+  const cfg = compileDesign(d);
+  // Boosters burn with the sustainer and drop first; fuel is conserved and the booster stage holds the share the sustainer burns meanwhile.
+  assert.equal(cfg.stages.length, 2);
+  assert.equal(cfg.stages[0].kind, 'boosters');
+  assert.equal(cfg.stages[0].maxThrust, 2 * 50000 + 20000);
+  const burn = 2 * 600 / (2 * 50000 / (230 * 9.80665));
+  const share = 20000 / (285 * 9.80665) * burn;
+  assert.ok(Math.abs(cfg.stages[0].fuelMass - (1200 + share)) < 1e-6);
+  assert.ok(Math.abs(cfg.stages[1].fuelMass - (700 - share)) < 1e-6);
+  assert.ok(Math.abs(cfg.stages[0].fuelMass + cfg.stages[1].fuelMass - 1900) < 1e-9);
+  assert.ok(cfg.stages[0].isp > 230 && cfg.stages[0].isp < 285);
+  assert.ok(cfg.warnings.some((w) => w.code === 'no-command'));
+  // A capsule with no shield and no parachute, engines stacked without a decoupler, tanks without an engine.
+  const bad = createDesign('BAD', ['engine-s-vac', 'tank-s-short', 'engine-s-vac', 'tank-s-short', 'decoupler-s', 'tank-s-short', 'capsule-s']);
+  const codes = compileDesign(bad).warnings.map((w) => w.code);
+  for (const c of ['buried-engine', 'no-engine', 'no-parachute', 'no-shield', 'low-twr']) assert.ok(codes.includes(c), `${c} in ${codes}`);
+  assert.ok(!codes.includes('no-command'));
+  const glued = createDesign('GLUED', ['engine-s-lift', 'tank-s-long', 'engine-s-vac', 'tank-s-short', 'probe-core', 'nose-s']);
+  assert.ok(compileDesign(glued).warnings.some((w) => w.code === 'no-decoupler'));
 });
 
 test('fixed loop steps in whole ticks and caps catch-up', () => {
