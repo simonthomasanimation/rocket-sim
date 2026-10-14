@@ -10,9 +10,9 @@
 const BUTTONS = [
   { action: 'exit', label: 'EXIT', key: 'ESC' },
   { action: 'rev', label: 'REV', key: 'J' },
-  { action: 'stepBack', label: 'STEP −', key: ',', repeat: true },
+  { action: 'stepBack', label: 'STEP −', key: ',', code: 'Comma', repeat: true },
   { action: 'toggle', label: 'PLAY', key: 'SPACE', id: 'toggle' },
-  { action: 'stepFwd', label: 'STEP +', key: '.', repeat: true },
+  { action: 'stepFwd', label: 'STEP +', key: '.', code: 'Period', repeat: true },
   { action: 'fwd', label: 'FWD', key: 'L' },
 ];
 
@@ -57,7 +57,9 @@ export function createTransport(root, onAction) {
     const btn = el('button', 'stamp-button transport-button');
     btn.type = 'button';
     btn.append(el('span', 'transport-label', b.label));
-    btn.append(el('kbd', null, b.key));
+    const kbd = el('kbd', null, b.key);
+    if (b.code) kbd.dataset.code = b.code;
+    btn.append(kbd);
     btn.dataset.action = b.action;
     let timer = null;
     if (b.repeat) {
@@ -107,6 +109,13 @@ export function createTransport(root, onAction) {
     hide() { root.classList.remove('is-open'); },
     // Height of the bar on screen, for keeping the drawing clear of it.
     get height() { return root.classList.contains('is-open') ? bar.offsetHeight : 0; },
+    // Relabel position-based keys as printed on this keyboard.
+    setKeyLabels(labels) {
+      for (const kbd of bar.querySelectorAll('kbd[data-code]')) {
+        const l = labels[kbd.dataset.code];
+        if (l) kbd.textContent = l;
+      }
+    },
     // { time, duration, speed, playing }
     update({ time, duration, speed: spd, playing }) {
       layoutTicks(duration);

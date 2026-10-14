@@ -272,8 +272,9 @@ requestAnimationFrame(frame);
 openPage('start', startPage());
 loop.pause();
 // Relabel the card with the keys as printed on this keyboard, once known.
-keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX']).then((keys) => {
+keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX', 'Comma', 'Period']).then((keys) => {
   if (pageOpen === 'start') openPage('start', startPage(keys));
+  transport.setKeyLabels(keys);
 });
 
 // Pause the clock while the tab is hidden; resume cleanly when it comes back.

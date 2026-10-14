@@ -12,7 +12,8 @@
 //
 // In replay mode the keys become a transport: J play backwards (again for
 // faster), K or P pause, L play forwards (again for faster), Space
-// play/pause, Left / Right (or , and .) step one tick and repeat while held,
+// play/pause, Left / Right (or the two keys right of M) step one tick and
+// repeat while held,
 // Home / End jump to the start / end, Esc exits.
 
 const KEYS = {
@@ -25,9 +26,11 @@ const KEYS = {
 // Actions by typed character (layout-aware) and by physical code.
 const ACTIONS_BY_KEY = { r: 'restart', p: 'pause', m: 'mute', v: 'replay' };
 const ACTIONS_BY_CODE = { Enter: 'confirm', Space: 'confirm', Escape: 'back' };
-const REPLAY_BY_KEY = { j: 'rev', k: 'pause', p: 'pause', l: 'fwd', ',': 'stepBack', '.': 'stepFwd', r: 'restart', m: 'mute' };
+// Stepping uses the two keys right of M by position, so they sit under
+// J / K / L on every layout: , and . on QWERTY, ; and : on AZERTY.
+const REPLAY_BY_KEY = { j: 'rev', k: 'pause', p: 'pause', l: 'fwd', ',': 'stepBack', ';': 'stepBack', '.': 'stepFwd', ':': 'stepFwd', r: 'restart', m: 'mute' };
 const REPLAY_BY_CODE = {
-  Space: 'toggle', ArrowLeft: 'stepBack', ArrowRight: 'stepFwd',
+  Space: 'toggle', ArrowLeft: 'stepBack', ArrowRight: 'stepFwd', Comma: 'stepBack', Period: 'stepFwd',
   Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit',
 };
 const REPEATABLE = new Set(['stepBack', 'stepFwd']);
