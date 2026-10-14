@@ -126,7 +126,8 @@ export function createCraftState(cfg, { x = 0, y = 0, vx = 0, vy = 0, angle = 0,
     stage,          // index of the live stage, 0 = bottom
     fuel: fuel === null ? cfg.stages[stage].fuelMass : fuel, // kg left in the live stage
     thrust: 0,      // N produced on the last step, for the drawing and HUD
-    chute: 0,       // 0 stowed, 1 out, 2 torn away
+    chute: 0,       // 0 stowed, 3 drogue out, 4 main reefed, 1 main full, 2 torn away
+    chuteT: 0,      // s since the current canopy came out
     heat: 0,        // entry heating as a fraction of what the craft can take
     broken: 0,      // 1 once the heat has torn the craft apart
     time: 0,        // s since the flight began
@@ -168,7 +169,7 @@ export function progradeAngle(s) {
 
 // Advance the craft by dt seconds. Returns { staged } where staged is the
 // index of a stage dropped this step, or -1. Mutates `s`.
-export function stepCraft(s, cmd, dt, cfg, body) {
+export function stepCraft(s, cmd, dt, cfg, body, groundRadius = null) {
   let staged = -1;
   if (cmd.stage && s.stage < cfg.stages.length - 1) {
     staged = s.stage;
@@ -180,8 +181,18 @@ export function stepCraft(s, cmd, dt, cfg, body) {
     s.fuel = cfg.stages[s.stage].fuelMass;
   }
   const thrust = runEngine(s, cmd, dt, cfg);
-  // The parachute: once, on the capsule stage; too fast and it tears away.
-  if (cmd.chute && s.chute === 0 && activeStage(s, cfg).capsule) s.chute = Math.hypot(s.vx, s.vy) > CHUTE_MAX_SPEED ? 2 : 1;
+  // The parachutes: one command, on the capsule stage, puts the drogue
+  // out (too fast and it tears away). The rest is automatic, as on a real
+  // capsule: once the drogue has the capsule under MAIN_SPEED and under
+  // MAIN_HEIGHT above the ground, the main comes out reefed (a narrow
+  // cone, a fifth of its drag) for REEF_TIME, then blooms to full over
+  // BLOOM_TIME.
+  if (cmd.chute && s.chute === 0 && activeStage(s, cfg).capsule) { s.chute = Math.hypot(s.vx, s.vy) > CHUTE_MAX_SPEED ? 2 : 3; s.chuteT = 0; }
+  if (s.chute === 3 || s.chute === 4) {
+    s.chuteT += dt;
+    if (s.chute === 3 && Math.hypot(s.vx, s.vy) < MAIN_SPEED && Math.hypot(s.x, s.y) - (groundRadius || body.radius) < MAIN_HEIGHT) { s.chute = 4; s.chuteT = 0; }
+    else if (s.chute === 4 && s.chuteT >= REEF_TIME + BLOOM_TIME) s.chute = 1;
+  }
 
   // Rotation: a rate command reached with bounded angular acceleration. The
   // attitude hold steers towards prograde or retrograde when the pilot is
@@ -214,11 +225,30 @@ export function dragFactor(s, cfg) {
   const st = activeStage(s, cfg);
   const radius = st.radius || 2.4;
   let cdA = 0.5 * Math.PI * radius * radius;
-  if (s.chute === 1 && st.capsule) cdA += CHUTE_CDA;
+  if (st.capsule) cdA += canopyCdA(s);
   return cdA / (2 * totalMass(s, cfg));
 }
-export const CHUTE_CDA = 420; // m^2, the main canopy: about 6 m/s at the sea with the capsule
-export const CHUTE_MAX_SPEED = 250; // m/s; opened faster than this it tears away
+// Drag area of whatever canopy is out.
+export function canopyCdA(s) {
+  if (s.chute === 1) return CHUTE_CDA;
+  if (s.chute === 3) return DROGUE_CDA;
+  if (s.chute === 4) return CHUTE_CDA * (REEF_FRACTION + (1 - REEF_FRACTION) * canopyBloom(s));
+  return 0;
+}
+// How far the main has opened past its reefed cone: 0 reefed, 1 full.
+export function canopyBloom(s) {
+  if (s.chute === 1) return 1;
+  if (s.chute !== 4) return 0;
+  return Math.max(0, Math.min(1, (s.chuteT - REEF_TIME) / BLOOM_TIME));
+}
+export const CHUTE_CDA = 520;  // m^2, the main canopy full: about 5.4 m/s at the sea with the capsule, under 9 m/s on the highest ground
+export const DROGUE_CDA = 12;  // m^2, the drogue: about 30 m/s at the sea, 45 m/s at 4 km
+export const REEF_FRACTION = 0.2; // the reefed main's share of its full drag area
+export const REEF_TIME = 4;    // s the main stays reefed
+export const BLOOM_TIME = 1;   // s it takes to open fully after that
+export const MAIN_SPEED = 90;  // m/s, the main comes out under this speed...
+export const MAIN_HEIGHT = 3000; // m ...and this height above the ground (radar, so a mountain counts)
+export const CHUTE_MAX_SPEED = 250; // m/s; the drogue opened faster than this tears away
 
 // Heating limits for rho * v^3: a bare stack chars at the first, a capsule
 // flying shield-first holds to the second (a return from the Moon reaches

@@ -9,6 +9,9 @@ import { BLUEPRINT, STROKE, MONO, formatDistance, formatTime, drawScaleBar } fro
 const G = 8; // grid
 
 // The strip is one row on wide sheets and two on narrow ones (phones).
+// The CHUTE cell: stowed, drogue out, main reefed, main full, torn away.
+const CHUTE_WORDS = { 0: 'STOWED', 3: 'DROGUE', 4: 'REEFED', 1: 'MAIN', 2: 'TORN' };
+
 export function hudHeight(narrow) {
   return narrow ? 200 : 112;
 }
@@ -111,7 +114,7 @@ export function createHud() {
     readout(ctx, L.sx, oy + 3 * G, L.sw, 'STAGE', info.stageText, 'none');
     readout(ctx, L.sx, oy + 6 * G, L.sw, 'DV', `${Math.round(info.dv)} M/S`, 'none');
     readout(ctx, L.sx, oy + 9 * G, L.sw, 'TWR', info.twr.toFixed(1), 'none');
-    if (info.capsule) readout(ctx, L.sx, oy + 12 * G, L.sw, 'CHUTE', ['STOWED', 'OPEN', 'TORN'][alerts.chute || 0], alerts.chute === 2 ? 'marker' : 'none');
+    if (info.capsule) readout(ctx, L.sx, oy + 12 * G, L.sw, 'CHUTE', CHUTE_WORDS[alerts.chute || 0], alerts.chute === 2 ? 'marker' : 'none');
     if (info.stages) stack(ctx, L.stack, oy + 11 * G, info.stages);
 
     // CAPCOM line: in the strip when there is room, else top left of the

@@ -23,8 +23,10 @@ export const LINES = {
   karman: 'Through the Kármán line. You are in space.',
   heat: 'Heating is near the limit. Hold retrograde.',
   heatUp: 'Heating is near the limit. Ease the throttle until the air thins.',
-  chute: 'Good canopy.',
-  chuteTorn: 'The canopy has torn away. Too fast.',
+  drogue: 'Drogue out. Steadying.',
+  chuteReef: 'Main chute out, reefed. Four seconds to full open.',
+  chute: 'Good canopy. Full main.',
+  chuteTorn: 'The drogue has torn away. Too fast.',
   splashdown: 'Splashdown. Recovery is on the way.',
   burned: 'We have lost the vehicle on entry.',
   alt500: 'Five hundred metres.',
@@ -72,6 +74,8 @@ export function createCapcom() {
       const sinking = alerts.vSpeed > 0;
       if (sinking && alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
       if (alerts.heat === 'critical') say(sinking ? 'heat' : 'heatUp', t, true, LINES[sinking ? 'heat' : 'heatUp']);
+      if (alerts.chute === 3) say('drogue', t);
+      if (alerts.chute === 4) say('chuteReef', t);
       if (alerts.chute === 1) say('chute', t);
       if (alerts.chute === 2) say('chuteTorn', t, true);
       if (alerts.descent === 'critical') say('rate', t, true);

@@ -2,7 +2,7 @@
 // faint fold creases. Linework only, two stroke weights, no fills but hatching.
 
 import { labelAlpha } from './camera.js';
-import { craftHeight, footHalfWidth, activeStage, progradeAngle } from '../core/craft.js';
+import { craftHeight, footHalfWidth, activeStage, progradeAngle, canopyBloom } from '../core/craft.js';
 import { BODIES } from '../core/body.js';
 
 export const BLUEPRINT = {
@@ -211,7 +211,7 @@ export function drawDetail(ctx, cam, { state, cfg, phase, debris }, box) {
   // than jumping up to fill the box.
   const whole = cfg.stages.reduce((sum, st) => sum + st.height, 0);
   // With the chute out, the canopy is part of the vehicle.
-  const top = state.chute === 1 ? h + CHUTE_RISE + CHUTE_RADIUS : h;
+  const top = Math.max(h, canopyTop(state, h));
   const framed = Math.max(top, 0.55 * whole);
   const kTarget = (box.h * 0.6) / (framed + back);
   const offTarget = (top - back) / 2;        // metres from the base to the framed midpoint
@@ -1061,6 +1061,21 @@ function drawPlasma(ctx, k, s, cfg) {
   ctx.stroke();
 }
 
+// The drogue: a small canopy on a long line; the main: reefed, a narrow
+// cone, blooming to the full arc. Each as width and height factors of the
+// full main, and the line length as a factor of CHUTE_RISE.
+function canopyShape(s) {
+  if (s.chute === 3) return { w: 0.3, hgt: 0.3, rise: 1.7 };
+  const b = canopyBloom(s);
+  return { w: 0.3 + 0.7 * b, hgt: 0.7 + 0.3 * b, rise: 1 };
+}
+// Height of the highest point of the canopy above the craft's base plane.
+function canopyTop(s, h) {
+  if (!s.chute || s.chute === 2) return h;
+  const c = canopyShape(s);
+  return h + CHUTE_RISE * c.rise + CHUTE_RADIUS * c.hgt;
+}
+
 // The parachute above the capsule: canopy as an arc with gore lines and
 // shrouds to the craft's top; torn, only a few loose lines remain.
 function drawChute(ctx, k, s, cfg) {
@@ -1076,23 +1091,27 @@ function drawChute(ctx, k, s, cfg) {
     ctx.setLineDash([]);
     return;
   }
-  const r = CHUTE_RADIUS;
-  const cy = top + CHUTE_RISE; // canopy centre above the base plane
+  const c = canopyShape(s);
+  const rw = CHUTE_RADIUS * c.w;   // half-width of the canopy
+  const rh = CHUTE_RADIUS * c.hgt; // its height above the skirt
+  const cy = top + CHUTE_RISE * c.rise; // skirt line above the base plane
+  const gores = s.chute === 3 ? 3 : 6;
   ctx.strokeStyle = BLUEPRINT.ink;
   ctx.lineWidth = STROKE.structure;
   ctx.beginPath();
-  ctx.arc(0, -cy * k, r * k, Math.PI, 2 * Math.PI);
-  ctx.lineTo(-r * k, -cy * k);
+  ctx.ellipse(0, -cy * k, rw * k, rh * k, 0, Math.PI, 2 * Math.PI);
+  ctx.lineTo(-rw * k, -cy * k);
   ctx.stroke();
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
   ctx.beginPath();
-  for (let i = 1; i < 6; i++) {
-    const a = Math.PI + (i / 6) * Math.PI;
-    ctx.moveTo(0, -(cy - r * 0.2) * k);
-    ctx.lineTo(Math.cos(a) * r * k, -(cy - Math.sin(a) * r) * k);
+  for (let i = 1; i < gores; i++) {
+    const a = Math.PI + (i / gores) * Math.PI;
+    ctx.moveTo(0, -(cy - rh * 0.2) * k);
+    ctx.lineTo(Math.cos(a) * rw * k, -(cy - Math.sin(a) * rh) * k);
   }
-  for (const f of [-1, -0.5, 0, 0.5, 1]) { ctx.moveTo(f * r * k, -cy * k); ctx.lineTo(0, -top * k); }
+  const shrouds = s.chute === 3 ? [-1, 0, 1] : [-1, -0.5, 0, 0.5, 1];
+  for (const f of shrouds) { ctx.moveTo(f * rw * k, -cy * k); ctx.lineTo(0, -top * k); }
   ctx.stroke();
 }
 

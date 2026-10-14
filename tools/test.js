@@ -390,16 +390,22 @@ test('a capsule rides the heat shield-first, opens the chute and splashes down o
   const f = createFlight({ seed: 1, scenario: 'reentry' });
   f.step({ ...NONE, stage: 1 });
   let n = 0; let opened = false; let maxHeat = 0;
+  const seen = { 3: null, 4: null, 1: null }; // the drogue, the reefed main, the full main: altitude and speed when each came
   while (f.phase === 'flying' && n < 60 * 3600) {
     const v = Math.hypot(f.state.vx, f.state.vy);
     const chute = !opened && v < 200 && f.altitude() < 20000 ? 1 : 0;
     if (chute) opened = true;
     f.step({ ...NONE, hold: 2, chute });
     if (f.state.heat > maxHeat) maxHeat = f.state.heat;
+    if (seen[f.state.chute] === null) seen[f.state.chute] = { alt: f.altitude(), v: Math.hypot(f.state.vx, f.state.vy) };
     n += 1;
   }
   assert.equal(f.phase, 'landed', `ended ${f.phase}: ${JSON.stringify(f.stats.touchdown && f.stats.touchdown.reasons)} heat ${f.stats.maxHeat.toFixed(2)}`);
   assert.ok(maxHeat > 0.1 && maxHeat < 1, `peak heat ${maxHeat.toFixed(2)} of the shielded limit`);
+  // One command, then the sequence runs itself: drogue, main reefed under 90 m/s and 4 km, main full.
+  assert.ok(seen[3] && seen[4] && seen[1], `canopy sequence ${JSON.stringify(seen)}`);
+  assert.ok(seen[4].v < 90 && seen[4].alt < 3000, `main came out at ${seen[4].v.toFixed(0)} m/s, ${seen[4].alt.toFixed(0)} m`);
+  assert.ok(seen[4].alt > seen[1].alt && seen[1].v < seen[4].v, 'the main opened fully lower and slower than it came out');
   assert.equal(f.state.chute, 1);
   assert.ok(f.stats.touchdown.verticalSpeed < 10, `came down at ${f.stats.touchdown.verticalSpeed.toFixed(1)} m/s`);
   // Nose first it burns; with the chute opened too early it tears and the capsule hits hard.
@@ -412,7 +418,7 @@ test('a capsule rides the heat shield-first, opens the chute and splashes down o
   h.step({ ...NONE, stage: 1 });
   n = 0;
   while (h.phase === 'flying' && n < 60 * 3600) { h.step({ ...NONE, hold: 2, chute: n === 10 ? 1 : 0 }); n += 1; }
-  assert.equal(h.state.chute, 2, 'opened at orbital speed the chute tears');
+  assert.equal(h.state.chute, 2, 'opened at orbital speed the drogue tears');
   assert.equal(h.phase, 'crashed');
 });
 

@@ -21,7 +21,7 @@ export const LANDING_LIMITS = Object.freeze({
   verticalSpeed: 3,            // m/s
   horizontalSpeed: 1,          // m/s
   tilt: (10 * Math.PI) / 180,  // radians
-  chuteVerticalSpeed: 8,       // m/s, under a canopy
+  chuteVerticalSpeed: 10,      // m/s, under the full main (it gives 5.4 m/s at the sea, under 9 on the highest ground)
   splashVerticalSpeed: 10,     // m/s, under a canopy into the sea
 });
 
@@ -90,7 +90,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
       if (cmd.warp > 0 && !wantsThrust && railsAllowed(flight, cmd.warp)) { railsStep(flight, cmd, dt * RAILS[cmd.warp - 1].rate); return; }
       const s = flight.state;
       const hadFuel = s.fuel > 0;
-      const { staged } = stepCraft(s, cmd, dt, cfg, flight.body);
+      const { staged } = stepCraft(s, cmd, dt, cfg, flight.body, flight.terrain.groundRadiusAt(s.x, s.y));
       if (staged >= 0) {
         // The spent stage is pushed off backwards along the axis by the
         // separation springs and picks up a slight tumble.
@@ -259,7 +259,7 @@ function breakUp(flight) {
     along += st.height;
   }
   s.broken = 1;
-  s.chute = s.chute === 1 ? 2 : s.chute;
+  if (s.chute && s.chute !== 2) s.chute = 2; // whatever canopy was out is lost
 }
 
 // After a break-up the wreck's centre keeps falling through the air (the
@@ -297,7 +297,7 @@ function touchdown(flight) {
   const hSpeed = Math.abs(horizontal);
   const arc = terrain.arcAt(s.x, s.y);
   const water = terrain.isWater(arc);
-  const chute = s.chute === 1;
+  const chute = s.chute === 1; // only the full main counts; a drogue or a reefed main is still a fall
   const vLimit = chute ? (water ? limits.splashVerticalSpeed : limits.chuteVerticalSpeed) : limits.verticalSpeed;
   const hLimit = chute ? Infinity : limits.horizontalSpeed;
   const tiltLimit = chute ? Infinity : limits.tilt;

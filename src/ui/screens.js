@@ -244,7 +244,7 @@ export function reportPage(flight) {
     ['TOUCHDOWN V-SPEED', `${td.verticalSpeed.toFixed(1)} M/S${lim(tl.verticalSpeed)}`, td.reasons.includes('verticalSpeed') ? 'spot' : null],
     ['TOUCHDOWN H-SPEED', `${td.horizontalSpeed.toFixed(1)} M/S${lim(tl.horizontalSpeed)}`, td.reasons.includes('horizontalSpeed') ? 'spot' : null],
     ['TOUCHDOWN TILT', `${Math.abs((td.tilt * 180) / Math.PI).toFixed(0)} DEG${Number.isFinite(tl.tilt) ? `  (LIMIT ${deg.toFixed(0)})` : ''}`, td.reasons.includes('tilt') ? 'spot' : null],
-    ['PARACHUTE', td.chute ? 'Open' : s.chute === 2 ? 'Torn away' : 'Not used'],
+    ['PARACHUTE', { 1: 'Main, full', 4: 'Main, reefed', 3: 'Drogue only', 2: 'Torn away' }[s.chute] || 'Not used'],
     ['DOWNRANGE', `${(Math.abs(td.arc) / 1000).toFixed(Math.abs(td.arc) > 10000 ? 0 : 1)} KM FROM PAD 1`],
   ];
   const caption = landed
@@ -306,7 +306,7 @@ export function startPage(keys = {}) {
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
       'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry. SPACE pauses. The same arrows shuttle a replay.',
       'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
-      'ENTER also opens the parachute once only the capsule is left (under 250 m/s; P works too). R restarts. N returns to this plan. V replays the last flight. M mutes.',
+      'ENTER also opens the parachutes once only the capsule is left (under 250 m/s; P works too): the drogue comes out first, and the main follows on its own under 90 m/s and 3 km above the ground, reefed for four seconds, then full. R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',
