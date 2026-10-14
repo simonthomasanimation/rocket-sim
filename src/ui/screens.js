@@ -246,19 +246,20 @@ export function reportPage(flight) {
 
 // The flight plan: choose where to start, with the controls as printed on
 // the player's keyboard. keys: labels for KeyW, KeyS, KeyA, KeyD, KeyZ,
-// KeyX, Comma, Period (see keyLabels in input.js).
+// KeyX (see keyLabels in input.js).
 export function startPage(keys = {}) {
-  const k = { KeyW: 'W', KeyS: 'S', KeyA: 'A', KeyD: 'D', KeyZ: 'Z', KeyX: 'X', Comma: ',', Period: '.', ...keys };
+  const k = { KeyW: 'W', KeyS: 'S', KeyA: 'A', KeyD: 'D', KeyZ: 'Z', KeyX: 'X', ...keys };
   return {
     section: 'SECTION 2 — ORBITAL FLIGHT',
     title: 'FLIGHT PLAN',
     page: 'PAGE 1',
     choices: SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: SCENARIOS[id].brief })),
     lines: [
-      `THROTTLE: ${k.KeyW} / Up raises, ${k.KeyS} / Down lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
-      `TILT: ${k.KeyA} / Left and ${k.KeyD} / Right. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
-      `ENTER stages. ${k.Comma} and ${k.Period} change the time warp. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.`,
-      'SPACE pauses. R restarts. N returns to this plan. V replays the last flight. M mutes.',
+      `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
+      `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
+      'TIME: Right arrow runs time faster, a notch per press (up to ×64); Left arrow pauses; Right or SPACE plays again at ×1. The same keys shuttle a replay.',
+      'ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
+      'R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',

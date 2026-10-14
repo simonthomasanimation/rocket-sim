@@ -38,20 +38,16 @@ camera.bodyRadius = flight.body.radius;
 let alerts = null;
 let replay = null;          // { timeline, cursor, speed, playing } while replaying
 let lastRecording = null;   // the most recent live flight, for replay
-// Shuttle ladder: each press in the same direction climbs one notch.
+// Shuttle ladder, shared by the replay and the live time warp: each press
+// of the right arrow climbs one notch. Live, the physics steps per frame
+// scale with it (the step itself stays 1/60 s, so the flight replays exactly).
 const SPEEDS = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
-// Time warp: physics steps per frame scale with it; limited near the ground.
-const WARPS = [1, 2, 5, 10, 50];
+const WARPS = SPEEDS;
 let warp = 0;
-function maxWarpIndex() {
-  const alt = flight.altitude();
-  if (flight.phase !== 'flying' || alt < 1000) return 0;
-  if (alt < 10000) return 3;
-  return WARPS.length - 1;
-}
 function setWarp(i) {
-  warp = Math.max(0, Math.min(maxWarpIndex(), i));
-  updateTitleBlock(titleBlock, { warp: `×${WARPS[warp]}` });
+  warp = Math.max(0, Math.min(WARPS.length - 1, i));
+  const w = WARPS[warp];
+  updateTitleBlock(titleBlock, { warp: `×${w % 1 === 0 ? w : w.toFixed(1)}` });
 }
 
 let shortPrediction = null;
@@ -72,7 +68,6 @@ function stepGame(dt) {
     if (ev.type === 'staged') sfx.stage();
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
   }
-  if (warp > maxWarpIndex()) setWarp(maxWarpIndex());
 }
 const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: stepGame });
 
@@ -107,13 +102,21 @@ function showPlan() {
   openPage('start', startPage({ ...knownKeys, ...input.observedLabels }));
 }
 
-// Space holds the live flight; Space again (or any restart) lets it go.
+// Space or the left arrow holds the live flight; Space or the right arrow
+// (or any restart) lets it go again, always at x1.
 let userPaused = false;
-function togglePause() {
-  userPaused = !userPaused;
+function setPaused(value) {
+  if (userPaused === value) return;
+  userPaused = value;
   if (userPaused) loop.pause(); else loop.resume();
+  setWarp(0);
   updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : 'BLUEPRINT' });
 }
+function togglePause() { setPaused(!userPaused); }
+// Right arrow: a notch faster, or play again from pause. Left arrow: the
+// other direction, which live can only mean pause.
+function warpUp() { if (userPaused) setPaused(false); else setWarp(warp + 1); }
+function warpDown() { if (!userPaused) setPaused(true); }
 
 function restart() {
   userPaused = false;
@@ -335,9 +338,8 @@ function frame(nowMs) {
       case 'pause': togglePause(); break;
       case 'confirm': input.stageNow(); break;
       case 'mute': updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' }); break;
-      case 'warpUp': setWarp(warp + 1); break;
-      case 'warpDown': setWarp(warp - 1); break;
-      case 'warpCycle': setWarp(warp >= maxWarpIndex() ? 0 : warp + 1); break;
+      case 'warpUp': warpUp(); break;
+      case 'warpDown': warpDown(); break;
       case 'zoomIn': camera.zoom(0.5); break;
       case 'zoomOut': camera.zoom(-0.5); break;
       case 'zoomReset': camera.resetZoom(); break;
@@ -376,7 +378,7 @@ openPage('start', startPage());
 loop.pause();
 // Relabel the card with the keys as printed on this keyboard, once known.
 let knownKeys = {};
-keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX', 'Comma', 'Period']).then((keys) => {
+keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX']).then((keys) => {
   knownKeys = keys;
   if (pageOpen === 'start') openPage('start', startPage({ ...keys, ...input.observedLabels }));
   transport.setKeyLabels({ ...keys, ...input.observedLabels });

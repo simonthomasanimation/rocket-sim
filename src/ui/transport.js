@@ -3,14 +3,15 @@
 // with mouse and touch; the keyboard shortcuts are listed on each button.
 //
 // Actions sent to the handler: 'exit', 'rev', 'toggle', 'fwd', and 'seek'
-// with a fraction 0..1 while scrubbing. REV and FWD are the rotate keys;
-// each press in the same direction goes a notch faster.
+// with a fraction 0..1 while scrubbing. REV and FWD are the arrow keys, the
+// same keys that set the time warp in flight; each press in the same
+// direction goes a notch faster.
 
 const BUTTONS = [
   { action: 'exit', label: 'EXIT', key: 'ESC' },
-  { action: 'rev', label: 'REV', key: 'A', code: 'KeyA' },
+  { action: 'rev', label: 'REV', key: '←' },
   { action: 'toggle', label: 'PLAY', key: 'SPACE', id: 'toggle' },
-  { action: 'fwd', label: 'FWD', key: 'D', code: 'KeyD' },
+  { action: 'fwd', label: 'FWD', key: '→' },
 ];
 
 export function createTransport(root, onAction) {

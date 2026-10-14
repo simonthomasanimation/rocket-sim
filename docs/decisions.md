@@ -1,5 +1,6 @@
 # Decisions log (one line each, newest first)
 
+- 2026-10-14 — Time control (owner): the arrow keys set the time warp in every mode on the replay's own ladder (×1, ×1.5, ×2 … ×64). Right is a notch faster (from pause, ×1), Left is the other direction, which live means pause; Space pauses and plays at ×1. No altitude limit. The replay shuttle moves to the arrows too; the arrows no longer pilot and comma / period are free again. Touch gets WARP − / WARP + buttons.
 - 2026-10-14 — Keys for M2: T holds prograde, G holds retrograde (a rotate key releases the hold), Enter stages, comma and period lower and raise the warp, + / − / 0 zoom and reset (mouse wheel and pinch too), N returns to the flight plan. Touch adds PRO, RET, STAGE and a cycling WARP button.
 - 2026-10-14 — Time warp in M2 is physics warp: ×1, ×2, ×5, ×10, ×50 as more fixed 60 Hz steps per frame, so a warped flight still replays exactly; ×1 only under 1 km, up to ×10 under 10 km. M3 replaces the top of the ladder with on-rails coasting.
 - 2026-10-14 — Replay tape: a long flight keeps every nth tick (at most 24,000 frames) and the cursor interpolates between frames; short flights still keep every tick.

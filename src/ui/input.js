@@ -4,32 +4,36 @@
 // as 'restart'.
 //
 // Flight controls are read by physical key position (e.code) so WASD on a
-// QWERTY keyboard is ZQSD on a French one without any setup: Shift / Up /
-// W-position throttle up, Ctrl / Down / S throttle down, Z-position full,
-// X cut, A-position / Left rotate left, D / Right rotate right. Comma and
-// period (the two keys right of M) lower and raise the time warp.
+// QWERTY keyboard is ZQSD on a French one without any setup: Shift /
+// W-position throttle up, Ctrl / S throttle down, Z-position full, X cut,
+// A-position rotate left, D rotate right.
+//
+// The arrow keys are the time control in every mode, the same ladder as the
+// replay shuttle: Right one notch faster (from pause, x1), Left is the other
+// direction, which live can only mean pause. Space pauses and plays too.
 //
 // One-shot actions are read by the letter actually typed (e.key) so the key
 // marked M mutes on every layout: R restart, M mute, V replay, T hold
 // prograde, G hold retrograde, N new start, + and - zoom, 0 resets the zoom.
-// Enter stages in flight (and confirms a page). Space pauses.
+// Enter stages in flight (and confirms a page).
 //
-// In replay mode the rotate keys shuttle the tape (again for faster), Space
-// pauses and plays, Home / End jump to the start / end, Esc exits.
+// In replay mode the arrows shuttle the tape (Right forwards, Left
+// backwards, again for faster), Space pauses and plays, Home / End jump to
+// the start / end, Esc exits.
 
 const KEYS = {
-  ShiftLeft: 'thrUp', ShiftRight: 'thrUp', ArrowUp: 'thrUp', KeyW: 'thrUp',
-  ControlLeft: 'thrDown', ControlRight: 'thrDown', ArrowDown: 'thrDown', KeyS: 'thrDown',
+  ShiftLeft: 'thrUp', ShiftRight: 'thrUp', KeyW: 'thrUp',
+  ControlLeft: 'thrDown', ControlRight: 'thrDown', KeyS: 'thrDown',
   KeyZ: 'full', KeyX: 'cut',
-  ArrowLeft: 'rotLeft', KeyA: 'rotLeft',
-  ArrowRight: 'rotRight', KeyD: 'rotRight',
+  KeyA: 'rotLeft',
+  KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
 const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3' };
-const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', Comma: 'warpDown', Period: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut' };
+const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut' };
 const REPLAY_BY_KEY = { r: 'restart', m: 'mute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
-  KeyA: 'rev', ArrowLeft: 'rev', KeyD: 'fwd', ArrowRight: 'fwd',
+  ArrowLeft: 'rev', ArrowRight: 'fwd',
   Space: 'toggle', Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut',
 };
 
@@ -59,12 +63,13 @@ const BUTTONS = [
   { id: 'rotRight', label: 'ROT R', cluster: 'left' },
   { id: 'holdPro', label: 'PRO', cluster: 'left', tap: true },
   { id: 'holdRet', label: 'RET', cluster: 'left', tap: true },
+  { id: 'warpDown', label: 'WARP −', cluster: 'left', tap: true },
+  { id: 'warpUp', label: 'WARP +', cluster: 'left', tap: true },
   { id: 'thrUp', label: 'THR +', cluster: 'right' },
   { id: 'thrDown', label: 'THR −', cluster: 'right' },
   { id: 'full', label: 'FULL', cluster: 'right' },
   { id: 'cut', label: 'CUT', cluster: 'right' },
   { id: 'stage', label: 'STAGE', cluster: 'right', tap: true },
-  { id: 'warpCycle', label: 'WARP', cluster: 'right', tap: true },
 ];
 
 export function createInput({ touchRoot, zoomTarget } = {}) {

@@ -2714,19 +2714,20 @@ function reportPage(flight) {
 
 // The flight plan: choose where to start, with the controls as printed on
 // the player's keyboard. keys: labels for KeyW, KeyS, KeyA, KeyD, KeyZ,
-// KeyX, Comma, Period (see keyLabels in input.js).
+// KeyX (see keyLabels in input.js).
 function startPage(keys = {}) {
-  const k = { KeyW: 'W', KeyS: 'S', KeyA: 'A', KeyD: 'D', KeyZ: 'Z', KeyX: 'X', Comma: ',', Period: '.', ...keys };
+  const k = { KeyW: 'W', KeyS: 'S', KeyA: 'A', KeyD: 'D', KeyZ: 'Z', KeyX: 'X', ...keys };
   return {
     section: 'SECTION 2 — ORBITAL FLIGHT',
     title: 'FLIGHT PLAN',
     page: 'PAGE 1',
     choices: SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: SCENARIOS[id].brief })),
     lines: [
-      `THROTTLE: ${k.KeyW} / Up raises, ${k.KeyS} / Down lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
-      `TILT: ${k.KeyA} / Left and ${k.KeyD} / Right. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
-      `ENTER stages. ${k.Comma} and ${k.Period} change the time warp. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.`,
-      'SPACE pauses. R restarts. N returns to this plan. V replays the last flight. M mutes.',
+      `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
+      `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
+      'TIME: Right arrow runs time faster, a notch per press (up to ×64); Left arrow pauses; Right or SPACE plays again at ×1. The same keys shuttle a replay.',
+      'ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
+      'R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',
@@ -2755,32 +2756,36 @@ const __exports = {};
 // as 'restart'.
 //
 // Flight controls are read by physical key position (e.code) so WASD on a
-// QWERTY keyboard is ZQSD on a French one without any setup: Shift / Up /
-// W-position throttle up, Ctrl / Down / S throttle down, Z-position full,
-// X cut, A-position / Left rotate left, D / Right rotate right. Comma and
-// period (the two keys right of M) lower and raise the time warp.
+// QWERTY keyboard is ZQSD on a French one without any setup: Shift /
+// W-position throttle up, Ctrl / S throttle down, Z-position full, X cut,
+// A-position rotate left, D rotate right.
+//
+// The arrow keys are the time control in every mode, the same ladder as the
+// replay shuttle: Right one notch faster (from pause, x1), Left is the other
+// direction, which live can only mean pause. Space pauses and plays too.
 //
 // One-shot actions are read by the letter actually typed (e.key) so the key
 // marked M mutes on every layout: R restart, M mute, V replay, T hold
 // prograde, G hold retrograde, N new start, + and - zoom, 0 resets the zoom.
-// Enter stages in flight (and confirms a page). Space pauses.
+// Enter stages in flight (and confirms a page).
 //
-// In replay mode the rotate keys shuttle the tape (again for faster), Space
-// pauses and plays, Home / End jump to the start / end, Esc exits.
+// In replay mode the arrows shuttle the tape (Right forwards, Left
+// backwards, again for faster), Space pauses and plays, Home / End jump to
+// the start / end, Esc exits.
 
 const KEYS = {
-  ShiftLeft: 'thrUp', ShiftRight: 'thrUp', ArrowUp: 'thrUp', KeyW: 'thrUp',
-  ControlLeft: 'thrDown', ControlRight: 'thrDown', ArrowDown: 'thrDown', KeyS: 'thrDown',
+  ShiftLeft: 'thrUp', ShiftRight: 'thrUp', KeyW: 'thrUp',
+  ControlLeft: 'thrDown', ControlRight: 'thrDown', KeyS: 'thrDown',
   KeyZ: 'full', KeyX: 'cut',
-  ArrowLeft: 'rotLeft', KeyA: 'rotLeft',
-  ArrowRight: 'rotRight', KeyD: 'rotRight',
+  KeyA: 'rotLeft',
+  KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
 const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3' };
-const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', Comma: 'warpDown', Period: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut' };
+const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut' };
 const REPLAY_BY_KEY = { r: 'restart', m: 'mute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
-  KeyA: 'rev', ArrowLeft: 'rev', KeyD: 'fwd', ArrowRight: 'fwd',
+  ArrowLeft: 'rev', ArrowRight: 'fwd',
   Space: 'toggle', Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut',
 };
 
@@ -2810,12 +2815,13 @@ const BUTTONS = [
   { id: 'rotRight', label: 'ROT R', cluster: 'left' },
   { id: 'holdPro', label: 'PRO', cluster: 'left', tap: true },
   { id: 'holdRet', label: 'RET', cluster: 'left', tap: true },
+  { id: 'warpDown', label: 'WARP −', cluster: 'left', tap: true },
+  { id: 'warpUp', label: 'WARP +', cluster: 'left', tap: true },
   { id: 'thrUp', label: 'THR +', cluster: 'right' },
   { id: 'thrDown', label: 'THR −', cluster: 'right' },
   { id: 'full', label: 'FULL', cluster: 'right' },
   { id: 'cut', label: 'CUT', cluster: 'right' },
   { id: 'stage', label: 'STAGE', cluster: 'right', tap: true },
-  { id: 'warpCycle', label: 'WARP', cluster: 'right', tap: true },
 ];
 
 function createInput({ touchRoot, zoomTarget } = {}) {
@@ -3346,14 +3352,15 @@ const __exports = {};
 // with mouse and touch; the keyboard shortcuts are listed on each button.
 //
 // Actions sent to the handler: 'exit', 'rev', 'toggle', 'fwd', and 'seek'
-// with a fraction 0..1 while scrubbing. REV and FWD are the rotate keys;
-// each press in the same direction goes a notch faster.
+// with a fraction 0..1 while scrubbing. REV and FWD are the arrow keys, the
+// same keys that set the time warp in flight; each press in the same
+// direction goes a notch faster.
 
 const BUTTONS = [
   { action: 'exit', label: 'EXIT', key: 'ESC' },
-  { action: 'rev', label: 'REV', key: 'A', code: 'KeyA' },
+  { action: 'rev', label: 'REV', key: '←' },
   { action: 'toggle', label: 'PLAY', key: 'SPACE', id: 'toggle' },
-  { action: 'fwd', label: 'FWD', key: 'D', code: 'KeyD' },
+  { action: 'fwd', label: 'FWD', key: '→' },
 ];
 
 function createTransport(root, onAction) {
@@ -3667,20 +3674,16 @@ camera.bodyRadius = flight.body.radius;
 let alerts = null;
 let replay = null;          // { timeline, cursor, speed, playing } while replaying
 let lastRecording = null;   // the most recent live flight, for replay
-// Shuttle ladder: each press in the same direction climbs one notch.
+// Shuttle ladder, shared by the replay and the live time warp: each press
+// of the right arrow climbs one notch. Live, the physics steps per frame
+// scale with it (the step itself stays 1/60 s, so the flight replays exactly).
 const SPEEDS = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
-// Time warp: physics steps per frame scale with it; limited near the ground.
-const WARPS = [1, 2, 5, 10, 50];
+const WARPS = SPEEDS;
 let warp = 0;
-function maxWarpIndex() {
-  const alt = flight.altitude();
-  if (flight.phase !== 'flying' || alt < 1000) return 0;
-  if (alt < 10000) return 3;
-  return WARPS.length - 1;
-}
 function setWarp(i) {
-  warp = Math.max(0, Math.min(maxWarpIndex(), i));
-  updateTitleBlock(titleBlock, { warp: `×${WARPS[warp]}` });
+  warp = Math.max(0, Math.min(WARPS.length - 1, i));
+  const w = WARPS[warp];
+  updateTitleBlock(titleBlock, { warp: `×${w % 1 === 0 ? w : w.toFixed(1)}` });
 }
 
 let shortPrediction = null;
@@ -3701,7 +3704,6 @@ function stepGame(dt) {
     if (ev.type === 'staged') sfx.stage();
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
   }
-  if (warp > maxWarpIndex()) setWarp(maxWarpIndex());
 }
 const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: stepGame });
 
@@ -3736,13 +3738,21 @@ function showPlan() {
   openPage('start', startPage({ ...knownKeys, ...input.observedLabels }));
 }
 
-// Space holds the live flight; Space again (or any restart) lets it go.
+// Space or the left arrow holds the live flight; Space or the right arrow
+// (or any restart) lets it go again, always at x1.
 let userPaused = false;
-function togglePause() {
-  userPaused = !userPaused;
+function setPaused(value) {
+  if (userPaused === value) return;
+  userPaused = value;
   if (userPaused) loop.pause(); else loop.resume();
+  setWarp(0);
   updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : 'BLUEPRINT' });
 }
+function togglePause() { setPaused(!userPaused); }
+// Right arrow: a notch faster, or play again from pause. Left arrow: the
+// other direction, which live can only mean pause.
+function warpUp() { if (userPaused) setPaused(false); else setWarp(warp + 1); }
+function warpDown() { if (!userPaused) setPaused(true); }
 
 function restart() {
   userPaused = false;
@@ -3964,9 +3974,8 @@ function frame(nowMs) {
       case 'pause': togglePause(); break;
       case 'confirm': input.stageNow(); break;
       case 'mute': updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' }); break;
-      case 'warpUp': setWarp(warp + 1); break;
-      case 'warpDown': setWarp(warp - 1); break;
-      case 'warpCycle': setWarp(warp >= maxWarpIndex() ? 0 : warp + 1); break;
+      case 'warpUp': warpUp(); break;
+      case 'warpDown': warpDown(); break;
       case 'zoomIn': camera.zoom(0.5); break;
       case 'zoomOut': camera.zoom(-0.5); break;
       case 'zoomReset': camera.resetZoom(); break;
@@ -4005,7 +4014,7 @@ openPage('start', startPage());
 loop.pause();
 // Relabel the card with the keys as printed on this keyboard, once known.
 let knownKeys = {};
-keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX', 'Comma', 'Period']).then((keys) => {
+keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX']).then((keys) => {
   knownKeys = keys;
   if (pageOpen === 'start') openPage('start', startPage({ ...keys, ...input.observedLabels }));
   transport.setKeyLabels({ ...keys, ...input.observedLabels });
