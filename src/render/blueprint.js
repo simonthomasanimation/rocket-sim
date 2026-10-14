@@ -4,7 +4,6 @@
 import { labelAlpha } from './camera.js';
 import { craftHeight, footHalfWidth, activeStage, progradeAngle, canopyBloom } from '../core/craft.js';
 import { BODIES, ESCAPE_RADIUS } from '../core/body.js';
-import { closestApproach } from '../core/predict.js';
 
 export const BLUEPRINT = {
   paper: '#1B3A6B',
@@ -86,7 +85,7 @@ export function drawScene(ctx, cam, scene) {
     drawBody(ctx, shifted, o.body, o.terrain, { x: state.x - o.offset.x, y: state.y - o.offset.y }, true);
   }
   drawBody(ctx, cam, body, terrain, state);
-  if (others && others.length) drawBodyPaths(ctx, cam, body, others, phase === 'flying' ? prediction : null, clock || 0);
+  if (others && others.length) drawBodyPaths(ctx, cam, body, others);
   // Pointers to the bodies that are off the sheet: the one the craft
   // orbits, and the others (the Moon from Earth's sphere, Earth from the Moon's).
   // No pointer to the body the craft is standing on or skimming: with the
@@ -671,38 +670,15 @@ function drawReachRing(ctx, cam, centre, radius, text, dash = [2, 8]) {
 
 // The paths of the other bodies round this one, as fine dotted rings: the
 // Moon's orbit seen from Earth, and Earth's apparent path seen from the
-// Moon. When the craft's predicted path heads out that way, a ghost of the
-// body is drawn where it will be when the path passes nearest to it, tied
-// to that point of the path, with the miss distance: the planning aid for
-// a transfer, so the burn can be timed before the sphere is ever reached.
-function drawBodyPaths(ctx, cam, body, others, prediction, clock) {
+// Moon. (A ghost of the body at the path's closest approach was tried and
+// dropped: it looked too much like the body itself, owner's call, 14 Oct.)
+function drawBodyPaths(ctx, cam, body, others) {
   const centre = cam.toScreen(0, 0);
-  const W = cam.width; const H = cam.height;
   for (const o of others) {
     const child = o.body.parent === body.id;
     const ring = child ? o.body.orbitRadius : body.orbitRadius;
     if (!(ring > 0)) continue;
     drawReachRing(ctx, cam, centre, ring, child ? `${o.body.name}'S PATH` : `${o.body.name}'S PATH, SEEN FROM THE ${body.name}`, [1, 5]);
-    const best = closestApproach(prediction, body, o.body, clock);
-    if (!best || best.t < 1) continue;
-    const c = cam.toScreen(best.x, best.y);
-    const now = cam.toScreen(o.offset.x, o.offset.y);
-    if (Math.hypot(c.x - now.x, c.y - now.y) < 3) continue; // it will not have moved to speak of
-    if (c.x < -40 || c.x > W + 40 || c.y < cam.top - 40 || c.y > cam.top + H + 40) continue;
-    const rp = Math.max(3, o.body.radius * cam.scale);
-    if (rp > 4000) continue;
-    ctx.strokeStyle = BLUEPRINT.inkPale;
-    ctx.lineWidth = STROKE.annotation;
-    ctx.setLineDash([3, 5]);
-    ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
-    if (Number.isFinite(o.body.soi) && o.body.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, o.body.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
-    // The tie to the point of the path it is nearest to.
-    const p = cam.toScreen(best.px, best.py);
-    ctx.setLineDash([1, 4]);
-    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(c.x, c.y); ctx.stroke();
-    ctx.setLineDash([]);
-    label(ctx, `${o.body.name} AT T-${formatTime(best.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale);
-    label(ctx, `YOUR PATH PASSES ${formatDistance(best.d)} OFF`, c.x, c.y + rp + 28, 'center', BLUEPRINT.inkPale);
   }
 }
 
@@ -1018,7 +994,6 @@ function drawPrediction(ctx, cam, prediction, body) {
       ctx.lineWidth = STROKE.annotation;
       ctx.setLineDash([3, 5]);
       ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
-      if (Number.isFinite(b.soi) && b.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, b.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
       ctx.setLineDash([]);
       label(ctx, `${b.name} WILL BE HERE AT T-${formatTime(sg.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale);
     }

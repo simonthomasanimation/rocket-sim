@@ -7,7 +7,6 @@
 // blocky WARP readout, a status line and the radio log in terminal type.
 
 import { BODIES, bodyState, childrenOf, ESCAPE_RADIUS } from '../core/body.js';
-import { closestApproach } from '../core/predict.js';
 import { formatDistance, formatTime, MONO } from './blueprint.js';
 
 export const CRT = {
@@ -127,30 +126,6 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
     if (o.body.parent === body.id) {
       const c = cam.toScreen(0, 0);
       glowStroke(ctx, () => ctx.arc(c.x, c.y, o.body.orbitRadius * cam.scale, 0, Math.PI * 2), CRT.inkDim, 0.75, 2);
-    }
-  }
-
-  // Ghosts: where the Moon (or Earth, from the Moon) will be when the
-  // predicted path passes nearest to it, tied to that point of the path.
-  if (prediction && scene.phase === 'flying') {
-    for (const o of others) {
-      const best = closestApproach(prediction, body, o.body, clock);
-      if (!best || best.t < 1) continue;
-      const c = cam.toScreen(best.x, best.y);
-      const now = cam.toScreen(o.x, o.y);
-      if (Math.hypot(c.x - now.x, c.y - now.y) < 3) continue;
-      if (c.x < -40 || c.x > cam.width + 40 || c.y < -40 || c.y > cam.height + 40) continue;
-      const rp = Math.max(3, o.body.radius * cam.scale);
-      const p = cam.toScreen(best.px, best.py);
-      ctx.strokeStyle = CRT.inkDim; ctx.lineWidth = 0.75;
-      ctx.setLineDash([3, 5]);
-      ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
-      if (Number.isFinite(o.body.soi) && o.body.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, o.body.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
-      ctx.setLineDash([1, 4]);
-      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(c.x, c.y); ctx.stroke();
-      ctx.setLineDash([]);
-      text(ctx, `${o.body.name} AT T-${formatTime(best.t)}`, c.x, c.y + rp + 14, { align: 'center', colour: CRT.inkDim });
-      text(ctx, `PATH PASSES ${formatDistance(best.d)} OFF`, c.x, c.y + rp + 28, { align: 'center', colour: CRT.inkDim });
     }
   }
 
