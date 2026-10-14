@@ -576,6 +576,12 @@ body.doc-vellum .stamp-button.is-down { background: var(--vl-ink); color: var(--
 .vellum-table td { text-align: right; font-weight: 500; }
 .vellum-table td.tone-pencil, .vellum-pencil { color: var(--vl-pencil); }
 
+.vellum-rule th { width: auto; text-align: right; font-size: 10px; }
+.vellum-rule th:first-child, .vellum-rule td:first-child { text-align: left; }
+.vellum-rule td { white-space: nowrap; }
+.vellum-rule tr.kind-boosters td:first-child { color: var(--vl-pencil); }
+.vellum-warnings { margin: 4px 0 var(--grid); padding: 0; list-style: none; }
+.vellum-warnings li { padding: 3px 0; font: 500 11px/15px var(--font-mono); letter-spacing: 0.03em; color: var(--vl-pencil); border-bottom: var(--stroke-annotation) solid var(--vl-pencil); }
 .vellum-stages { margin: 0; padding: 0; list-style: none; }
 .vellum-stage { padding: 6px 0; border-bottom: var(--stroke-annotation) solid var(--vl-ink-pale); }
 .vellum-stage.is-empty { font: 400 11px/16px var(--font-mono); color: var(--vl-ink-pale); }

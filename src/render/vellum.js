@@ -235,18 +235,34 @@ export function drawStack(ctx, layout, design, opts = {}) {
     ctx.setLineDash([]);
   }
 
-  // Stage divisions in red pencil at each decoupler's top edge, and the
-  // stage names down the left.
+  // Stage divisions in red pencil at each decoupler's top edge, and each
+  // stage's figures down the left of the sheet, as a drawing's notes.
   if (opts.stages) {
-    let n = 0;
     const width = Math.max(10 * G, ...layout.parts.map((b) => b.halfW + 3 * G), ...layout.radials.map((r) => r.right.x + r.right.w - axisX + 2 * G));
     for (const b of layout.parts) {
       const p = partById(b.id);
       if (p.category !== 'decoupler' || b.index === layout.parts.length - 1) continue;
-      n += 1;
       ctx.strokeStyle = VELLUM.pencil; ctx.lineWidth = 0.75; ctx.setLineDash([4, 3]);
       ctx.beginPath(); ctx.moveTo(axisX - width, Math.round(b.top) + 0.5); ctx.lineTo(axisX + width, Math.round(b.top) + 0.5); ctx.stroke();
       ctx.setLineDash([]);
+    }
+    if (opts.figures && !opts.hide) {
+      const left = axisX - width - G;
+      let lastY = Infinity;
+      opts.stages.forEach((st, i) => {
+        const f = opts.figures[i];
+        if (!f) return;
+        let y;
+        if (st.kind === 'boosters') { const r = layout.radials.find((q) => q.index === st.radials[0].on && q.id === st.radials[0].id); y = r ? r.top + 10 : null; }
+        else { const boxes = st.parts.map((idx) => layout.parts[idx]).filter(Boolean); if (boxes.length) y = (Math.min(...boxes.map((q) => q.top)) + Math.max(...boxes.map((q) => q.bottom))) / 2; }
+        if (y === null || y === undefined) return;
+        if (lastY - y < 28) y = lastY - 28; // keep the notes apart
+        lastY = y;
+        const line1 = `${i + 1}  ${st.name}`;
+        const line2 = f.deltaV > 0 ? `${Math.round(f.deltaV)} M/S · TWR ${f.twr.toFixed(2)}` : st.capsule ? 'RIDES HOME' : 'NO ENGINE';
+        text(ctx, line1, left, y - 7, { size: 10, align: 'right', colour: st.kind === 'boosters' ? VELLUM.pencil : VELLUM.ink });
+        text(ctx, line2, left, y + 7, { size: 10, align: 'right', colour: f.thrust > 0 && f.twr < 1 && i === 0 ? VELLUM.pencil : VELLUM.inkPale });
+      });
     }
   }
   // Overall height as a dimension line on the right.

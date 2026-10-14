@@ -7,6 +7,7 @@
 
 import { PARTS, CATEGORIES, SIZES, partById, createDesign, cloneDesign, addPart, addRadial, insertPart, insertRefusal, removePart, removeRadial, setBoosterDrop, stagingList, designStats, compileDesign } from '../core/parts.js';
 import { KP3_DESIGN } from '../core/designs.js';
+import { EARTH, MOON } from '../core/body.js';
 import { preloadPartArt, partIconSrc, onPartArtReady } from '../render/partart.js';
 import { VELLUM, layoutStack, hitStack, insertionIndexAt, drawStack, drawGhost, partUnits } from '../render/vellum.js';
 
@@ -280,15 +281,43 @@ export function createBuilder({ canvas, root, onAction }) {
     note.dataset.role = 'note';
     panel.append(note);
 
-    // Figures.
-    const stats = designStats(design);
+    // Figures: the slide-rule panel. TWR against Earth's pad and the Moon's.
+    const stats = designStats(design, { gravity: EARTH.gravity });
+    const moon = designStats(design, { gravity: MOON.gravity });
     const table = el('table', 'vellum-table');
     const row = (k, v, tone) => { const tr = el('tr'); tr.append(el('th', null, k)); tr.append(el('td', tone ? `tone-${tone}` : null, v)); table.append(tr); };
     row('PAD MASS', kg(stats.mass));
-    row('STAGES', String(stats.stages.length));
     row('HEIGHT', `${(design.stack.reduce((h, e) => h + partById(e.id).height, 0)).toFixed(1)} M`);
     row('PARTS', String(design.stack.length + design.stack.reduce((n, e) => n + e.radials.reduce((m, r) => m + r.count, 0), 0)));
+    const twrText = (t) => (t > 0 ? t.toFixed(2) : '—');
+    row('TWR OFF EARTH', twrText(stats.launchTwr), stats.launchTwr > 0 && stats.launchTwr < 1 ? 'pencil' : null);
+    row('TWR OFF MOON', twrText(moon.launchTwr), moon.launchTwr > 0 && moon.launchTwr < 1 ? 'pencil' : null);
+    row('ΔV TOTAL', `${Math.round(stats.deltaV).toLocaleString('en-US')} M/S`);
     panel.append(table);
+    // Red-pencil warnings from the compiler, before the figures they explain.
+    if (stats.warnings.length) {
+      panel.append(el('h2', 'vellum-group-title vellum-pencil', 'RED PENCIL'));
+      const ul = el('ul', 'vellum-warnings');
+      for (const w of stats.warnings) ul.append(el('li', null, w.text));
+      panel.append(ul);
+    }
+    if (stats.stages.length) {
+      const rule = el('table', 'vellum-table vellum-rule');
+      const hr = el('tr');
+      for (const h of ['STAGE', 'MASS', 'TWR', 'ΔV']) hr.append(el('th', null, h));
+      rule.append(hr);
+      stats.stages.forEach((st, i) => {
+        const tr = el('tr');
+        if (st.kind === 'boosters') tr.className = 'kind-boosters';
+        tr.append(el('td', null, `${i + 1} ${st.kind === 'boosters' ? 'BOOST' : st.thrust > 0 ? 'STAGE' : 'CAPS.'}`));
+        tr.append(el('td', null, `${(st.mass / 1000).toFixed(st.mass < 10000 ? 2 : 1)} T`));
+        tr.append(el('td', st.thrust > 0 && st.twr < 1 && i === 0 ? 'tone-pencil' : null, st.thrust > 0 ? st.twr.toFixed(2) : '—'));
+        tr.append(el('td', null, st.deltaV > 0 ? `${Math.round(st.deltaV).toLocaleString('en-US')}` : '—'));
+        rule.append(tr);
+      });
+      panel.append(rule);
+      panel.append(el('p', 'vellum-caption', 'Mass at ignition; TWR against Earth gravity, ΔV in m/s with the tanks full. To orbit from Pad 1 takes about 3,200; the Moon and back about 2,900 more.'));
+    }
 
     // Staging list.
     panel.append(el('h2', 'vellum-group-title', 'STAGING, IN FIRING ORDER'));
@@ -386,7 +415,8 @@ export function createBuilder({ canvas, root, onAction }) {
       if (drag.radial) { const hit = hitStack(layout, drag.x, drag.y); hostHint = hit && hit.kind === 'part' && partById((drag.from === 'stack' ? reducedDesign() : design).stack[hit.index].id).nodes.radial === 'host' ? hit.index : -1; }
       else gapAt = insertionIndexAt(layout, drag.y);
     }
-    drawStack(ctx, layout, drag && drag.from === 'stack' ? reducedDesign() : design, { selected: drag ? null : selected, hover: drag ? null : hover, gapAt, hostHint, stages: cfg.stages });
+    const figures = drag ? null : designStats(design, { gravity: EARTH.gravity }).stages;
+    drawStack(ctx, layout, drag && drag.from === 'stack' ? reducedDesign() : design, { selected: drag ? null : selected, hover: drag ? null : hover, gapAt, hostHint, stages: cfg.stages, figures });
     if (drag && (!inArea(drag.x, drag.y) || true)) { /* the HTML ghost follows the pointer */ }
     if (noteText && performance.now() >= noteUntil) { noteText = ''; showNote(); }
   }
