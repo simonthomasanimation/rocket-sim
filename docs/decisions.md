@@ -1,5 +1,6 @@
 # Decisions log (one line each, newest first)
 
+- 2026-10-14 — View lock: L pins the craft to the middle of the sheet (and the map) at any zoom, kept across flights until pressed again. Predicted path segments fade by 30 % per change of sphere (floor 30 %) so overlapping loops read in time order; the ghost of a body where the path enters its sphere always gets a disc and a name.
 - 2026-10-14 — Warp and the engine: an open throttle blocks the rails only while there is fuel to burn; the physics warp is capped at ×8 while the engine burns (a tank at ×64 is gone in seconds, and a Moon-bound path turns into an escape before the player can cut); every refused warp press gets a CAPCOM reason.
 - 2026-10-14 — Rings of reach and body paths are drawn only when their radius on screen is under 1.5 sheet diagonals: a bigger ring crosses the sheet as a near-straight line and confuses the planet-level view. Earth's edge of reach is labelled EARTH SOI on both documents, so the top body reads like the Moon.
 - 2026-10-14 — Zoom: a zoom the player sets is an absolute scale that holds until 0, not a multiplier on the automatic zoom (the product ran away as the craft climbed); the camera focus snaps to the craft each frame and only the turn, zoom and lift ease. Drag pans both documents; 0 recentres.

@@ -22,7 +22,8 @@ const G = 8;
 // The map's own camera: centred on the frame, zoom from the fit plus the
 // player's bias, eased so a change of frame does not snap.
 export function createMapCamera() {
-  const cam = { cx: 0, cy: 0, scale: 1e-4, zoomBias: 0, offX: 0, offY: 0, width: 1, height: 1 };
+  const cam = { cx: 0, cy: 0, scale: 1e-4, zoomBias: 0, offX: 0, offY: 0, locked: false, width: 1, height: 1 };
+  cam.toggleLock = () => { cam.locked = !cam.locked; cam.offX = 0; cam.offY = 0; };
   cam.zoom = (steps) => { cam.zoomBias = Math.max(-8, Math.min(8, cam.zoomBias + steps)); };
   cam.pan = (dx, dy) => { cam.offX -= dx / cam.scale; cam.offY += dy / cam.scale; };
   cam.isHeld = () => cam.zoomBias !== 0 || cam.offX !== 0 || cam.offY !== 0;
@@ -30,10 +31,11 @@ export function createMapCamera() {
   cam.resetZoom = () => { cam.zoomBias = 0; cam.offX = 0; cam.offY = 0; };
   cam.toScreen = (wx, wy) => ({ x: cam.width / 2 + (wx - cam.cx) * cam.scale, y: cam.height / 2 - (wy - cam.cy) * cam.scale });
   // Fit a box [minX, maxX] x [minY, maxY] (world) with a margin, eased.
-  cam.fit = (box, dt, snap = false) => {
+  // `focus` is the craft: when the view is locked it sits at the centre.
+  cam.fit = (box, dt, snap = false, focus = null) => {
     // Symmetric about the frame body (the origin), so it sits at the centre.
     const w = 2 * Math.max(1, Math.abs(box.minX), Math.abs(box.maxX)); const h = 2 * Math.max(1, Math.abs(box.minY), Math.abs(box.maxY));
-    const tx = cam.offX; const ty = cam.offY;
+    const tx = cam.offX + (cam.locked && focus ? focus.x : 0); const ty = cam.offY + (cam.locked && focus ? focus.y : 0);
     let ts = Math.min((cam.width - 12 * G) / w, (cam.height - 24 * G) / h) * Math.pow(2, cam.zoomBias);
     ts = Math.max(1e-6, Math.min(2, ts));
     const far = Math.hypot(tx - cam.cx, ty - cam.cy) * cam.scale > cam.width;
@@ -115,7 +117,7 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
     }
   }
   for (const o of others) if (o.body.parent === body.id) { grow(o.x, o.y, o.body.soi); grow(0, 0, o.body.orbitRadius); }
-  cam.fit(box, frameDt, snap);
+  cam.fit(box, frameDt, snap, state);
 
   ctx.save();
   ctx.lineJoin = 'round';
@@ -208,19 +210,23 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
   if (prediction && prediction.points.length > 1) {
     const pts = prediction.points;
     const segs = prediction.segments || [{ body: body.id, from: 0, offset: { x: 0, y: 0 } }];
-    glowStroke(ctx, () => {
-      let last = null; let k = 0;
-      for (let i = 0; i < pts.length; i++) {
-        let broke = i === 0;
-        while (k + 1 < segs.length && segs[k + 1].from <= i) { k += 1; broke = true; }
-        const o = segs[k].offset;
-        const p = cam.toScreen(pts[i].x + o.x, pts[i].y + o.y);
-        if (broke) ctx.moveTo(p.x, p.y);
-        else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1) ctx.lineTo(p.x, p.y);
-        else continue;
-        last = p;
-      }
-    }, CRT.ink, 1, 3);
+    // One stroke per segment, later ones fainter (see the blueprint's path).
+    for (let k = 0; k < segs.length; k++) {
+      const from = segs[k].from; const to = k + 1 < segs.length ? segs[k + 1].from : pts.length;
+      const o = segs[k].offset;
+      ctx.globalAlpha = Math.max(0.3, 1 - 0.3 * k);
+      glowStroke(ctx, () => {
+        let last = null;
+        for (let i = from; i < to; i++) {
+          const p = cam.toScreen(pts[i].x + o.x, pts[i].y + o.y);
+          if (i === from) ctx.moveTo(p.x, p.y);
+          else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1) ctx.lineTo(p.x, p.y);
+          else continue;
+          last = p;
+        }
+      }, CRT.ink, 1, 3);
+    }
+    ctx.globalAlpha = 1;
     const segOf = (i) => { let j = 0; while (j + 1 < segs.length && segs[j + 1].from <= i) j += 1; return segs[j]; };
     const tick = (wx, wy, name, t, colour = CRT.ink) => {
       const p = cam.toScreen(wx, wy);

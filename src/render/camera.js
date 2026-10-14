@@ -20,6 +20,7 @@ export function createCamera() {
     groundClearance: 96, // px kept between the surface and the bottom of the flight area, room for the strata
     heldScale: null,     // px per metre the player set, or null for automatic
     offX: 0, offY: 0,    // world metres the view is panned off the craft
+    locked: false,       // the craft pinned to the middle of the sheet at any zoom
     bodyRadius: 1,
     groundRadius: null,  // radius of the ground under the craft (terrain), or null for the body's
   };
@@ -65,7 +66,9 @@ export function createCamera() {
     const low = extent && extent.down > alt + R / 4 ? Math.max(r + R, extent.down) : r + R;
     const asDisc = Math.min(low * scale + c, H - 48);
     const t = clamp(1 - (R * scale - H / 3) / (H - H / 3), 0, 1);
-    const lift = asLine + (asDisc - asLine) * t;
+    // Locked: the craft sits dead centre whatever the zoom; otherwise the
+    // ground is pinned low and the disc framed as above.
+    const lift = cam.locked ? H / 2 : asLine + (asDisc - asLine) * t;
     return { x: state.x + cam.offX, y: state.y + cam.offY, rot, scale, lift };
   }
 
@@ -95,6 +98,8 @@ export function createCamera() {
     cam.offX = clamp(cam.offX, -limit, limit); cam.offY = clamp(cam.offY, -limit, limit);
   };
   cam.isHeld = () => cam.heldScale !== null || cam.offX !== 0 || cam.offY !== 0;
+  // L: lock the view on the craft, in the middle of the sheet at any zoom.
+  cam.toggleLock = () => { cam.locked = !cam.locked; cam.offX = 0; cam.offY = 0; };
   // C: back onto the craft, keeping the zoom. 0: that and the automatic zoom too.
   cam.centre = () => { cam.offX = 0; cam.offY = 0; };
   cam.resetZoom = () => { cam.heldScale = null; cam.offX = 0; cam.offY = 0; };

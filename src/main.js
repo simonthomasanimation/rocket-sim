@@ -314,6 +314,7 @@ function onTransport(action, value) {
     case 'zoomOut': zoomBy(-0.5); break;
     case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
     case 'centre': (doc === 'crt' ? mapCamera : camera).centre(); break;
+    case 'lock': (doc === 'crt' ? mapCamera : camera).toggleLock(); break;
     case 'zoom': zoomBy(value); break;
     case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
     case 'map': turnPage(); break;
@@ -569,6 +570,7 @@ function frame(nowMs) {
       case 'zoomOut': zoomBy(-0.5); break;
       case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
       case 'centre': (doc === 'crt' ? mapCamera : camera).centre(); break;
+      case 'lock': (doc === 'crt' ? mapCamera : camera).toggleLock(); break;
       case 'zoom': zoomBy(value); break;
       case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
       case 'map': turnPage(); break;

@@ -47,6 +47,12 @@ test('a zoom the player sets holds as the craft climbs, and 0 hands the view bac
   assert.ok(Math.abs(cam.scale / held - 1) < 1e-6, 'the held zoom stays put as the craft climbs');
   cam.pan(100, 0);
   assert.ok(cam.isHeld() && cam.offX !== 0, 'a drag pans the view');
+  cam.toggleLock();
+  for (let i = 0; i < 600; i++) cam.follow(high, 1 / 60, { up: 24000, down: 25600, side: 200000 });
+  const at = cam.toScreen(high.x, high.y);
+  assert.ok(Math.abs(at.x - 640) < 1 && Math.abs(at.y - 344) < 1, 'locked: the craft sits in the middle of the sheet');
+  assert.equal(cam.offX, 0, 'locking clears the pan');
+  cam.toggleLock();
   cam.resetZoom();
   for (let i = 0; i < 600; i++) cam.follow(high, 1 / 60, { up: 24000, down: 25600, side: 200000 });
   assert.ok(cam.scale < auto && cam.scale < held, 'after 0 the automatic zoom follows the flight again');

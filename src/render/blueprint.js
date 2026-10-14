@@ -144,7 +144,10 @@ export function drawScaleBar(ctx, cam, x, y) {
   ctx.moveTo(x + px / 2 + 0.5, y); ctx.lineTo(x + px / 2 + 0.5, y + 3);
   ctx.stroke();
   label(ctx, `SCALE ${formatDistance(step)}`, x, y - 4, 'left', BLUEPRINT.inkPale);
-  if (cam.isHeld && cam.isHeld()) label(ctx, 'VIEW HELD — C CENTRES ON THE CRAFT, 0 RESETS THE ZOOM TOO', x, y + 16, 'left', BLUEPRINT.inkPale);
+  const notes = [];
+  if (cam.locked) notes.push('LOCKED ON THE CRAFT — L UNLOCKS');
+  if (cam.isHeld && cam.isHeld()) notes.push('VIEW HELD — C CENTRES ON THE CRAFT, 0 RESETS THE ZOOM TOO');
+  notes.forEach((n, i) => label(ctx, n, x, y + 16 + i * 14, 'left', BLUEPRINT.inkPale));
 }
 
 // Altitude ruler down the left edge: ticks in metres above the ground
@@ -980,19 +983,25 @@ function drawPrediction(ctx, cam, prediction, body) {
   ctx.strokeStyle = critical ? BLUEPRINT.accent : BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
   ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  let last = null; let k = 0;
-  for (let i = 0; i < points.length; i++) {
-    let broke = i === 0;
-    while (k + 1 < segs.length && segs[k + 1].from <= i) { k += 1; broke = true; }
+  // One stroke per segment, each later one fainter: after a change of
+  // sphere the path is further off in time and less certain, and when
+  // several loops lie over each other the fading says which comes first.
+  for (let k = 0; k < segs.length; k++) {
+    const from = segs[k].from; const to = k + 1 < segs.length ? segs[k + 1].from : points.length;
     const o = segs[k].offset;
-    const p = cam.toScreen(points[i].x + o.x, points[i].y + o.y);
-    if (broke) ctx.moveTo(p.x, p.y);
-    else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1.5) ctx.lineTo(p.x, p.y);
-    else continue;
-    last = p;
+    ctx.globalAlpha = Math.max(0.3, 1 - 0.3 * k);
+    ctx.beginPath();
+    let last = null;
+    for (let i = from; i < to; i++) {
+      const p = cam.toScreen(points[i].x + o.x, points[i].y + o.y);
+      if (i === from) ctx.moveTo(p.x, p.y);
+      else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1.5) ctx.lineTo(p.x, p.y);
+      else continue;
+      last = p;
+    }
+    ctx.stroke();
   }
-  ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.setLineDash([]);
   // Ghosts of the other bodies where the path meets them, and the
   // encounter and exit markers (accent dot: a marker, per the brief).
@@ -1001,15 +1010,17 @@ function drawPrediction(ctx, cam, prediction, body) {
     const b = BODIES[sg.body];
     if (!b || sg.body === body.id) continue;
     const c = cam.toScreen(sg.offset.x, sg.offset.y);
-    const rp = b.radius * cam.scale;
-    if (rp >= 1.5 && rp < 4000) {
+    // Even when the body is a dot at this zoom the ghost gets a disc and a
+    // name: without them the path's loop round the body reads as a knot.
+    const rp = Math.max(3, b.radius * cam.scale);
+    if (rp < 4000 && c.x > -40 && c.x < cam.width + 40 && c.y > cam.top - 40 && c.y < cam.top + cam.height + 40) {
       ctx.strokeStyle = BLUEPRINT.inkPale;
       ctx.lineWidth = STROKE.annotation;
       ctx.setLineDash([3, 5]);
       ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
-      if (Number.isFinite(b.soi)) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, b.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
+      if (Number.isFinite(b.soi) && b.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, b.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
       ctx.setLineDash([]);
-      label(ctx, `${b.name} AT T-${formatTime(sg.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale, labelAlpha(rp));
+      label(ctx, `${b.name} WILL BE HERE AT T-${formatTime(sg.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale);
     }
   }
   if (prediction.encounter) {
