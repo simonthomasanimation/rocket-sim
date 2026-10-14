@@ -19,3 +19,7 @@ then open http://localhost:5173.
 
 ## Where things are
 See `CLAUDE.md` for the layout, `docs/build-plan.md` for the milestones, `docs/progress.md` for the task list and `docs/art-direction-brief.md` for the look.
+
+## Milestone builds
+
+Each finished milestone is kept as one self-contained file in `snapshots/` (for example `snapshots/m1-lander.html`). Double-click it to play that milestone offline; only the fonts come from the web.

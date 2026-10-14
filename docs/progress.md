@@ -1,6 +1,6 @@
 # Progress — the agent's task list
 
-Rules: work top to bottom. Tick a task only when it is committed and the deployed build still runs. When every task of a milestone is ticked, open a GitHub issue titled "Gate: M<n> ready to play" with how to play it, and stop working on later milestones until the owner closes that issue. Open issues from the owner come before new tasks. Add tasks here when you discover them; never delete one, strike it through with a reason.
+Rules: work top to bottom. Tick a task only when it is committed and the deployed build still runs. When every task of a milestone is ticked, keep the build (`node tools/snapshot.js --keep m<n>-<name>` → `snapshots/`), open a GitHub issue titled "Gate: M<n> ready to play" with how to play it, and stop working on later milestones until the owner closes that issue. Open issues from the owner come before new tasks. Add tasks here when you discover them; never delete one, strike it through with a reason.
 
 ## M0 Foundations
 - [x] Folder layout per CLAUDE.md; package.json with `dev` (local server) and `snapshot` (inline to dist/index.html) scripts
@@ -23,6 +23,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Placeholder engine noise via Web Audio (skip if awkward)
 - [x] Replay transport (owner request on #2): exit, play/pause, reverse, fast ×4/×8/×16 both ways, single-tick stepping, scrub tape; keyboard J/K/L, arrows, Home/End, Esc and touch buttons
 - [x] Gate issue opened (#2)
+- [x] Milestone build kept in snapshots/m1-lander.html
 
 ## M2 Orbit
 - [ ] Round body, inverse-square gravity, body-relative coordinates

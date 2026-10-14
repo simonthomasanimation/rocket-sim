@@ -110,10 +110,23 @@ export function buildSnapshot() {
   return { generated, bytes };
 }
 
+// Milestone copies: `node tools/snapshot.js --keep m1-lander` also writes
+// snapshots/m1-lander.html, a committed single file that plays by itself
+// when double-clicked (fonts come from the web; everything else is inside).
+export function keepSnapshot(name) {
+  const dir = path.join(root, 'snapshots');
+  fs.mkdirSync(dir, { recursive: true });
+  const target = path.join(dir, `${name}.html`);
+  fs.copyFileSync(path.join(distDir, 'index.html'), target);
+  return path.relative(root, target);
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const { generated, bytes } = buildSnapshot();
     console.log(`dist/index.html written (${(bytes / 1024).toFixed(1)} kB) from ${generated.join(', ')}`);
+    const keep = process.argv.indexOf('--keep');
+    if (keep !== -1 && process.argv[keep + 1]) console.log(`kept as ${keepSnapshot(process.argv[keep + 1])}`);
   } catch (err) {
     console.error(`snapshot failed: ${err.message}`);
     process.exit(1);

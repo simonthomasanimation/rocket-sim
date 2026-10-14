@@ -37,6 +37,7 @@ art/textures/       four tiling PNGs, 512px
 art/covers/         approved illustrations (reference and milestone cards)
 art/reference/      approved concept images per document (reference only, never shipped)
 docs/               art-direction-brief.md, build-plan.md, decisions.md
+snapshots/          one committed single-file build per milestone (m1-lander.html, ...)
 ```
 
 ## Milestones (build in this order; each must be playable before the next)
@@ -51,7 +52,7 @@ docs/               art-direction-brief.md, build-plan.md, decisions.md
 
 ## Working rules
 - Commit small, commit often, with messages a non-coder can read ("Lander: add landing legs and crash detection").
-- After each milestone, produce a single-file build in `dist/` for snapshot publishing.
+- After each milestone, produce a single-file build in `dist/` for snapshot publishing, and keep a copy in the repo: `node tools/snapshot.js --keep m<n>-<name>` writes `snapshots/m<n>-<name>.html`; commit it with the gate. The owner's clone of the repo is his local copy of every milestone.
 - Keep docs/decisions.md current: one line per decision, dated.
 - When unsure about a design choice, pick the option consistent with the brief and say what you assumed; don't block on questions a playtest will answer.
 

@@ -1,0 +1,2816 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Kármán Program — a 2D rocket simulator set in the paperwork of a 1960s space program.">
+  <meta name="theme-color" content="#1B3A6B">
+  <title>Kármán Program</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
+  <style>
+/* Kármán Program — shared chrome. One grid, three typefaces, four papers. */
+
+:root {
+  /* Blueprint paper (flight view) */
+  --bp-paper: #1B3A6B;
+  --bp-ink: #F2F4F7;
+  --bp-ink-2: #A9D6E5;
+  --bp-accent: #E4572E;
+
+  /* Typefaces: readouts, headings, running text — each with a system fallback */
+  --font-mono: "IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+  --font-head: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-text: "Source Sans 3", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  --grid: 8px;
+  --stroke-structure: 1.5px;
+  --stroke-annotation: 0.75px;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bp-paper);
+  color: var(--bp-ink);
+  overflow: hidden;
+  font-family: var(--font-text);
+  -webkit-text-size-adjust: 100%;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Engineering title block, lower right, snapped to the 8px grid */
+.title-block {
+  position: absolute;
+  right: calc(var(--grid) * 2 + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--grid) * 2 + env(safe-area-inset-bottom, 0px));
+  border: var(--stroke-structure) solid var(--bp-ink);
+  background: var(--bp-paper);
+  color: var(--bp-ink);
+  font: 500 12px/16px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.title-block table {
+  border-collapse: collapse;
+}
+
+.title-block th,
+.title-block td {
+  border: var(--stroke-annotation) solid var(--bp-ink-2);
+  padding: 4px 8px;
+  text-align: left;
+  font-weight: inherit;
+  white-space: nowrap;
+}
+
+.title-block th {
+  font-size: 14px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
+
+.title-block .label {
+  color: var(--bp-ink-2);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 400;
+}
+
+.noscript {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  margin: 0;
+  font: 400 14px/24px var(--font-mono);
+}
+
+/* On-screen flight controls: stamped rectangles with text labels. Shown on
+   coarse pointers (phones, tablets) or after the first touch anywhere. */
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+}
+@media (pointer: coarse) { .touch-controls { display: block; } }
+.touch-controls.is-touch { display: block; }
+.touch-controls.is-hidden { display: none; }
+
+.touch-cluster {
+  position: absolute;
+  bottom: calc(112px + var(--grid) * 2 + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  gap: var(--grid);
+  pointer-events: auto;
+}
+.touch-left {
+  left: calc(var(--grid) * 2 + env(safe-area-inset-left, 0px));
+  grid-template-columns: 1fr 1fr;
+}
+.touch-right {
+  right: calc(var(--grid) * 2 + env(safe-area-inset-right, 0px));
+  grid-template-columns: 1fr 1fr;
+}
+
+.stamp-button {
+  appearance: none;
+  margin: 0;
+  width: 72px;
+  height: 56px;
+  border: var(--stroke-structure) solid var(--bp-ink);
+  border-radius: 2px;
+  background: var(--bp-paper);
+  color: var(--bp-ink);
+  font: 500 13px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+.stamp-button.is-down {
+  background: var(--bp-ink);
+  color: var(--bp-paper);
+}
+
+/* Narrow sheets (phones): the title block moves to the top right corner so
+   the instrument strip and the on-screen controls keep the bottom. */
+@media (max-width: 720px) {
+  .title-block {
+    bottom: auto;
+    top: calc(var(--grid) * 2 + env(safe-area-inset-top, 0px));
+  }
+  .title-block th { font-size: 12px; }
+}
+
+/* --- Manual document: pages laid over the sheet ---------------------------- */
+:root {
+  --mn-paper: #EFEAE0;
+  --mn-ink: #1A1A1A;
+  --mn-spot: #E4572E;
+  --mn-halftone: rgba(26, 26, 26, 0.10);
+}
+
+#page {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--grid) * 2);
+  pointer-events: none;
+}
+#page.is-open { display: flex; pointer-events: auto; }
+
+.manual-page {
+  position: relative;
+  box-sizing: border-box;
+  width: min(100%, 464px);
+  max-height: 100%;
+  overflow: auto;
+  padding: calc(var(--grid) * 3) calc(var(--grid) * 3) calc(var(--grid) * 2);
+  border: var(--stroke-structure) solid var(--mn-ink);
+  border-radius: 2px;
+  background-color: var(--mn-paper);
+  /* Halftone shading: a dot screen, 4px pitch, rotated by the offset rows */
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--mn-halftone) 0.7px, transparent 0.9px),
+    radial-gradient(circle at 3px 3px, var(--mn-halftone) 0.7px, transparent 0.9px);
+  background-size: 4px 4px;
+  color: var(--mn-ink);
+  font: 400 15px/24px var(--font-text);
+}
+
+.manual-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--grid);
+  padding-bottom: var(--grid);
+  border-bottom: var(--stroke-annotation) solid var(--mn-ink);
+  font: 400 11px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.manual-title {
+  margin: calc(var(--grid) * 2) 0 var(--grid);
+  font: 700 22px/24px var(--font-head);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.manual-stamp {
+  position: absolute;
+  top: calc(var(--grid) * 7);
+  right: calc(var(--grid) * 3);
+  padding: 2px 10px;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+  font: 700 18px/24px var(--font-head);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transform: rotate(-8deg) scale(1.1);
+  transition: transform 80ms linear;
+}
+.manual-stamp.is-landed { transform: rotate(-8deg) scale(1); }
+.tone-ink { color: var(--mn-ink); }
+.tone-spot { color: var(--mn-spot); }
+
+.manual-table {
+  width: 100%;
+  margin: var(--grid) 0;
+  border-collapse: collapse;
+  font: 400 13px/16px var(--font-mono);
+}
+.manual-table th,
+.manual-table td {
+  padding: 4px 0;
+  border-bottom: var(--stroke-annotation) solid rgba(26, 26, 26, 0.35);
+  text-align: left;
+  vertical-align: top;
+}
+.manual-table th {
+  width: 44%;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+.manual-table td { text-align: right; font-weight: 500; }
+
+.manual-lines {
+  margin: var(--grid) 0;
+  padding-left: 20px;
+}
+.manual-lines li { margin: 4px 0; }
+
+.manual-caption {
+  margin: var(--grid) 0 calc(var(--grid) * 2);
+  font: 400 13px/16px var(--font-text);
+}
+.manual-caption b { font: 500 11px/16px var(--font-mono); letter-spacing: 0.08em; }
+
+.manual-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--grid);
+}
+.manual-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 14px;
+  border: var(--stroke-structure) solid var(--mn-ink);
+  border-radius: 2px;
+  background: var(--mn-paper);
+  color: var(--mn-ink);
+  font: 700 13px/16px var(--font-head);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.manual-button:hover, .manual-button:focus-visible { background: var(--mn-ink); color: var(--mn-paper); outline: none; }
+.manual-button kbd {
+  padding: 0 5px;
+  border: var(--stroke-annotation) solid currentColor;
+  border-radius: 2px;
+  font: 400 10px/16px var(--font-mono);
+}
+
+/* --- Replay transport ------------------------------------------------------ */
+#transport {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(112px + var(--grid) * 2 + env(safe-area-inset-bottom, 0px));
+  display: none;
+  justify-content: center;
+  padding: 0 calc(var(--grid) * 2);
+  pointer-events: none;
+}
+#transport.is-open { display: flex; }
+
+.transport-bar {
+  box-sizing: border-box;
+  width: min(100%, 760px);
+  padding: var(--grid);
+  border: var(--stroke-structure) solid var(--bp-ink);
+  border-radius: 2px;
+  background: var(--bp-paper);
+  color: var(--bp-ink);
+  pointer-events: auto;
+}
+
+.transport-tape-row {
+  display: flex;
+  align-items: center;
+  gap: var(--grid);
+  margin-bottom: var(--grid);
+}
+.transport-time {
+  flex: none;
+  font: 500 12px/16px var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.transport-tape {
+  position: relative;
+  flex: 1;
+  height: 24px;
+  border: var(--stroke-annotation) solid var(--bp-ink-2);
+  touch-action: none;
+  cursor: pointer;
+  /* hatched tape, like the fuel gauge */
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgba(169, 214, 229, 0.25) 3px 3.75px);
+}
+.transport-ticks i {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 6px;
+  border-left: var(--stroke-annotation) solid var(--bp-ink-2);
+}
+.transport-played {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--bp-ink) 3px 3.75px);
+}
+.transport-head {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 0;
+  border-left: var(--stroke-structure) solid var(--bp-ink);
+  margin-left: -0.75px;
+}
+
+.transport-buttons {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--grid);
+}
+.transport-group { display: flex; gap: var(--grid); }
+.transport-left { justify-self: start; }
+.transport-centre { justify-self: center; }
+.transport-button {
+  width: auto;
+  height: 40px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.transport-button kbd {
+  padding: 0 4px;
+  border: var(--stroke-annotation) solid currentColor;
+  border-radius: 2px;
+  font: 400 9px/14px var(--font-mono);
+}
+.transport-speed {
+  justify-self: end;
+  font: 500 12px/16px var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--bp-ink-2);
+}
+@media (max-width: 860px) {
+  .transport-button kbd { display: none; }
+}
+@media (max-width: 720px) {
+  /* Shuttle group on its own row, EXIT and the speed beneath it. */
+  .transport-buttons { grid-template-columns: 1fr 1fr; }
+  .transport-centre { grid-column: 1 / -1; grid-row: 1; justify-self: stretch; }
+  .transport-centre .transport-button { flex: 1; justify-content: center; }
+  .transport-button { height: 44px; padding: 0 8px; font-size: 12px; }
+}
+
+</style>
+  <script type="module">
+(function () {
+'use strict';
+const __modules = {};
+const __m = (id) => __modules[id];
+__modules["src/core/loop.js"] = (function () {
+const __exports = {};
+// Fixed-timestep loop (accumulator pattern). The simulation always advances
+// in whole ticks of 1/60 s, however fast or slow the screen refreshes, so a
+// flight is a pure function of its starting state and its tick-stamped
+// inputs. The caller feeds in wall-clock time; this module never touches the
+// DOM, timers or requestAnimationFrame.
+//
+//   const loop = createFixedLoop({ hz: 60, step: (dt, tick) => sim.step(dt) });
+//   // each animation frame:
+//   const { alpha } = loop.advance(nowSeconds);
+//   render(alpha); // alpha in [0,1): how far we are between the last two ticks
+
+function createFixedLoop({ hz = 60, maxStepsPerFrame = 8, step }) {
+  const dt = 1 / hz;
+  let accumulator = 0;
+  let last = null;
+  let tick = 0;
+  let paused = false;
+
+  function advance(nowSeconds) {
+    if (last === null) last = nowSeconds;
+    let frame = nowSeconds - last;
+    last = nowSeconds;
+    if (paused) return { alpha: accumulator / dt, steps: 0 };
+    if (!(frame >= 0)) frame = 0; // clock went backwards or NaN
+    // After a long stall (tab in the background) do not try to catch up on
+    // seconds of simulation at once: drop the surplus and keep the game smooth.
+    const cap = maxStepsPerFrame * dt;
+    if (frame > cap) frame = cap;
+    accumulator += frame;
+    let steps = 0;
+    while (accumulator >= dt) {
+      step(dt, tick);
+      tick += 1;
+      accumulator -= dt;
+      steps += 1;
+    }
+    return { alpha: accumulator / dt, steps };
+  }
+
+  return {
+    dt,
+    hz,
+    get tick() { return tick; },
+    get paused() { return paused; },
+    advance,
+    // Forget any partial frame; used when the clock source changes.
+    resync() { last = null; },
+    pause() { paused = true; },
+    resume() { paused = false; last = null; },
+    reset() { accumulator = 0; last = null; tick = 0; },
+  };
+}
+
+// Linear interpolation helper for render smoothing between two ticks.
+function lerp(a, b, alpha) {
+  return a + (b - a) * alpha;
+}
+
+__exports.createFixedLoop = createFixedLoop;
+__exports.lerp = lerp;
+return __exports;
+})();
+
+__modules["src/core/lander.js"] = (function () {
+const __exports = {};
+// The lunar lander: a rigid body on a flat Moon with uniform gravity.
+// Pure data and pure functions; no DOM, no timers. Units are SI (m, kg, s,
+// radians). The world is 2D side-on: x to the right, y up, the surface at y = 0.
+//
+// Position (x, y) is the centre of the footpad plane, the point that touches
+// down. Angle is the tilt from vertical, positive when the top leans right
+// (clockwise on screen); the engine pushes along the body axis, so leaning
+// right drives the craft to the right.
+
+const MOON = {
+  name: 'MOON',
+  gravity: 1.62,          // m/s^2, uniform for the flat-Moon milestone
+};
+
+// Vehicle definition. Roughly a small two-stage lander, kept forgiving.
+const LANDER = {
+  dryMass: 2200,          // kg, structure + crew + ascent stage
+  fuelMass: 1400,         // kg, full descent tank
+  maxThrust: 16000,       // N at 100 % throttle
+  isp: 300,               // s; exhaust speed = isp * g0
+  g0: 9.80665,
+  minThrottle: 0,         // the descent engine throttles all the way down
+  throttleRate: 1.0,      // throttle fraction per second when ramping
+  maxRotRate: Math.PI / 3,    // rad/s, 60 degrees per second
+  rotAccel: Math.PI,          // rad/s^2, how fast the rate command is reached
+  comDry: 3.1,            // m above the footpads, centre of mass with empty tanks
+  comFuel: 1.6,           // m above the footpads, centre of mass of the fuel
+  footHalfWidth: 4.2,     // m, half the span between outer footpads
+  height: 7.0,            // m, footpads to top of the cabin
+};
+
+function exhaustSpeed(cfg = LANDER) {
+  return cfg.isp * cfg.g0;
+}
+
+function totalMass(s, cfg = LANDER) {
+  return cfg.dryMass + s.fuel;
+}
+
+// Height of the centre of mass above the footpads for the current fuel load.
+function comHeight(s, cfg = LANDER) {
+  const m = totalMass(s, cfg);
+  return (cfg.dryMass * cfg.comDry + s.fuel * cfg.comFuel) / m;
+}
+
+// Thrust-to-weight ratio at the current throttle and mass.
+function twr(s, cfg = LANDER, body = MOON) {
+  return (cfg.maxThrust * s.throttle) / (totalMass(s, cfg) * body.gravity);
+}
+
+// Altitude of the lowest footpad above the ground height under the craft,
+// accounting for tilt.
+function lowestPointAltitude(s, cfg = LANDER, groundHeight = 0) {
+  return s.y - groundHeight - Math.abs(Math.sin(s.angle)) * cfg.footHalfWidth;
+}
+
+function createLanderState({ x = 0, y = 150, vx = 0, vy = 0, angle = 0, fuel = LANDER.fuelMass } = {}) {
+  return {
+    x, y, vx, vy,
+    angle,
+    angVel: 0,
+    throttle: 0,    // 0..1, the commanded and actual throttle (no engine lag yet)
+    fuel,           // kg remaining
+    thrust: 0,      // N produced on the last step, for the drawing and HUD
+    time: 0,        // s since the flight began
+  };
+}
+
+// Command for one step. thr: -1 ramp down / 0 hold / +1 ramp up. rot: -1 left,
+// 0 none, +1 right. full and cut jump the throttle to 100 % / 0 %.
+const NO_COMMAND = Object.freeze({ thr: 0, rot: 0, full: 0, cut: 0 });
+
+// Advance the lander by dt seconds with semi-implicit (symplectic) Euler:
+// velocities first, then positions with the new velocities. Mutates `s`.
+function stepLander(s, cmd, dt, cfg = LANDER, body = MOON) {
+  // Throttle command.
+  if (cmd.cut) s.throttle = 0;
+  else if (cmd.full) s.throttle = 1;
+  else if (cmd.thr) s.throttle += cmd.thr * cfg.throttleRate * dt;
+  if (s.throttle < cfg.minThrottle) s.throttle = cfg.minThrottle;
+  if (s.throttle > 1) s.throttle = 1;
+
+  // Engine: thrust needs fuel; the tank can only give what it has this step.
+  let thrust = 0;
+  if (s.throttle > 0 && s.fuel > 0) {
+    thrust = cfg.maxThrust * s.throttle;
+    const flow = thrust / exhaustSpeed(cfg);     // kg/s
+    const burned = Math.min(s.fuel, flow * dt);
+    thrust = burned / dt * exhaustSpeed(cfg);    // reduced if the tank ran dry mid-step
+    s.fuel -= burned;
+    if (s.fuel < 1e-9) s.fuel = 0;
+  }
+  s.thrust = thrust;
+
+  // Rotation: a rate command reached with bounded angular acceleration.
+  const targetRate = cmd.rot * cfg.maxRotRate;
+  const maxDelta = cfg.rotAccel * dt;
+  const delta = targetRate - s.angVel;
+  s.angVel += Math.max(-maxDelta, Math.min(maxDelta, delta));
+
+  // Translation.
+  const m = totalMass(s, cfg);
+  const ax = (thrust / m) * Math.sin(s.angle);
+  const ay = (thrust / m) * Math.cos(s.angle) - body.gravity;
+  s.vx += ax * dt;
+  s.vy += ay * dt;
+  s.angle += s.angVel * dt;
+  s.x += s.vx * dt;
+  s.y += s.vy * dt;
+  s.time += dt;
+  return s;
+}
+
+__exports.MOON = MOON;
+__exports.LANDER = LANDER;
+__exports.exhaustSpeed = exhaustSpeed;
+__exports.totalMass = totalMass;
+__exports.comHeight = comHeight;
+__exports.twr = twr;
+__exports.lowestPointAltitude = lowestPointAltitude;
+__exports.createLanderState = createLanderState;
+__exports.NO_COMMAND = NO_COMMAND;
+__exports.stepLander = stepLander;
+return __exports;
+})();
+
+__modules["src/core/rng.js"] = (function () {
+const __exports = {};
+// Seeded pseudo-random numbers (mulberry32). Every bit of chance in the game
+// comes from one of these so a flight with the same seed plays the same way.
+
+function createRng(seed) {
+  let a = (seed >>> 0) || 0x9e3779b9;
+  const next = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return {
+    next,                                     // [0, 1)
+    range: (lo, hi) => lo + (hi - lo) * next(), // [lo, hi)
+    int: (lo, hi) => lo + Math.floor(next() * (hi - lo + 1)), // [lo, hi]
+    pick: (list) => list[Math.floor(next() * list.length)],
+  };
+}
+
+// Turn any string (a date, a name) into a 32-bit seed.
+function hashSeed(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+__exports.createRng = createRng;
+__exports.hashSeed = hashSeed;
+return __exports;
+})();
+
+__modules["src/core/terrain.js"] = (function () {
+const __exports = {};
+// Flat-ish Moon surface: a level plain with shallow craters, generated from
+// the flight seed so a replay sees the same ground. Heights in metres above
+// the datum y = 0; the landing zone around the start is kept flat.
+
+const { createRng } = __m("src/core/rng.js");
+
+const SITE = Object.freeze({ from: -60, to: 140 }); // flat landing zone, metres
+
+function createTerrain(seed, { span = 3000, site = SITE } = {}) {
+  const rng = createRng(seed ^ 0x5eed);
+  const craters = [];
+  let x = -span;
+  while (x < span) {
+    x += rng.range(25, 90);
+    const r = rng.range(3, 22);
+    if (x + r * 1.3 > site.from && x - r * 1.3 < site.to) continue; // keep the site clear
+    craters.push({ x, r, depth: r * rng.range(0.08, 0.16) });
+  }
+
+  craters.sort((a, b) => a.x - b.x);
+  const reach = 22 * 1.3; // widest crater rim, metres
+
+  // Index of the first crater whose centre is at or beyond x (binary search).
+  function firstAtOrAfter(x) {
+    let lo = 0;
+    let hi = craters.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (craters[mid].x < x) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+
+  function height(px) {
+    let h = 0;
+    for (let i = firstAtOrAfter(px - reach); i < craters.length; i++) {
+      const c = craters[i];
+      if (c.x - px > reach) break;
+      const d = Math.abs(px - c.x);
+      if (d < c.r) {
+        const t = d / c.r;
+        h -= c.depth * (1 - t * t);           // bowl
+      } else if (d < c.r * 1.3) {
+        const t = (d - c.r) / (c.r * 0.3);
+        h += c.depth * 0.25 * (1 - t);        // raised rim
+      }
+    }
+    return h;
+  }
+
+  return { seed, craters, height, site };
+}
+
+__exports.SITE = SITE;
+__exports.createTerrain = createTerrain;
+return __exports;
+})();
+
+__modules["src/core/recording.js"] = (function () {
+const __exports = {};
+// Flight recording: the seed, the start and every change of command stamped
+// with its tick. Because the simulation is fixed-step and seeded, feeding
+// the same events back reproduces the flight exactly: that is the replay
+// (see playback.js), and later the local ghost.
+
+const { NO_COMMAND } = __m("src/core/lander.js");
+
+const RECORDING_VERSION = 1;
+
+// Commands pack into one small integer: thr (-1..1) in bits 0-1, rot in
+// bits 2-3, full in bit 4, cut in bit 5.
+function encodeCommand(c) {
+  return ((c.thr + 1) & 3) | (((c.rot + 1) & 3) << 2) | ((c.full ? 1 : 0) << 4) | ((c.cut ? 1 : 0) << 5);
+}
+
+function decodeCommand(code) {
+  return {
+    thr: (code & 3) - 1,
+    rot: ((code >> 2) & 3) - 1,
+    full: (code >> 4) & 1,
+    cut: (code >> 5) & 1,
+  };
+}
+
+const NO_COMMAND_CODE = encodeCommand(NO_COMMAND);
+
+// Records command changes as [tick, code] pairs.
+function createRecorder({ seed, start }) {
+  const events = [];
+  let lastCode = NO_COMMAND_CODE;
+  let ticks = 0; // ticks recorded so far, so an unfinished flight replays up to "now"
+  return {
+    record(tick, cmd) {
+      ticks = tick + 1;
+      const code = encodeCommand(cmd);
+      if (code === lastCode) return;
+      lastCode = code;
+      events.push([tick, code]);
+    },
+    toJSON() {
+      return { version: RECORDING_VERSION, seed, start: { ...start }, ticks, events: events.slice() };
+    },
+  };
+}
+
+__exports.RECORDING_VERSION = RECORDING_VERSION;
+__exports.encodeCommand = encodeCommand;
+__exports.decodeCommand = decodeCommand;
+__exports.NO_COMMAND_CODE = NO_COMMAND_CODE;
+__exports.createRecorder = createRecorder;
+return __exports;
+})();
+
+__modules["src/core/flight.js"] = (function () {
+const __exports = {};
+// One flight of the lander from release to touchdown. Owns the lander state,
+// keeps the previous tick for render interpolation, judges the landing and
+// collects the figures for the results card. No DOM.
+
+const { createLanderState, stepLander, lowestPointAltitude, NO_COMMAND, LANDER, MOON } = __m("src/core/lander.js");
+const { createRng } = __m("src/core/rng.js");
+const { createTerrain } = __m("src/core/terrain.js");
+const { createRecorder } = __m("src/core/recording.js");
+
+const DEFAULT_START = Object.freeze({ x: 0, y: 150, vx: 3, vy: -6, angle: 0 });
+
+// A touchdown is safe when all three hold at the moment of contact.
+const LANDING_LIMITS = Object.freeze({
+  verticalSpeed: 3,            // m/s
+  horizontalSpeed: 1,          // m/s
+  tilt: (10 * Math.PI) / 180,  // radians
+});
+
+// Above this the craft has left the training area and the flight is aborted.
+const CEILING = 1500; // m
+
+function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, body = MOON, limits = LANDING_LIMITS } = {}) {
+  const rng = createRng(seed);
+  const terrain = createTerrain(seed);
+  const recorder = createRecorder({ seed, start });
+  const flight = {
+    seed,
+    cfg,
+    body,
+    limits,
+    rng,
+    terrain,
+    recorder,
+    start,
+    tick: 0,
+    phase: 'flying',          // flying | landed | crashed | aborted
+    state: createLanderState(start),
+    prev: null,
+    events: [],               // { tick, type } in order: fuelOut, landed, crashed
+    stats: { maxSpeed: 0, fuelStart: 0, touchdown: null },
+    // Height of the footpads above the ground directly below (radar altitude).
+    altitude() { return flight.state.y - terrain.height(flight.state.x); },
+    recording() { return recorder.toJSON(); },
+    step(cmd = NO_COMMAND, dt = 1 / 60) {
+      flight.prev = { ...flight.state };
+      if (flight.phase === 'flying') recorder.record(flight.tick, cmd);
+      flight.tick += 1;
+      if (flight.phase !== 'flying') return;
+      const s = flight.state;
+      const hadFuel = s.fuel > 0;
+      stepLander(s, cmd, dt, cfg, body);
+      if (hadFuel && s.fuel <= 0) {
+        s.throttle = 0;
+        flight.events.push({ tick: flight.tick, type: 'fuelOut' });
+      }
+      const speed = Math.hypot(s.vx, s.vy);
+      if (speed > flight.stats.maxSpeed) flight.stats.maxSpeed = speed;
+      if (lowestPointAltitude(s, cfg, terrain.height(s.x)) <= 0) touchdown(flight);
+      else if (s.y > CEILING) {
+        flight.phase = 'aborted';
+        flight.events.push({ tick: flight.tick, type: 'aborted' });
+      }
+    },
+  };
+  flight.stats.fuelStart = flight.state.fuel;
+  flight.prev = { ...flight.state };
+  return flight;
+}
+
+// Judge the contact and freeze the craft on the surface.
+function touchdown(flight) {
+  const s = flight.state;
+  const { limits, cfg } = flight;
+  const tilt = normalizeAngle(s.angle);
+  const vSpeed = -s.vy;             // positive = descending
+  const hSpeed = Math.abs(s.vx);
+  const safe = vSpeed < limits.verticalSpeed && hSpeed < limits.horizontalSpeed && Math.abs(tilt) < limits.tilt;
+  flight.stats.touchdown = {
+    verticalSpeed: vSpeed,
+    horizontalSpeed: hSpeed,
+    tilt,
+    time: s.time,
+    fuel: s.fuel,
+    x: s.x,
+    safe,
+    reasons: [
+      vSpeed >= limits.verticalSpeed ? 'verticalSpeed' : null,
+      hSpeed >= limits.horizontalSpeed ? 'horizontalSpeed' : null,
+      Math.abs(tilt) >= limits.tilt ? 'tilt' : null,
+    ].filter(Boolean),
+  };
+  // Rest on the lowest pad; a safe landing settles level, a crash stays as it hit.
+  const ground = flight.terrain.height(s.x);
+  if (safe) { s.angle = 0; s.y = ground; } else { s.angle = tilt; s.y = ground + Math.abs(Math.sin(tilt)) * cfg.footHalfWidth; }
+  s.vx = 0; s.vy = 0; s.angVel = 0; s.throttle = 0; s.thrust = 0;
+  flight.phase = safe ? 'landed' : 'crashed';
+  flight.events.push({ tick: flight.tick, type: flight.phase });
+  flight.prev = { ...s };
+}
+
+function normalizeAngle(a) {
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a < -Math.PI) a += 2 * Math.PI;
+  return a;
+}
+
+// State as seen alpha of the way from the previous tick to the current one.
+function interpolated(flight, alpha) {
+  const a = flight.prev || flight.state;
+  const b = flight.state;
+  const t = Math.max(0, Math.min(1, alpha));
+  return {
+    ...b,
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+    angle: a.angle + (b.angle - a.angle) * t,
+  };
+}
+
+__exports.DEFAULT_START = DEFAULT_START;
+__exports.LANDING_LIMITS = LANDING_LIMITS;
+__exports.CEILING = CEILING;
+__exports.createFlight = createFlight;
+__exports.normalizeAngle = normalizeAngle;
+__exports.interpolated = interpolated;
+return __exports;
+})();
+
+__modules["src/core/predict.js"] = (function () {
+const __exports = {};
+// Ballistic prediction: where the craft goes from here if the engine stays
+// off. Uniform gravity, no drag. Returns sampled points and the impact.
+
+function predictDescent(state, terrain, gravity, { dt = 0.1, maxTime = 120 } = {}) {
+  const points = [];
+  let { x, y, vx, vy } = state;
+  let t = 0;
+  let impact = null;
+  points.push({ x, y, t });
+  while (t < maxTime) {
+    const nvy = vy - gravity * dt;
+    const nx = x + vx * dt;
+    const ny = y + nvy * dt;
+    const ground = terrain.height(nx);
+    if (ny <= ground) {
+      // Linear interpolation to the ground within this step.
+      const f = (y - terrain.height(x)) / Math.max(1e-9, (y - terrain.height(x)) - (ny - ground));
+      const ix = x + (nx - x) * f;
+      const iy = terrain.height(ix);
+      t += dt * f;
+      impact = { x: ix, y: iy, t, vx, vy: vy - gravity * dt * f };
+      points.push({ x: ix, y: iy, t });
+      break;
+    }
+    x = nx; y = ny; vy = nvy; t += dt;
+    points.push({ x, y, t });
+  }
+  return { points, impact };
+}
+
+__exports.predictDescent = predictDescent;
+return __exports;
+})();
+
+__modules["src/core/alerts.js"] = (function () {
+const __exports = {};
+// Alert levels for the instruments, per the brief: 'caution' is an accent
+// outline blinking at 1 Hz, 'critical' an accent fill blinking at 2 Hz, and
+// nothing else is ever red-orange. Pure function of flight state.
+
+function computeAlerts(flight, prediction) {
+  const s = flight.state;
+  const { limits, cfg } = flight;
+  const alt = flight.altitude();
+  const vSpeed = -s.vy;
+  const hSpeed = Math.abs(s.vx);
+  const fuelFrac = s.fuel / cfg.fuelMass;
+  const impact = prediction && prediction.impact;
+  const flying = flight.phase === 'flying';
+
+  const fuel = !flying ? 'none' : s.fuel <= 0 ? 'critical' : fuelFrac < 0.15 ? 'caution' : 'none';
+  // Falling fast with the ground close: critical when the engine-off impact
+  // is under ten seconds and too hard; caution when the rate is over the
+  // limit within the last sixty metres.
+  const descent = !flying ? 'none'
+    : impact && impact.t < 10 && -impact.vy >= limits.verticalSpeed * 2 ? 'critical'
+    : alt < 60 && vSpeed >= limits.verticalSpeed ? 'caution'
+    : 'none';
+  const drift = !flying ? 'none' : alt < 30 && hSpeed >= limits.horizontalSpeed ? 'caution' : 'none';
+  const tilt = !flying ? 'none' : alt < 30 && Math.abs(s.angle) >= limits.tilt ? 'caution' : 'none';
+  const worst = ['critical', 'caution', 'none'].find((l) => [fuel, descent, drift, tilt].includes(l));
+  return { fuel, descent, drift, tilt, overall: worst, altitude: alt, vSpeed, hSpeed, fuelFrac };
+}
+
+__exports.computeAlerts = computeAlerts;
+return __exports;
+})();
+
+__modules["src/core/capcom.js"] = (function () {
+const __exports = {};
+// CAPCOM: the one voice on the loop. A small bank of canned lines, each
+// said once per flight when its trigger first holds. Pure logic; the HUD
+// decides how to print it.
+
+const LINES = {
+  go: 'Go for descent. Watch your rate.',
+  fuelLow: 'Fuel at fifteen percent. Commit or abort.',
+  fuelOut: 'We show zero fuel. Ride it down.',
+  rate: 'Descent rate is too high. Throttle up.',
+  drift: 'You are drifting sideways. Level off.',
+  landed: 'Contact light. Engine stop. Welcome to the Moon.',
+  crashed: 'We have lost your signal.',
+  aborted: 'You are leaving the training area. Flight terminated.',
+};
+
+function createCapcom() {
+  const said = new Set();
+  const log = [];
+  function say(key, tick, critical = false) {
+    if (said.has(key)) return;
+    said.add(key);
+    log.push({ key, text: LINES[key], tick, critical });
+  }
+  return {
+    log,
+    get latest() { return log[log.length - 1] || null; },
+    // Call once per tick with the flight and its current alerts.
+    update(flight, alerts) {
+      const t = flight.tick;
+      if (t >= 60) say('go', t);
+      if (flight.phase === 'landed') { say('landed', t); return; }
+      if (flight.phase === 'crashed') { say('crashed', t, true); return; }
+      if (flight.phase === 'aborted') { say('aborted', t, true); return; }
+      if (alerts.fuel === 'critical') say('fuelOut', t, true);
+      else if (alerts.fuel === 'caution') say('fuelLow', t);
+      if (alerts.descent === 'critical') say('rate', t, true);
+      if (alerts.drift === 'caution') say('drift', t);
+    },
+  };
+}
+
+__exports.LINES = LINES;
+__exports.createCapcom = createCapcom;
+return __exports;
+})();
+
+__modules["src/core/playback.js"] = (function () {
+const __exports = {};
+// Playback: runs a recording through a fresh flight, one tick at a time.
+// Kept apart from recording.js so flight.js can record without a circular
+// import.
+
+const { createFlight } = __m("src/core/flight.js");
+const { NO_COMMAND } = __m("src/core/lander.js");
+const { decodeCommand } = __m("src/core/recording.js");
+
+// Plays a recording back through a fresh flight, one tick at a time.
+// `step()` returns false once the recording's flight is over.
+function createPlayback(recording) {
+  const flight = createFlight({ seed: recording.seed, start: recording.start });
+  const events = recording.events;
+  let cursor = 0;
+  let cmd = NO_COMMAND;
+  return {
+    flight,
+    get command() { return cmd; },
+    step(dt) {
+      while (cursor < events.length && events[cursor][0] <= flight.tick) {
+        cmd = decodeCommand(events[cursor][1]);
+        cursor += 1;
+      }
+      flight.step(cmd, dt);
+      return flight.phase === 'flying';
+    },
+  };
+}
+
+// Run a recording to its end in one go (used by the tests and the ghosts).
+function replayToEnd(recording, { maxTicks = 60 * 60 * 10, dt = 1 / 60 } = {}) {
+  const playback = createPlayback(recording);
+  let n = 0;
+  while (playback.step(dt) && n < maxTicks) n += 1;
+  return playback.flight;
+}
+
+__exports.createPlayback = createPlayback;
+__exports.replayToEnd = replayToEnd;
+return __exports;
+})();
+
+__modules["src/core/timeline.js"] = (function () {
+const __exports = {};
+// Timeline: a recording run to its end with every tick kept, so a replay can
+// be scrubbed, stepped and played backwards without re-simulating. Each
+// frame carries the lander state, the phase, the alerts and the CAPCOM line
+// current at that tick. A two-minute flight is about 7,000 small frames.
+
+const { createPlayback } = __m("src/core/playback.js");
+const { predictDescent } = __m("src/core/predict.js");
+const { computeAlerts } = __m("src/core/alerts.js");
+const { createCapcom } = __m("src/core/capcom.js");
+
+function buildTimeline(recording, { maxTicks = 60 * 60 * 10, dt = 1 / 60 } = {}) {
+  const playback = createPlayback(recording);
+  const flight = playback.flight;
+  const capcom = createCapcom();
+  const frames = [];
+
+  // The engine-off prediction is the costly part; refreshing it every third
+  // tick (50 ms) is plenty for the alert rules. The drawing predicts live
+  // from the sampled state, so frames do not keep one.
+  let prediction = null;
+  function capture() {
+    if (flight.phase !== 'flying') prediction = null;
+    else if (frames.length % 3 === 0 || !prediction) prediction = predictDescent(flight.state, flight.terrain, flight.body.gravity);
+    const alerts = computeAlerts(flight, prediction);
+    capcom.update(flight, alerts);
+    frames.push({ tick: flight.tick, state: { ...flight.state }, phase: flight.phase, alerts, capcom: capcom.latest });
+  }
+
+  const limit = Math.min(maxTicks, recording.ticks || maxTicks);
+  capture();
+  let n = 0;
+  while (n < limit && playback.step(dt)) { capture(); n += 1; }
+  if (flight.phase !== 'flying') {
+    capture(); // the touchdown frame itself
+    // A short tail so the result can be seen before the end of the tape.
+    for (let i = 0; i < 45; i++) { flight.step(undefined, dt); capture(); }
+  }
+
+  return {
+    flight,
+    frames,
+    dt,
+    get length() { return frames.length; },
+    get duration() { return (frames.length - 1) * dt; },
+    at(index) { return frames[Math.max(0, Math.min(frames.length - 1, index))]; },
+  };
+}
+
+// The frame as seen `cursor` ticks into the tape, interpolating between
+// neighbouring frames so slow and fast play stay smooth.
+function sampleTimeline(timeline, cursor) {
+  const i = Math.floor(cursor);
+  const a = timeline.at(i);
+  const b = timeline.at(i + 1);
+  const t = Math.max(0, Math.min(1, cursor - i));
+  const state = {
+    ...a.state,
+    x: a.state.x + (b.state.x - a.state.x) * t,
+    y: a.state.y + (b.state.y - a.state.y) * t,
+    angle: a.state.angle + (b.state.angle - a.state.angle) * t,
+  };
+  return { ...a, state };
+}
+
+__exports.buildTimeline = buildTimeline;
+__exports.sampleTimeline = sampleTimeline;
+return __exports;
+})();
+
+__modules["src/render/surface.js"] = (function () {
+const __exports = {};
+// Canvas surface: owns the DOM canvas, keeps it full-window and DPR-aware,
+// and tells listeners when its size changes. Everything else draws through
+// the `ctx` it hands out and never touches the element directly.
+
+function createSurface(canvas) {
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const surface = { canvas, ctx, width: 0, height: 0, dpr: 1 };
+  const listeners = new Set();
+  let dprQuery = null;
+
+  function resize() {
+    const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+    const width = Math.max(1, Math.round(window.innerWidth));
+    const height = Math.max(1, Math.round(window.innerHeight));
+    const pw = Math.round(width * dpr);
+    const ph = Math.round(height * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+    }
+    surface.width = width;
+    surface.height = height;
+    surface.dpr = dpr;
+    watchDpr(dpr);
+    listeners.forEach((fn) => fn(surface));
+  }
+
+  // Re-run resize when the window moves to a screen with another pixel density.
+  function watchDpr(dpr) {
+    if (!window.matchMedia) return;
+    if (dprQuery) dprQuery.removeEventListener('change', resize);
+    dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
+    dprQuery.addEventListener('change', resize);
+  }
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', resize);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+  resize();
+
+  surface.onResize = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
+  return surface;
+}
+
+__exports.createSurface = createSurface;
+return __exports;
+})();
+
+__modules["src/render/camera.js"] = (function () {
+const __exports = {};
+// Camera for the flight view: maps world metres to screen pixels. Follows
+// the craft, zooms out as it climbs and in as it nears the ground, and keeps
+// the ground pinned near the bottom of the flight area when it is in reach.
+// Line weights are never scaled here: drawing code multiplies lengths by
+// `scale` and keeps strokes in pixels.
+
+function createCamera() {
+  const cam = {
+    x: 0,            // world x at the centre of the view
+    bottomY: -12,    // world y at the bottom edge of the flight area
+    scale: 6,        // px per metre
+    width: 1, height: 1, // flight area in CSS px (viewport minus HUD strip)
+    top: 0,          // y offset of the flight area on screen
+    minScale: 3, maxScale: 14,
+    groundClearance: 40, // px kept between the surface and the bottom of the flight area
+  };
+
+  // Where the camera wants to be for the given craft position.
+  function target(state) {
+    const alt = Math.max(0, state.y);
+    const scale = clamp((cam.height * 0.55) / Math.max(alt + 24, 40), cam.minScale, cam.maxScale);
+    const bottomY = Math.max(-cam.groundClearance / scale, state.y - (cam.height * 0.62) / scale);
+    return { x: state.x, bottomY, scale };
+  }
+
+  cam.setViewport = (width, height, top = 0) => { cam.width = width; cam.height = height; cam.top = top; };
+  cam.snap = (state) => { Object.assign(cam, target(state)); };
+  // Ease towards the target; dt is frame time in seconds.
+  cam.follow = (state, dt) => {
+    const t = target(state);
+    const k = 1 - Math.exp(-dt * 4);
+    cam.x += (t.x - cam.x) * k;
+    cam.bottomY += (t.bottomY - cam.bottomY) * k;
+    cam.scale += (t.scale - cam.scale) * k;
+  };
+  cam.toScreen = (wx, wy) => ({
+    x: cam.width / 2 + (wx - cam.x) * cam.scale,
+    y: cam.top + cam.height - (wy - cam.bottomY) * cam.scale,
+  });
+  cam.toWorld = (sx, sy) => ({
+    x: cam.x + (sx - cam.width / 2) / cam.scale,
+    y: cam.bottomY + (cam.top + cam.height - sy) / cam.scale,
+  });
+  return cam;
+}
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+__exports.createCamera = createCamera;
+return __exports;
+})();
+
+__modules["src/render/blueprint.js"] = (function () {
+const __exports = {};
+// Blueprint document: the flight view's paper. Prussian blue, white 8px grid,
+// faint fold creases. Linework only, two stroke weights, no fills but hatching.
+
+const BLUEPRINT = {
+  paper: '#1B3A6B',
+  ink: '#F2F4F7',
+  inkPale: '#A9D6E5',
+  accent: '#E4572E',
+  grid: 8,
+  gridMajorEvery: 8, // one heavier line every 64px
+};
+
+// Draws the empty sheet. Works in device pixels so grid lines stay crisp at
+// any devicePixelRatio: a 1 CSS px line is `round(dpr)` device pixels wide.
+function drawPaper(ctx, width, height, dpr) {
+  const W = Math.round(width * dpr);
+  const H = Math.round(height * dpr);
+  const px = Math.max(1, Math.round(dpr));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = BLUEPRINT.paper;
+  ctx.fillRect(0, 0, W, H);
+
+  const minor = 'rgba(242, 244, 247, 0.08)';
+  const major = 'rgba(242, 244, 247, 0.10)';
+  const step = BLUEPRINT.grid;
+  for (let i = 0, x = 0; x <= width; i++, x += step) {
+    const xd = Math.round(x * dpr);
+    ctx.fillStyle = i % BLUEPRINT.gridMajorEvery === 0 ? major : minor;
+    ctx.fillRect(xd, 0, px, H);
+  }
+  for (let i = 0, y = 0; y <= height; i++, y += step) {
+    const yd = Math.round(y * dpr);
+    ctx.fillStyle = i % BLUEPRINT.gridMajorEvery === 0 ? major : minor;
+    ctx.fillRect(0, yd, W, px);
+  }
+
+  drawCreases(ctx, W, H, px);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+// Fold creases: the sheet was folded in half both ways. A lighter line with a
+// darker neighbour reads as a crease without a gradient or shadow.
+function drawCreases(ctx, W, H, px) {
+  const light = 'rgba(242, 244, 247, 0.05)';
+  const dark = 'rgba(0, 0, 0, 0.07)';
+  const cx = Math.round(W / 2);
+  const cy = Math.round(H / 2);
+  ctx.fillStyle = light;
+  ctx.fillRect(cx, 0, px, H);
+  ctx.fillRect(0, cy, W, px);
+  ctx.fillStyle = dark;
+  ctx.fillRect(cx + px, 0, px, H);
+  ctx.fillRect(0, cy + px, W, px);
+}
+
+// --- Flight scene ---------------------------------------------------------
+// Everything below draws in CSS pixels after drawPaper has reset the transform
+// to the device pixel ratio. Lengths in metres are multiplied by cam.scale;
+// stroke widths stay in pixels (1.5 structure, 0.75 annotation).
+
+const STROKE = { structure: 1.5, annotation: 0.75 };
+const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
+
+// scene: { state, cfg, phase, terrain, prediction }
+function drawScene(ctx, cam, scene) {
+  const { state, cfg, phase, terrain, prediction } = scene;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, cam.top, cam.width, cam.height);
+  ctx.clip();
+  drawGround(ctx, cam, terrain);
+  if (phase === 'flying' && prediction) drawPrediction(ctx, cam, prediction, cfg);
+  drawLander(ctx, cam, state, cfg, phase);
+  if (phase === 'landed' || phase === 'crashed') drawOutcomeLabel(ctx, cam, state, cfg, phase);
+  ctx.restore();
+}
+
+// Horizon: the surface as one structure line following the terrain, a band
+// of diagonal hatching beneath it anchored to world x so it scrolls with the
+// ground, crater rims ticked, and the landing site bracketed and labelled.
+function drawGround(ctx, cam, terrain) {
+  const bottom = cam.top + cam.height;
+  const left = cam.toWorld(0, 0).x;
+  const right = cam.toWorld(cam.width, 0).x;
+  const groundTopScreen = cam.toScreen(0, 0).y; // datum; terrain stays within a few metres of it
+  if (groundTopScreen < cam.top - 40 * cam.scale) return; // ground far below the view
+
+  // Surface polyline, sampled every 2 px.
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.structure;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let sx = 0; sx <= cam.width + 2; sx += 2) {
+    const wx = left + (right - left) * (sx / cam.width);
+    const p = cam.toScreen(wx, terrain.height(wx));
+    if (sx === 0) ctx.moveTo(sx, p.y); else ctx.lineTo(sx, p.y);
+  }
+  ctx.stroke();
+
+  // Hatch band: 45-degree strokes, world-anchored spacing never under 10 px.
+  const band = Math.min(48, Math.max(16, 4 * cam.scale));
+  let spacing = 1;
+  while (spacing * cam.scale < 10) spacing *= 2;
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  const startX = Math.floor((left - band / cam.scale) / spacing) * spacing;
+  for (let wx = startX; wx <= right; wx += spacing) {
+    const p = cam.toScreen(wx, terrain.height(wx));
+    if (p.y > bottom) continue;
+    ctx.moveTo(p.x, p.y + 1);
+    ctx.lineTo(p.x + band, Math.min(bottom + 1, p.y + 1 + band));
+  }
+  ctx.stroke();
+
+  // Crater rims: short radial ticks over the lip, a circled depth annotation
+  // for craters wide enough to read.
+  ctx.strokeStyle = BLUEPRINT.ink;
+  for (const c of terrain.craters) {
+    if (c.x + c.r * 1.3 < left || c.x - c.r * 1.3 > right) continue;
+    const rimPx = c.r * cam.scale;
+    if (rimPx < 8) continue;
+    ctx.lineWidth = STROKE.annotation;
+    ctx.beginPath();
+    for (const side of [-1, 1]) {
+      const rx = c.x + side * c.r * 1.1;
+      const p = cam.toScreen(rx, terrain.height(rx));
+      const n = rimPx > 30 ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const t = p.x + side * i * 4;
+        ctx.moveTo(t, p.y - 2);
+        ctx.lineTo(t + side * 3, p.y - 7);
+      }
+    }
+    ctx.stroke();
+    if (rimPx > 60) {
+      const p = cam.toScreen(c.x, terrain.height(c.x));
+      label(ctx, `CRATER R ${c.r.toFixed(0)} M`, p.x, p.y + band + 14, 'center');
+    }
+  }
+
+  // Landing site brackets.
+  const siteY = (x) => cam.toScreen(x, terrain.height(x)).y;
+  for (const [wx, side] of [[terrain.site.from, 1], [terrain.site.to, -1]]) {
+    if (wx < left - 5 || wx > right + 5) continue;
+    const p = cam.toScreen(wx, 0);
+    const y = siteY(wx);
+    ctx.lineWidth = STROKE.annotation;
+    ctx.strokeStyle = BLUEPRINT.ink;
+    ctx.beginPath();
+    ctx.moveTo(p.x + 0.5, y - 10);
+    ctx.lineTo(p.x + 0.5, y + 6);
+    ctx.moveTo(p.x + 0.5, y - 10);
+    ctx.lineTo(p.x + 0.5 + side * 8, y - 10);
+    ctx.stroke();
+  }
+  const siteMid = (terrain.site.from + terrain.site.to) / 2;
+  if (siteMid > left && siteMid < right) {
+    const p = cam.toScreen(siteMid, 0);
+    label(ctx, 'SITE 1', p.x, siteY(siteMid) + band + 14, 'center');
+  }
+}
+
+// Dashed ballistic path from the craft to the ground with the predicted
+// impact circled and timed. Accent only when impact is under ten seconds.
+function drawPrediction(ctx, cam, prediction, cfg) {
+  const { points, impact } = prediction;
+  if (points.length < 2) return;
+  const critical = impact && impact.t < 10;
+  ctx.strokeStyle = critical ? BLUEPRINT.accent : BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  points.forEach((pt, i) => {
+    const p = cam.toScreen(pt.x, pt.y);
+    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (impact) {
+    const p = cam.toScreen(impact.x, impact.y);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(p.x - 9, p.y); ctx.lineTo(p.x + 9, p.y);
+    ctx.moveTo(p.x, p.y - 9); ctx.lineTo(p.x, p.y + 9);
+    ctx.stroke();
+    label(ctx, `T-${impact.t.toFixed(0)} S  ${(-impact.vy).toFixed(0)} M/S`, p.x + 12, p.y - 6, 'left',
+      critical ? BLUEPRINT.accent : BLUEPRINT.inkPale);
+  }
+}
+
+// Typewriter label beside the craft once it is down. Accent only for a crash.
+function drawOutcomeLabel(ctx, cam, s, cfg, phase) {
+  const p = cam.toScreen(s.x, s.y);
+  const crashed = phase === 'crashed';
+  const colour = crashed ? BLUEPRINT.accent : BLUEPRINT.ink;
+  const x0 = Math.round(p.x + cfg.footHalfWidth * cam.scale);
+  const x = x0 + 24;
+  const y = Math.round(p.y - 2 * cam.scale);
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  ctx.moveTo(x0 + 0.5, y + 0.5);
+  ctx.lineTo(x + 0.5, y + 0.5);
+  ctx.stroke();
+  label(ctx, crashed ? 'IMPACT' : 'TOUCHDOWN', x + 4, y - 2, 'left', colour);
+}
+
+function label(ctx, text, x, y, align = 'left', colour = BLUEPRINT.ink) {
+  ctx.fillStyle = colour;
+  ctx.font = `500 12px ${MONO}`;
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign = align;
+  ctx.fillText(text, Math.round(x), Math.round(y));
+}
+
+// Cutaway lander in body space (metres, y up from the footpad plane),
+// rotated by the tilt about the footpad centre. Structure strokes outline the
+// stages, legs and bell; annotation strokes draw the inner tank, its hatched
+// fuel level, windows and the stage division. The flame is white with a
+// pale-cyan core and only its length changes with thrust.
+function drawLander(ctx, cam, s, cfg, phase = 'flying') {
+  const p = cam.toScreen(s.x, s.y);
+  const k = cam.scale;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(s.angle);
+  ctx.lineJoin = 'miter';
+  ctx.lineCap = 'butt';
+  const M = (m) => m * k;
+  const path = (pts, close = true) => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(M(x), -M(y)) : ctx.moveTo(M(x), -M(y))));
+    if (close) ctx.closePath();
+  };
+  const detailed = k >= 5; // inner drawing only when it can be read
+
+  // Flame first so the bell overlaps it.
+  if (s.thrust > 0 && phase === 'flying') {
+    const f = s.thrust / cfg.maxThrust;
+    const flicker = 1 + 0.06 * Math.sin(s.time * 37) + 0.04 * Math.sin(s.time * 59);
+    const len = (1.2 + 7 * f) * flicker;
+    ctx.strokeStyle = BLUEPRINT.ink;
+    ctx.lineWidth = STROKE.structure;
+    path([[-0.85, 0.5], [-0.5, -len * 0.45], [0, -len], [0.5, -len * 0.45], [0.85, 0.5]], false);
+    ctx.stroke();
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    path([[-0.4, 0.5], [0, -len * 0.5], [0.4, 0.5]], false);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.structure;
+  if (phase === 'crashed') ctx.setLineDash([3, 3]); // a broken drawing for a broken craft
+
+  // Descent stage: octagonal box, 1.3 to 3.6 m.
+  path([[-2.4, 1.6], [-2.1, 1.3], [2.1, 1.3], [2.4, 1.6], [2.4, 3.3], [2.1, 3.6], [-2.1, 3.6], [-2.4, 3.3]]);
+  ctx.stroke();
+  // Ascent stage: cabin with a flat face and a domed top.
+  path([[-1.5, 3.6], [1.5, 3.6], [1.5, 5.4], [1.0, 6.3], [0.3, 6.7], [-0.3, 6.7], [-1.0, 6.3], [-1.5, 5.4]]);
+  ctx.stroke();
+  // Engine bell.
+  path([[-0.55, 1.3], [0.55, 1.3], [0.95, 0.5], [-0.95, 0.5]]);
+  ctx.stroke();
+  // Legs: primary strut from the box corner to the pad, secondary strut up
+  // to the box, pad as a short line.
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(M(side * 2.4), -M(1.7));
+    ctx.lineTo(M(side * cfg.footHalfWidth), 0);
+    ctx.moveTo(M(side * 2.4), -M(3.1));
+    ctx.lineTo(M(side * (cfg.footHalfWidth - 0.9)), -M(0.9));
+    ctx.moveTo(M(side * (cfg.footHalfWidth - 0.6)), 0);
+    ctx.lineTo(M(side * (cfg.footHalfWidth + 0.6)), 0);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  if (detailed) {
+    ctx.lineWidth = STROKE.annotation;
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    // Stage division.
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(M(-2.4), -M(3.6)); ctx.lineTo(M(2.4), -M(3.6)); ctx.stroke();
+    ctx.setLineDash([]);
+    // Descent tank inside the box, with fuel hatched from the bottom.
+    const tank = { x0: -1.7, x1: 1.7, y0: 1.6, y1: 3.3 };
+    path([[tank.x0, tank.y0], [tank.x1, tank.y0], [tank.x1, tank.y1], [tank.x0, tank.y1]]);
+    ctx.stroke();
+    const frac = Math.max(0, Math.min(1, s.fuel / cfg.fuelMass));
+    const level = tank.y0 + (tank.y1 - tank.y0) * frac;
+    if (frac > 0) {
+      ctx.save();
+      path([[tank.x0, tank.y0], [tank.x1, tank.y0], [tank.x1, level], [tank.x0, level]]);
+      ctx.clip();
+      ctx.beginPath();
+      const step = 4 / k; // 4 px hatch pitch in metres
+      for (let x = tank.x0 - (tank.y1 - tank.y0); x < tank.x1; x += step) {
+        ctx.moveTo(M(x), -M(tank.y0));
+        ctx.lineTo(M(x + (tank.y1 - tank.y0)), -M(tank.y1));
+      }
+      ctx.stroke();
+      ctx.restore();
+      ctx.beginPath(); ctx.moveTo(M(tank.x0), -M(level)); ctx.lineTo(M(tank.x1), -M(level)); ctx.stroke();
+    }
+    // Feed line from tank to engine, two windows, an antenna.
+    ctx.beginPath();
+    ctx.moveTo(0, -M(tank.y0)); ctx.lineTo(0, -M(1.3));
+    ctx.moveTo(M(-1.1), -M(4.6)); ctx.lineTo(M(-0.5), -M(4.6)); ctx.lineTo(M(-0.5), -M(5.3)); ctx.lineTo(M(-1.2), -M(5.3)); ctx.closePath();
+    ctx.moveTo(M(1.1), -M(4.6)); ctx.lineTo(M(0.5), -M(4.6)); ctx.lineTo(M(0.5), -M(5.3)); ctx.lineTo(M(1.2), -M(5.3)); ctx.closePath();
+    ctx.moveTo(M(0.9), -M(6.3)); ctx.lineTo(M(1.3), -M(7.2)); ctx.moveTo(M(1.05), -M(7.2)); ctx.lineTo(M(1.55), -M(7.2));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+__exports.BLUEPRINT = BLUEPRINT;
+__exports.drawPaper = drawPaper;
+__exports.STROKE = STROKE;
+__exports.MONO = MONO;
+__exports.drawScene = drawScene;
+return __exports;
+})();
+
+__modules["src/ui/screens.js"] = (function () {
+const __exports = {};
+// Screen chrome drawn in HTML over the canvas: title blocks, stamps, pages.
+
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+function formatDrawingDate(date) {
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${d} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+// Mission elapsed time as HH:MM:SS from whole seconds.
+function formatMet(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = String(Math.floor(s / 3600)).padStart(2, '0');
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const r = String(s % 60).padStart(2, '0');
+  return `${h}:${m}:${r}`;
+}
+
+function cell(label, value, key) {
+  const tr = document.createElement('tr');
+  const th = document.createElement('td');
+  th.className = 'label';
+  th.textContent = label;
+  const td = document.createElement('td');
+  td.textContent = value;
+  if (key) td.dataset.field = key;
+  tr.append(th, td);
+  return tr;
+}
+
+// Engineering title block: program name, document, sheet number, date, MET.
+function mountTitleBlock(el, { program, document: doc, sheet, of, date, met = 0, audio = null }) {
+  el.replaceChildren();
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  const th = document.createElement('th');
+  th.colSpan = 2;
+  th.textContent = program;
+  head.append(th);
+  table.append(head);
+  table.append(cell('DOC', doc, 'document'));
+  table.append(cell('SHEET', `${sheet} OF ${of}`, 'sheet'));
+  table.append(cell('DATE', formatDrawingDate(date), 'date'));
+  table.append(cell('MET', formatMet(met), 'met'));
+  if (audio !== null) table.append(cell('AUDIO', audio, 'audio'));
+  el.append(table);
+}
+
+// Update individual fields without rebuilding the block.
+function updateTitleBlock(el, fields) {
+  for (const [key, value] of Object.entries(fields)) {
+    const td = el.querySelector(`[data-field="${key}"]`);
+    if (!td) continue;
+    const text = key === 'met' ? formatMet(value) : String(value);
+    if (td.textContent !== text) td.textContent = text;
+  }
+}
+
+// --- Manual pages -----------------------------------------------------------
+// A page of the printed manual laid over the sheet: section header, a stamp,
+// rows of figures, a caption and stamped buttons. One component serves the
+// start card and the flight report.
+
+function el(tag, className, textContent) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (textContent !== undefined) node.textContent = textContent;
+  return node;
+}
+
+// page: { section, title, figure, stamp: { text, tone }, rows: [[label, value, tone?]],
+//         caption, buttons: [{ label, key, action }], page }
+// onAction(action) is called when a button is pressed.
+function mountPage(root, page, onAction) {
+  root.replaceChildren();
+  const sheet = el('section', 'manual-page');
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-label', page.title);
+
+  const head = el('header', 'manual-head');
+  head.append(el('span', 'manual-section', page.section));
+  head.append(el('span', 'manual-pageno', page.page || 'PAGE 1'));
+  sheet.append(head);
+  sheet.append(el('h1', 'manual-title', page.title));
+
+  if (page.stamp) {
+    const stamp = el('div', `manual-stamp tone-${page.stamp.tone || 'ink'}`, page.stamp.text);
+    sheet.append(stamp);
+  }
+
+  if (page.rows && page.rows.length) {
+    const table = el('table', 'manual-table');
+    for (const [label, value, tone] of page.rows) {
+      const tr = el('tr');
+      tr.append(el('th', null, label));
+      const td = el('td', tone ? `tone-${tone}` : null, value);
+      tr.append(td);
+      table.append(tr);
+    }
+    sheet.append(table);
+  }
+
+  if (page.lines && page.lines.length) {
+    const list = el('ul', 'manual-lines');
+    for (const line of page.lines) list.append(el('li', null, line));
+    sheet.append(list);
+  }
+
+  if (page.caption) {
+    const cap = el('p', 'manual-caption');
+    if (page.figure) cap.append(el('b', null, `${page.figure}  `));
+    cap.append(document.createTextNode(page.caption));
+    sheet.append(cap);
+  }
+
+  if (page.buttons && page.buttons.length) {
+    const bar = el('div', 'manual-buttons');
+    const openedAt = performance.now();
+    for (const b of page.buttons) {
+      const btn = el('button', 'manual-button');
+      btn.type = 'button';
+      btn.append(el('span', null, b.label));
+      if (b.key) btn.append(el('kbd', null, b.key));
+      // A page that appears under a finger must not take that same tap.
+      btn.addEventListener('click', () => { if (performance.now() - openedAt > 250) onAction(b.action); });
+      bar.append(btn);
+    }
+    sheet.append(bar);
+  }
+
+  root.append(sheet);
+  root.classList.add('is-open');
+  // Stamps land: 110% to 100% in 80 ms, no spring.
+  const stamp = sheet.querySelector('.manual-stamp');
+  if (stamp) requestAnimationFrame(() => stamp.classList.add('is-landed'));
+}
+
+function unmountPage(root) {
+  root.replaceChildren();
+  root.classList.remove('is-open');
+}
+
+// --- Report text -------------------------------------------------------------
+
+function formatSeconds(t) {
+  const m = Math.floor(t / 60);
+  const s = t - m * 60;
+  return m > 0 ? `${m} MIN ${s.toFixed(1)} S` : `${s.toFixed(1)} S`;
+}
+
+const REASON_TEXT = {
+  verticalSpeed: 'Came down too fast',
+  horizontalSpeed: 'Still moving sideways',
+  tilt: 'Not upright',
+};
+
+// Builds the flight report page from a finished flight.
+function reportPage(flight) {
+  const td = flight.stats.touchdown;
+  const landed = flight.phase === 'landed';
+  const fuelPct = Math.round((flight.state.fuel / flight.cfg.fuelMass) * 100);
+  const limits = flight.limits;
+  const deg = (limits.tilt * 180) / Math.PI;
+  const buttons = [
+    { label: 'FLY AGAIN', key: 'R', action: 'restart' },
+    { label: 'WATCH REPLAY', key: 'V', action: 'replay' },
+  ];
+  if (!td) {
+    // No touchdown: the flight climbed out of the training area.
+    return {
+      section: 'SECTION 1 — LUNAR DESCENT TRAINER',
+      title: 'FLIGHT REPORT',
+      page: 'PAGE 2',
+      stamp: { text: 'ABORTED', tone: 'spot' },
+      rows: [
+        ['OUTCOME', 'Left the training area', 'spot'],
+        ['FLIGHT TIME', formatSeconds(flight.state.time)],
+        ['FUEL LEFT', `${flight.state.fuel.toFixed(0)} KG  (${fuelPct}%)`],
+        ['MAX SPEED', `${flight.stats.maxSpeed.toFixed(1)} M/S`],
+        ['ALTITUDE', `${flight.state.y.toFixed(0)} M`],
+      ],
+      figure: 'FIG. 2',
+      caption: 'Climbed past the ceiling with the engine running. The Moon is the other way.',
+      buttons,
+    };
+  }
+  const rows = [
+    ['OUTCOME', landed ? 'Landed on the surface' : 'Crashed on the surface', landed ? null : 'spot'],
+    ['FLIGHT TIME', formatSeconds(td.time)],
+    ['FUEL LEFT', `${flight.state.fuel.toFixed(0)} KG  (${fuelPct}%)`],
+    ['MAX SPEED', `${flight.stats.maxSpeed.toFixed(1)} M/S`],
+    ['TOUCHDOWN V-SPEED', `${td.verticalSpeed.toFixed(1)} M/S  (LIMIT ${limits.verticalSpeed.toFixed(0)})`, td.reasons.includes('verticalSpeed') ? 'spot' : null],
+    ['TOUCHDOWN H-SPEED', `${td.horizontalSpeed.toFixed(1)} M/S  (LIMIT ${limits.horizontalSpeed.toFixed(0)})`, td.reasons.includes('horizontalSpeed') ? 'spot' : null],
+    ['TOUCHDOWN TILT', `${Math.abs((td.tilt * 180) / Math.PI).toFixed(0)} DEG  (LIMIT ${deg.toFixed(0)})`, td.reasons.includes('tilt') ? 'spot' : null],
+  ];
+  const caption = landed
+    ? 'Descent within limits. Crew reports the surface is firm.'
+    : `${td.reasons.map((r) => REASON_TEXT[r]).join('; ')}. Vehicle lost.`;
+  return {
+    section: 'SECTION 1 — LUNAR DESCENT TRAINER',
+    title: 'FLIGHT REPORT',
+    page: 'PAGE 2',
+    stamp: { text: landed ? 'LANDED' : 'CRASHED', tone: landed ? 'ink' : 'spot' },
+    rows,
+    figure: 'FIG. 2',
+    caption,
+    buttons,
+  };
+}
+
+// keys: labels for KeyW, KeyS, KeyA, KeyD, KeyZ, KeyX as printed on the
+// player's keyboard (see keyLabels in input.js).
+function startPage(keys = { KeyW: 'W', KeyS: 'S', KeyA: 'A', KeyD: 'D', KeyZ: 'Z', KeyX: 'X' }) {
+  return {
+    section: 'SECTION 1 — LUNAR DESCENT TRAINER',
+    title: 'DESCENT CARD',
+    page: 'PAGE 1',
+    lines: [
+      'You are 150 m above the Moon, drifting and sinking.',
+      'Land with vertical speed under 3 m/s, sideways under 1 m/s, within 10° of upright.',
+      `THROTTLE: ${keys.KeyW} or Up to raise, ${keys.KeyS} or Down to lower (Shift / Ctrl work too). ${keys.KeyZ} full, ${keys.KeyX} cut.`,
+      `TILT: ${keys.KeyA} / Left and ${keys.KeyD} / Right. The engine pushes the way the top leans.`,
+      'SPACE pauses. R restarts at any time. V replays the last flight. M mutes the sound.',
+      `In a replay, ${keys.KeyA} and ${keys.KeyD} play backwards and forwards; press again to go faster. SPACE pauses.`,
+      'On a phone, use the stamped buttons.',
+    ],
+    figure: 'FIG. 1',
+    caption: 'The dashed line shows where you fall if the engine stays off.',
+    buttons: [{ label: 'BEGIN DESCENT', key: 'ENTER', action: 'begin' }],
+  };
+}
+
+__exports.formatDrawingDate = formatDrawingDate;
+__exports.formatMet = formatMet;
+__exports.mountTitleBlock = mountTitleBlock;
+__exports.updateTitleBlock = updateTitleBlock;
+__exports.mountPage = mountPage;
+__exports.unmountPage = unmountPage;
+__exports.formatSeconds = formatSeconds;
+__exports.reportPage = reportPage;
+__exports.startPage = startPage;
+return __exports;
+})();
+
+__modules["src/ui/input.js"] = (function () {
+const __exports = {};
+// Input: keyboard and on-screen touch buttons, folded into one command per
+// tick for the simulation. The sim never sees key codes, only the command
+// { thr, rot, full, cut } and one-shot actions such as 'restart'.
+//
+// Flight controls are read by physical key position (e.code) so WASD on a
+// QWERTY keyboard is ZQSD on a French one without any setup: Shift / Up /
+// W-position throttle up, Ctrl / Down / S throttle down, Z-position full,
+// X cut, A-position / Left rotate left, D / Right rotate right.
+//
+// One-shot actions are read by the letter actually typed (e.key) so the key
+// marked M mutes on every layout: R restart, P pause, M mute, V replay.
+//
+// In replay mode the keys become a transport: J play backwards (again for
+// faster), K or P pause, L play forwards (again for faster), Space
+// play/pause, Left / Right (or , and . / :) step one tick and repeat while
+// held,
+// Home / End jump to the start / end, Esc exits.
+
+const KEYS = {
+  ShiftLeft: 'thrUp', ShiftRight: 'thrUp', ArrowUp: 'thrUp', KeyW: 'thrUp',
+  ControlLeft: 'thrDown', ControlRight: 'thrDown', ArrowDown: 'thrDown', KeyS: 'thrDown',
+  KeyZ: 'full', KeyX: 'cut',
+  ArrowLeft: 'rotLeft', KeyA: 'rotLeft',
+  ArrowRight: 'rotRight', KeyD: 'rotRight',
+};
+// Actions by typed character (layout-aware) and by physical code.
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay' };
+const ACTIONS_BY_CODE = { Enter: 'confirm', Space: 'pause', Escape: 'back' };
+const REPLAY_BY_KEY = { r: 'restart', m: 'mute' };
+const REPLAY_BY_CODE = {
+  KeyA: 'rev', ArrowLeft: 'rev', KeyD: 'fwd', ArrowRight: 'fwd',
+  Space: 'toggle', Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit',
+};
+
+function actionFor(e, byKey, byCode) {
+  const typed = typeof e.key === 'string' && e.key.length === 1 ? e.key.toLowerCase() : null;
+  return (typed && byKey[typed]) || byCode[e.code] || null;
+}
+
+// Labels for physical keys as printed on this keyboard (Chrome exposes the
+// layout map; elsewhere fall back to the QWERTY letters).
+async function keyLabels(codes) {
+  const out = {};
+  for (const c of codes) out[c] = c.replace(/^Key/, '');
+  try {
+    if (navigator.keyboard && navigator.keyboard.getLayoutMap) {
+      const map = await navigator.keyboard.getLayoutMap();
+      for (const c of codes) { const k = map.get(c); if (k) out[c] = k.toUpperCase(); }
+    }
+  } catch { /* keep the fallback */ }
+  return out;
+}
+
+// On-screen buttons: label, control, and where they sit (left or right cluster).
+const BUTTONS = [
+  { id: 'rotLeft', label: 'ROT L', cluster: 'left' },
+  { id: 'rotRight', label: 'ROT R', cluster: 'left' },
+  { id: 'thrUp', label: 'THR +', cluster: 'right' },
+  { id: 'thrDown', label: 'THR −', cluster: 'right' },
+  { id: 'full', label: 'FULL', cluster: 'right' },
+  { id: 'cut', label: 'CUT', cluster: 'right' },
+];
+
+function createInput({ touchRoot } = {}) {
+  const held = new Set();      // controls currently held (keyboard or touch)
+  const pointers = new Map();  // pointerId -> control
+  const actions = [];          // one-shot actions queued for the game
+  const gestureListeners = new Set();
+  let gestured = false;
+
+  function gesture() {
+    if (gestured) return;
+    gestured = true;
+    gestureListeners.forEach((fn) => fn());
+  }
+
+  let mode = 'flight'; // 'flight' | 'replay'
+  const observed = {};  // code -> character printed on the key, as seen typed
+  const labelListeners = new Set();
+
+  window.addEventListener('keydown', (e) => {
+    if (typeof e.key === 'string' && e.key.length === 1 && /^Key[A-Z]$/.test(e.code) && observed[e.code] !== e.key.toUpperCase()) {
+      observed[e.code] = e.key.toUpperCase();
+      labelListeners.forEach((fn) => fn({ ...observed }));
+    }
+    if (mode === 'replay') {
+      const action = actionFor(e, REPLAY_BY_KEY, REPLAY_BY_CODE);
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat) return;
+      gesture();
+      actions.push(action);
+      return;
+    }
+    const action = actionFor(e, ACTIONS_BY_KEY, ACTIONS_BY_CODE);
+    if (e.repeat) { if (KEYS[e.code] || action) e.preventDefault(); return; }
+    gesture();
+    const control = KEYS[e.code];
+    if (control) { held.add(control); e.preventDefault(); return; }
+    if (action) { actions.push(action); e.preventDefault(); }
+  });
+  window.addEventListener('keyup', (e) => {
+    const control = KEYS[e.code];
+    if (control) { held.delete(control); e.preventDefault(); }
+  });
+  // Dropping focus (alt-tab, phone call) releases every key.
+  window.addEventListener('blur', () => { held.clear(); pointers.clear(); updateButtons(); });
+
+  const buttons = new Map();
+  if (touchRoot) mountButtons(touchRoot);
+
+  function mountButtons(root) {
+    root.replaceChildren();
+    const clusters = { left: document.createElement('div'), right: document.createElement('div') };
+    clusters.left.className = 'touch-cluster touch-left';
+    clusters.right.className = 'touch-cluster touch-right';
+    for (const b of BUTTONS) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'stamp-button';
+      el.textContent = b.label;
+      el.dataset.control = b.id;
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        gesture();
+        root.classList.add('is-touch');
+        el.setPointerCapture?.(e.pointerId);
+        pointers.set(e.pointerId, b.id);
+        updateButtons();
+      });
+      const release = (e) => { pointers.delete(e.pointerId); updateButtons(); };
+      el.addEventListener('pointerup', release);
+      el.addEventListener('pointercancel', release);
+      el.addEventListener('lostpointercapture', release);
+      el.addEventListener('contextmenu', (e) => e.preventDefault());
+      buttons.set(b.id, el);
+      clusters[b.cluster].append(el);
+    }
+    root.append(clusters.left, clusters.right);
+    // Any touch anywhere reveals the buttons (desktop mice never do).
+    window.addEventListener('touchstart', () => root.classList.add('is-touch'), { passive: true, once: true });
+  }
+
+  function isHeld(control) {
+    if (held.has(control)) return true;
+    for (const c of pointers.values()) if (c === control) return true;
+    return false;
+  }
+
+  function updateButtons() {
+    for (const [id, el] of buttons) el.classList.toggle('is-down', isHeld(id));
+  }
+
+  // The command for the next simulation tick.
+  function command() {
+    const up = isHeld('thrUp');
+    const down = isHeld('thrDown');
+    const left = isHeld('rotLeft');
+    const right = isHeld('rotRight');
+    return {
+      thr: up === down ? 0 : up ? 1 : -1,
+      rot: left === right ? 0 : right ? 1 : -1,
+      full: isHeld('full') ? 1 : 0,
+      cut: isHeld('cut') ? 1 : 0,
+    };
+  }
+
+  return {
+    command,
+    // Drain the queued one-shot actions ('restart', 'confirm', 'back').
+    takeActions() { return actions.splice(0, actions.length); },
+    onFirstGesture(fn) { if (gestured) fn(); else gestureListeners.add(fn); },
+    // Switch the keyboard between flying and the replay transport.
+    setMode(next) { mode = next; held.clear(); pointers.clear(); updateButtons(); },
+    // Key labels learned from what the player actually typed (code -> letter).
+    get observedLabels() { return { ...observed }; },
+    onLabels(fn) { labelListeners.add(fn); },
+    get mode() { return mode; },
+    setButtonsVisible(visible) { if (touchRoot) touchRoot.classList.toggle('is-hidden', !visible); },
+  };
+}
+
+__exports.keyLabels = keyLabels;
+__exports.createInput = createInput;
+return __exports;
+})();
+
+__modules["src/ui/hud.js"] = (function () {
+const __exports = {};
+// Instrument strip along the bottom of the blueprint: altitude and velocity
+// dials, vertical/horizontal speed readouts, fuel and throttle tapes, and the
+// CAPCOM line. Two-tone ink; accent only when an alert says so.
+
+const { BLUEPRINT, STROKE, MONO } = __m("src/render/blueprint.js");
+
+const HUD_HEIGHT = 112;
+const G = 8; // grid
+
+function createHud() {
+  // Needles sweep and settle: displayed values ease to the real ones.
+  const shown = { alt: 0, vel: 0, fuel: 1, thr: 0 };
+  let capcomShownKey = null;
+  let capcomRevealed = 0;
+
+  function ease(key, target, dt) {
+    const k = 1 - Math.exp(-dt * 8);
+    shown[key] += (target - shown[key]) * k;
+  }
+
+  // view: interpolated state; alerts from computeAlerts; capcom log entry.
+  function update(view, alerts, capcomLine, dt) {
+    ease('alt', alerts.altitude, dt);
+    ease('vel', Math.hypot(view.vx, view.vy), dt);
+    ease('fuel', alerts.fuelFrac, dt);
+    ease('thr', view.throttle, dt);
+    if (capcomLine && capcomLine.key !== capcomShownKey) { capcomShownKey = capcomLine.key; capcomRevealed = 0; }
+    capcomRevealed += dt * 40; // characters per second, a teletype pace
+  }
+
+  function draw(ctx, { width, height, titleBlockWidth, narrow, timeSeconds }, view, alerts, capcomLine) {
+    const top = height - HUD_HEIGHT;
+    const blink1 = Math.floor(timeSeconds * 2) % 2 === 0;   // 1 Hz
+    const blink2 = Math.floor(timeSeconds * 4) % 2 === 0;   // 2 Hz
+    const tone = (level) => (level === 'critical' ? (blink2 ? 'critical' : 'none') : level === 'caution' ? (blink1 ? 'caution' : 'none') : 'none');
+
+    ctx.save();
+    ctx.lineWidth = STROKE.structure;
+    ctx.strokeStyle = BLUEPRINT.ink;
+    ctx.beginPath();
+    ctx.moveTo(0, top + 0.5);
+    ctx.lineTo(width, top + 0.5);
+    ctx.stroke();
+
+    const ALT_MAX = 200;
+    const VEL_MAX = 30;
+    // Two layouts on the 8px grid: roomy, and compact for phones.
+    const L = narrow
+      ? { r: 4.5 * G, d1: 6 * G, d2: 16 * G, rx: 22 * G, rw: 12 * G, t1: 37 * G, t2: 43 * G, cap: 48 * G }
+      : { r: 5 * G, d1: 7 * G, d2: 19 * G, rx: 26 * G, rw: 13 * G, t1: 40 * G, t2: 46 * G, cap: 52 * G };
+    dial(ctx, L.d1, top + 7 * G, L.r, Math.min(ALT_MAX, Math.max(0, shown.alt)) / ALT_MAX, 'ALT', `${Math.max(0, alerts.altitude).toFixed(0)} M`, [0, 50, 100, 150, 200], tone(alerts.descent));
+    dial(ctx, L.d2, top + 7 * G, L.r, Math.min(VEL_MAX, shown.vel) / VEL_MAX, 'VEL', `${Math.hypot(view.vx, view.vy).toFixed(1)} M/S`, [0, 10, 20, 30], 'none');
+
+    // Readouts: vertical speed positive upward, horizontal positive to the right.
+    readout(ctx, L.rx, top + 3 * G, L.rw, 'V-SPD', signed(view.vy) + ' M/S', tone(alerts.descent));
+    readout(ctx, L.rx, top + 6 * G, L.rw, 'H-SPD', signed(view.vx) + ' M/S', tone(alerts.drift));
+    readout(ctx, L.rx, top + 9 * G, L.rw, 'TILT', signed((view.angle * 180) / Math.PI, 0) + ' DEG', tone(alerts.tilt));
+
+    // Tapes.
+    tape(ctx, L.t1, top + 2 * G, 2 * G, 9 * G, Math.max(0, Math.min(1, shown.fuel)), 'FUEL', `${Math.round(alerts.fuelFrac * 100)}%`, tone(alerts.fuel));
+    tape(ctx, L.t2, top + 2 * G, 2 * G, 9 * G, Math.max(0, Math.min(1, shown.thr)), 'THR', `${Math.round(view.throttle * 100)}%`, 'none');
+
+    // CAPCOM line: in the strip when there is room, else top left of the
+    // sheet beside the title block, wrapped onto two lines.
+    const capRight = width - titleBlockWidth - 2 * G;
+    const inStrip = !narrow && capRight - L.cap > 160;
+    const cx = inStrip ? L.cap : 2 * G;
+    const cy = inStrip ? top + 7 * G : 3 * G;
+    const maxW = inStrip ? capRight - L.cap : width - 5 * G - titleBlockWidth;
+    capcom(ctx, cx, cy, maxW, capcomLine, capcomRevealed, capcomLine && capcomLine.critical ? (blink2 ? 'critical' : 'none') : 'none', inStrip ? 1 : 2);
+    ctx.restore();
+  }
+
+  return { update, draw };
+}
+
+function signed(v, digits = 1) {
+  const r = Math.abs(v) < 0.05 ? 0 : v;
+  return (r >= 0 ? '+' : '-') + Math.abs(r).toFixed(digits);
+}
+
+function colours(level) {
+  if (level === 'critical') return { stroke: BLUEPRINT.accent, fill: BLUEPRINT.accent, text: BLUEPRINT.paper };
+  if (level === 'caution') return { stroke: BLUEPRINT.accent, fill: null, text: BLUEPRINT.ink };
+  return { stroke: BLUEPRINT.ink, fill: null, text: BLUEPRINT.ink };
+}
+
+function text(ctx, str, x, y, { size = 12, weight = 500, align = 'left', colour = BLUEPRINT.ink, baseline = 'middle' } = {}) {
+  ctx.fillStyle = colour;
+  ctx.font = `${weight} ${size}px ${MONO}`;
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  ctx.fillText(str, Math.round(x), Math.round(y));
+}
+
+// Round dial: 270-degree sweep from lower left to lower right, tick marks
+// with numerals, needle, name above and digital value below.
+function dial(ctx, cx, cy, r, frac, name, value, ticks, level) {
+  const c = colours(level);
+  const start = Math.PI * 0.75;
+  const sweep = Math.PI * 1.5;
+  ctx.lineWidth = STROKE.structure;
+  ctx.strokeStyle = c.stroke;
+  if (c.fill) { ctx.fillStyle = c.fill; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); }
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = STROKE.annotation;
+  const inkOn = c.fill ? BLUEPRINT.paper : BLUEPRINT.inkPale;
+  ctx.strokeStyle = inkOn;
+  ticks.forEach((t, i) => {
+    const a = start + sweep * (i / (ticks.length - 1));
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * (r - 1), cy + Math.sin(a) * (r - 1));
+    ctx.lineTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6));
+    ctx.stroke();
+    text(ctx, String(t), cx + Math.cos(a) * (r - 13), cy + Math.sin(a) * (r - 13), { size: 8, weight: 400, align: 'center', colour: inkOn });
+  });
+  // Minor ticks between majors.
+  ctx.beginPath();
+  const minor = (ticks.length - 1) * 5;
+  for (let i = 0; i <= minor; i++) {
+    if (i % 5 === 0) continue;
+    const a = start + sweep * (i / minor);
+    ctx.moveTo(cx + Math.cos(a) * (r - 1), cy + Math.sin(a) * (r - 1));
+    ctx.lineTo(cx + Math.cos(a) * (r - 4), cy + Math.sin(a) * (r - 4));
+  }
+  ctx.stroke();
+  // Needle.
+  const a = start + sweep * Math.max(0, Math.min(1, frac));
+  ctx.strokeStyle = c.fill ? BLUEPRINT.paper : BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.structure;
+  ctx.beginPath();
+  ctx.moveTo(cx - Math.cos(a) * 6, cy - Math.sin(a) * 6);
+  ctx.lineTo(cx + Math.cos(a) * (r - 8), cy + Math.sin(a) * (r - 8));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+  ctx.stroke();
+  text(ctx, name, cx, cy + 11, { size: 9, weight: 400, align: 'center', colour: inkOn });
+  text(ctx, value, cx, cy + r - 9, { size: 10, align: 'center', colour: c.fill ? BLUEPRINT.paper : BLUEPRINT.ink });
+}
+
+// Label left, value right-aligned in the field, boxed only when alerting.
+function readout(ctx, x, y, w, name, value, level) {
+  const c = colours(level);
+  if (level !== 'none') {
+    ctx.lineWidth = STROKE.annotation;
+    ctx.strokeStyle = c.stroke;
+    if (c.fill) { ctx.fillStyle = c.fill; ctx.fillRect(x - 4, y - 9, w + 8, 18); }
+    ctx.strokeRect(x - 4 + 0.5, y - 9 + 0.5, w + 8, 18);
+  }
+  text(ctx, name, x, y, { size: 9, weight: 400, colour: c.fill ? BLUEPRINT.paper : BLUEPRINT.inkPale });
+  text(ctx, value, x + w, y, { size: 12, align: 'right', colour: c.text });
+}
+
+// Vertical tape: outline, hatched to the level, name above, value below.
+function tape(ctx, x, y, w, h, frac, name, value, level) {
+  const c = colours(level);
+  const fillH = Math.round(h * frac);
+  ctx.lineWidth = STROKE.structure;
+  ctx.strokeStyle = c.stroke;
+  if (c.fill) { ctx.fillStyle = c.fill; ctx.fillRect(x, y, w, h); }
+  ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+  if (fillH > 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 1, y + h - fillH, w - 1, fillH);
+    ctx.clip();
+    ctx.strokeStyle = c.fill ? BLUEPRINT.paper : BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    ctx.beginPath();
+    for (let d = -h; d < w; d += 4) {
+      ctx.moveTo(x + d, y + h);
+      ctx.lineTo(x + d + h, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = c.fill ? BLUEPRINT.paper : BLUEPRINT.ink;
+    ctx.lineWidth = STROKE.annotation;
+    ctx.beginPath();
+    ctx.moveTo(x, y + h - fillH + 0.5);
+    ctx.lineTo(x + w, y + h - fillH + 0.5);
+    ctx.stroke();
+  }
+  text(ctx, name, x + w / 2, y - 7, { size: 9, weight: 400, align: 'center', colour: BLUEPRINT.inkPale });
+  text(ctx, value, x + w / 2, y + h + 9, { size: 10, align: 'center', colour: c.stroke === BLUEPRINT.accent ? BLUEPRINT.accent : BLUEPRINT.ink });
+}
+
+// The radio line: "CAPCOM" tag, then the message revealed like a teletype,
+// wrapped by words onto up to maxLines lines.
+function capcom(ctx, x, y, maxW, line, revealed, level, maxLines = 1) {
+  const c = colours(level);
+  text(ctx, 'CAPCOM', x, y - 10, { size: 9, weight: 400, colour: BLUEPRINT.inkPale });
+  if (!line) return;
+  const n = Math.max(0, Math.min(line.text.length, Math.floor(revealed)));
+  ctx.font = `500 12px ${MONO}`;
+  const lines = wrap(ctx, line.text.slice(0, n), maxW, maxLines);
+  lines.forEach((str, i) => {
+    const ly = y + i * 18;
+    if (c.fill) {
+      ctx.fillStyle = c.fill;
+      ctx.fillRect(x - 2, ly, ctx.measureText(str).width + 4, 18);
+    }
+    text(ctx, str, x, ly + 9, { size: 12, colour: c.text });
+  });
+}
+
+function wrap(ctx, str, maxW, maxLines) {
+  const words = str.split(' ');
+  const lines = [];
+  let current = '';
+  for (const w of words) {
+    const trial = current ? `${current} ${w}` : w;
+    if (ctx.measureText(trial).width <= maxW || !current) current = trial;
+    else { lines.push(current); current = w; }
+  }
+  if (current) lines.push(current);
+  while (lines.length > maxLines) lines.pop();
+  const last = lines[lines.length - 1];
+  if (last) { let t = last; while (t.length > 1 && ctx.measureText(t).width > maxW) t = t.slice(0, -1); lines[lines.length - 1] = t; }
+  return lines;
+}
+
+__exports.HUD_HEIGHT = HUD_HEIGHT;
+__exports.createHud = createHud;
+return __exports;
+})();
+
+__modules["src/ui/transport.js"] = (function () {
+const __exports = {};
+// Replay transport: a strip of stamped buttons and a scrub tape, HTML over
+// the canvas, shown only while a recording is being replayed. Buttons work
+// with mouse and touch; the keyboard shortcuts are listed on each button.
+//
+// Actions sent to the handler: 'exit', 'rev', 'toggle', 'fwd', and 'seek'
+// with a fraction 0..1 while scrubbing. REV and FWD are the rotate keys;
+// each press in the same direction goes a notch faster.
+
+const BUTTONS = [
+  { action: 'exit', label: 'EXIT', key: 'ESC' },
+  { action: 'rev', label: 'REV', key: 'A', code: 'KeyA' },
+  { action: 'toggle', label: 'PLAY', key: 'SPACE', id: 'toggle' },
+  { action: 'fwd', label: 'FWD', key: 'D', code: 'KeyD' },
+];
+
+function createTransport(root, onAction) {
+  root.replaceChildren();
+  const bar = el('div', 'transport-bar');
+
+  // Scrub tape: a long horizontal tape with a playhead and tick marks.
+  const tape = el('div', 'transport-tape');
+  tape.setAttribute('role', 'slider');
+  tape.setAttribute('aria-label', 'Replay position');
+  const ticks = el('div', 'transport-ticks');
+  const played = el('div', 'transport-played');
+  const head = el('div', 'transport-head');
+  const timeNow = el('span', 'transport-time transport-time-now', '00:00.0');
+  const timeEnd = el('span', 'transport-time transport-time-end', '00:00.0');
+  tape.append(ticks, played, head);
+  let scrubbing = false;
+  const seekFromEvent = (e) => {
+    const r = tape.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
+    onAction('seek', f);
+  };
+  tape.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    scrubbing = true;
+    tape.setPointerCapture?.(e.pointerId);
+    seekFromEvent(e);
+  });
+  tape.addEventListener('pointermove', (e) => { if (scrubbing) seekFromEvent(e); });
+  const stop = () => { scrubbing = false; };
+  tape.addEventListener('pointerup', stop);
+  tape.addEventListener('pointercancel', stop);
+  tape.addEventListener('lostpointercapture', stop);
+
+  const tapeRow = el('div', 'transport-tape-row');
+  tapeRow.append(timeNow, tape, timeEnd);
+
+  // EXIT on the left, the shuttle group centred, the speed on the right.
+  const buttons = el('div', 'transport-buttons');
+  const left = el('div', 'transport-group transport-left');
+  const centre = el('div', 'transport-group transport-centre');
+  const byId = {};
+  for (const b of BUTTONS) {
+    const btn = el('button', 'stamp-button transport-button');
+    btn.type = 'button';
+    btn.append(el('span', 'transport-label', b.label));
+    const kbd = el('kbd', null, b.key);
+    if (b.code) kbd.dataset.code = b.code;
+    btn.append(kbd);
+    btn.dataset.action = b.action;
+    // Act on the completed tap, so whatever appears underneath (the flight
+    // report after EXIT) does not catch the finger-up.
+    btn.addEventListener('click', () => onAction(b.action));
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+    (b.action === 'exit' ? left : centre).append(btn);
+    if (b.id) byId[b.id] = btn;
+  }
+  const speed = el('span', 'transport-speed', '×1');
+  buttons.append(left, centre, speed);
+
+  bar.append(tapeRow, buttons);
+  root.append(bar);
+
+  // Tick marks every ten seconds once the duration is known.
+  let tickedFor = -1;
+  function layoutTicks(duration) {
+    if (tickedFor === duration) return;
+    tickedFor = duration;
+    ticks.replaceChildren();
+    if (duration <= 0) return;
+    for (let t = 10; t < duration; t += 10) {
+      const m = el('i');
+      m.style.left = `${(t / duration) * 100}%`;
+      ticks.append(m);
+    }
+  }
+
+  return {
+    show() { root.classList.add('is-open'); },
+    hide() { root.classList.remove('is-open'); },
+    // Height of the bar on screen, for keeping the drawing clear of it.
+    get height() { return root.classList.contains('is-open') ? bar.offsetHeight : 0; },
+    // Relabel position-based keys as printed on this keyboard.
+    setKeyLabels(labels) {
+      for (const kbd of bar.querySelectorAll('kbd[data-code]')) {
+        const l = labels[kbd.dataset.code];
+        if (l) kbd.textContent = l;
+      }
+    },
+    // { time, duration, speed, playing }
+    update({ time, duration, speed: spd, playing }) {
+      layoutTicks(duration);
+      const f = duration > 0 ? time / duration : 0;
+      played.style.width = `${f * 100}%`;
+      head.style.left = `${f * 100}%`;
+      timeNow.textContent = clock(time);
+      timeEnd.textContent = clock(duration);
+      tape.setAttribute('aria-valuenow', String(Math.round(f * 100)));
+      byId.toggle.querySelector('.transport-label').textContent = playing ? 'PAUSE' : 'PLAY';
+      const mag = `×${Math.abs(spd) % 1 === 0 ? Math.abs(spd) : Math.abs(spd).toFixed(1)}`;
+      speed.textContent = playing ? (spd < 0 ? `◂ ${mag}` : `${mag} ▸`) : 'PAUSED';
+    },
+  };
+}
+
+function clock(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds - m * 60;
+  return `${String(m).padStart(2, '0')}:${s.toFixed(1).padStart(4, '0')}`;
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+__exports.createTransport = createTransport;
+return __exports;
+})();
+
+__modules["src/audio/mixer.js"] = (function () {
+const __exports = {};
+// Mixer: one AudioContext behind master, music and SFX buses. Audio starts
+// on the first user gesture (browsers require it), resumes when the tab
+// comes back, and the whole thing is optional: with no Web Audio, every
+// call is a no-op and the game plays silently.
+
+function createMixer() {
+  const Ctx = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
+  let ctx = null;
+  let master = null;
+  const buses = { music: null, sfx: null };
+  let muted = false;
+
+  function start() {
+    if (ctx || !Ctx) return;
+    try {
+      ctx = new Ctx();
+      master = ctx.createGain();
+      master.gain.value = muted ? 0 : 0.8;
+      master.connect(ctx.destination);
+      for (const name of Object.keys(buses)) {
+        const g = ctx.createGain();
+        g.gain.value = name === 'music' ? 0.5 : 0.7;
+        g.connect(master);
+        buses[name] = g;
+      }
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    } catch {
+      ctx = null;
+    }
+  }
+
+  function resume() {
+    if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+  }
+
+  function setMuted(value) {
+    muted = value;
+    if (master && ctx) master.gain.setTargetAtTime(muted ? 0 : 0.8, ctx.currentTime, 0.02);
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
+  }
+
+  return {
+    get context() { return ctx; },
+    get ready() { return !!ctx; },
+    get muted() { return muted; },
+    bus(name) { return buses[name]; },
+    start,
+    resume,
+    setMuted,
+    toggleMuted() { setMuted(!muted); return muted; },
+  };
+}
+
+__exports.createMixer = createMixer;
+return __exports;
+})();
+
+__modules["src/audio/sfx.js"] = (function () {
+const __exports = {};
+// Sound effects. Placeholder engine noise: filtered noise whose loudness and
+// brightness follow the throttle. Touchdown gives a short thud, a crash a
+// longer burst. Realistic where the physics is real, per the brief.
+
+function createSfx(mixer) {
+  let engine = null; // { source, filter, gain }
+  let lastThrottle = 0;
+
+  function noiseBuffer(ctx, seconds) {
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * seconds), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    let a = 0x1234567; // small deterministic noise generator
+    for (let i = 0; i < data.length; i++) {
+      a = (a * 1664525 + 1013904223) >>> 0;
+      data[i] = (a / 4294967296) * 2 - 1;
+    }
+    return buffer;
+  }
+
+  function ensureEngine() {
+    const ctx = mixer.context;
+    if (engine || !ctx) return;
+    try {
+      const source = ctx.createBufferSource();
+      source.buffer = noiseBuffer(ctx, 2);
+      source.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 200;
+      filter.Q.value = 0.7;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      source.connect(filter).connect(gain).connect(mixer.bus('sfx'));
+      source.start();
+      engine = { source, filter, gain };
+    } catch {
+      engine = null;
+    }
+  }
+
+  // throttle 0..1 of the thrust actually produced; call every frame.
+  function setEngine(throttle) {
+    ensureEngine();
+    if (!engine) return;
+    if (Math.abs(throttle - lastThrottle) < 0.005) return;
+    lastThrottle = throttle;
+    const ctx = mixer.context;
+    const t = ctx.currentTime;
+    engine.gain.gain.setTargetAtTime(throttle > 0 ? 0.15 + 0.55 * throttle : 0, t, 0.08);
+    engine.filter.frequency.setTargetAtTime(200 + 1800 * throttle, t, 0.1);
+  }
+
+  // A burst of filtered noise: thud for a landing, crunch for a crash.
+  function burst({ seconds, cutoff, level }) {
+    const ctx = mixer.context;
+    if (!ctx) return;
+    try {
+      const source = ctx.createBufferSource();
+      source.buffer = noiseBuffer(ctx, seconds);
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = cutoff;
+      const gain = ctx.createGain();
+      const t = ctx.currentTime;
+      gain.gain.setValueAtTime(level, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + seconds);
+      source.connect(filter).connect(gain).connect(mixer.bus('sfx'));
+      source.start(t);
+      source.stop(t + seconds);
+    } catch { /* silence is fine */ }
+  }
+
+  return {
+    setEngine,
+    touchdown() { burst({ seconds: 0.25, cutoff: 300, level: 0.6 }); },
+    crash() { burst({ seconds: 0.9, cutoff: 900, level: 0.9 }); },
+    stop() { setEngine(0); },
+  };
+}
+
+__exports.createSfx = createSfx;
+return __exports;
+})();
+
+__modules["src/main.js"] = (function () {
+const __exports = {};
+// Kármán Program — entry point. Wires the canvas surface, the current
+// document renderer and the HTML chrome together. Game logic lives in
+// src/core and never reaches this file's DOM calls.
+
+const { createFixedLoop } = __m("src/core/loop.js");
+const { createFlight, interpolated } = __m("src/core/flight.js");
+const { predictDescent } = __m("src/core/predict.js");
+const { computeAlerts } = __m("src/core/alerts.js");
+const { createCapcom } = __m("src/core/capcom.js");
+const { buildTimeline, sampleTimeline } = __m("src/core/timeline.js");
+const { createSurface } = __m("src/render/surface.js");
+const { createCamera } = __m("src/render/camera.js");
+const { drawPaper, drawScene } = __m("src/render/blueprint.js");
+const { mountTitleBlock, updateTitleBlock, mountPage, unmountPage, reportPage, startPage } = __m("src/ui/screens.js");
+const { createInput, keyLabels } = __m("src/ui/input.js");
+const { createHud, HUD_HEIGHT } = __m("src/ui/hud.js");
+const { createTransport } = __m("src/ui/transport.js");
+const { createMixer } = __m("src/audio/mixer.js");
+const { createSfx } = __m("src/audio/sfx.js");
+
+const surface = createSurface(document.getElementById('stage'));
+const titleBlock = document.getElementById('title-block');
+const pageRoot = document.getElementById('page');
+const camera = createCamera();
+const hud = createHud();
+let capcom = createCapcom();
+const input = createInput({ touchRoot: document.getElementById('touch-controls') });
+window.addEventListener('touchstart', () => layout(), { passive: true, once: true });
+const mixer = createMixer();
+const sfx = createSfx(mixer);
+input.onFirstGesture(() => mixer.start());
+
+let flight = createFlight({ seed: 1 });
+let alerts = null;
+let replay = null;          // { timeline, cursor, speed, playing } while replaying
+let lastRecording = null;   // the most recent live flight, for replay
+// Shuttle ladder: each press in the same direction climbs one notch.
+const SPEEDS = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+function stepGame(dt) {
+  flight.step(input.command(), dt);
+  const prediction = flight.phase === 'flying' ? predictDescent(flight.state, flight.terrain, flight.body.gravity) : null;
+  alerts = computeAlerts(flight, prediction);
+  capcom.update(flight, alerts);
+}
+const loop = createFixedLoop({ hz: 60, step: stepGame });
+
+let pageOpen = null;        // 'start' | 'report' | null
+let reportDueAt = null;     // flight tick at which the report page opens
+
+function openPage(kind, page) {
+  pageOpen = kind;
+  mountPage(pageRoot, page, handleAction);
+  input.setButtonsVisible(false);
+}
+
+function closePage() {
+  pageOpen = null;
+  unmountPage(pageRoot);
+  input.setButtonsVisible(true);
+  if (!replay && !userPaused) loop.resume();
+}
+
+function handleAction(action) {
+  if (action === 'begin') { closePage(); return; }
+  if (action === 'restart') { closePage(); restart(); return; }
+  if (action === 'replay') { closePage(); startReplay(); return; }
+}
+
+// Space holds the live flight; Space again (or any restart) lets it go.
+let userPaused = false;
+function togglePause() {
+  userPaused = !userPaused;
+  if (userPaused) loop.pause(); else loop.resume();
+  updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : 'BLUEPRINT' });
+}
+
+function restart() {
+  userPaused = false;
+  if (replay) exitReplay(false);
+  else if (flight.tick > 0) lastRecording = flight.recording();
+  flight = createFlight({ seed: 1 });
+  capcom = createCapcom();
+  alerts = null;
+  reportDueAt = null;
+  loop.reset();
+  if (!pageOpen) loop.resume();
+  camera.snap(flight.state);
+  lastMetShown = -1;
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
+}
+
+// --- Replay -------------------------------------------------------------------
+// The last live flight is run to its end from its recording with every tick
+// kept, then a cursor moves over that tape: forwards, backwards, stepping
+// or scrubbing. Same seed, same inputs, same landing spot.
+const transport = createTransport(document.getElementById('transport'), onTransport);
+
+function startReplay() {
+  if (!replay && flight.tick > 0) lastRecording = flight.recording();
+  if (!lastRecording) return;
+  const timeline = buildTimeline(lastRecording);
+  replay = { timeline, cursor: 0, speed: 1, playing: true };
+  loop.pause();
+  input.setMode('replay');
+  input.setButtonsVisible(false);
+  transport.show();
+  layout();
+  camera.snap(timeline.at(0).state);
+  lastMetShown = -1;
+  updateTitleBlock(titleBlock, { document: 'REPLAY' });
+}
+
+// Leave the replay; by default back to the flight report of that flight.
+function exitReplay(showReport = true) {
+  if (!replay) return;
+  const finished = replay.timeline.flight;
+  replay = null;
+  transport.hide();
+  layout();
+  input.setMode('flight');
+  input.setButtonsVisible(true);
+  camera.snap(flight.state);
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
+  if (showReport && finished.phase !== 'flying') openPage('report', reportPage(finished));
+  else if (showReport && !userPaused) loop.resume(); // the live flight carries on where it was
+}
+
+function onTransport(action, value) {
+  if (!replay) return;
+  const r = replay;
+  const last = r.timeline.length - 1;
+  const faster = (dir) => {
+    // Same direction: next speed up; other direction or paused: start at ×1.
+    const i = SPEEDS.indexOf(Math.abs(r.speed));
+    const next = r.playing && Math.sign(r.speed) === dir && i >= 0 ? SPEEDS[Math.min(SPEEDS.length - 1, i + 1)] : 1;
+    r.speed = dir * next;
+    r.playing = true;
+  };
+  switch (action) {
+    case 'rev': faster(-1); break;
+    case 'fwd': faster(1); break;
+    case 'pause': r.playing = false; break;
+    case 'toggle':
+      if (r.playing) r.playing = false;
+      else { if (r.cursor >= last) r.cursor = 0; r.speed = 1; r.playing = true; }
+      break;
+    case 'start': r.cursor = 0; camera.snap(r.timeline.at(0).state); break;
+    case 'end': r.cursor = last; r.playing = false; camera.snap(r.timeline.at(last).state); break;
+    case 'seek': {
+      const target = Math.round(value * last);
+      if (Math.abs(target - r.cursor) > 120) camera.snap(r.timeline.at(target).state);
+      r.cursor = target;
+      r.playing = false;
+      break;
+    }
+    case 'exit': exitReplay(true); break;
+    case 'restart': closePage(); restart(); break;
+    case 'mute': updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' }); break;
+    default: break;
+  }
+}
+
+// Move the replay cursor on by one screen frame.
+function advanceReplay(frameDt) {
+  const r = replay;
+  const last = r.timeline.length - 1;
+  if (r.playing) {
+    r.cursor += r.speed * frameDt * 60;
+    if (r.cursor >= last) { r.cursor = last; r.playing = false; }
+    if (r.cursor <= 0) { r.cursor = 0; r.playing = false; }
+  }
+  transport.update({ time: r.cursor * r.timeline.dt, duration: r.timeline.duration, speed: r.speed, playing: r.playing });
+}
+
+const touchRoot = document.getElementById('touch-controls');
+const coarsePointer = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null;
+function layout() {
+  camera.setViewport(surface.width, Math.max(120, surface.height - HUD_HEIGHT), 0);
+  // Keep the surface clear of the on-screen buttons when they are showing.
+  const buttonsShown = !replay && ((coarsePointer && coarsePointer.matches) || touchRoot.classList.contains('is-touch'));
+  camera.groundClearance = replay ? transport.height + 32 : buttonsShown ? 168 : 40;
+}
+layout();
+camera.snap(flight.state);
+
+// What to draw this frame: the live flight between two ticks, or a sample
+// of the replay tape at the cursor.
+function currentScene(alpha) {
+  if (replay) {
+    const sample = sampleTimeline(replay.timeline, replay.cursor);
+    const src = replay.timeline.flight;
+    return { view: sample.state, phase: sample.phase, alerts: sample.alerts, capcom: sample.capcom, src };
+  }
+  const view = interpolated(flight, alpha);
+  return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight };
+}
+
+function render(alpha, frameDt) {
+  const scene = currentScene(alpha);
+  const { view, phase, src } = scene;
+  camera.follow(view, frameDt);
+  drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
+  const prediction = phase === 'flying' ? predictDescent(view, src.terrain, src.body.gravity) : null;
+  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, terrain: src.terrain, prediction });
+  const a = scene.alerts || alerts || computeAlerts(src, prediction);
+  hud.update(view, a, scene.capcom, frameDt);
+  hud.draw(surface.ctx, {
+    width: surface.width,
+    height: surface.height,
+    titleBlockWidth: titleBlock.offsetWidth || 240,
+    narrow: surface.width < 720,
+    timeSeconds: performance.now() / 1000,
+  }, view, a, scene.capcom);
+  return scene;
+}
+
+mountTitleBlock(titleBlock, {
+  program: 'KÁRMÁN PROGRAM',
+  document: 'BLUEPRINT',
+  sheet: 1,
+  of: 1,
+  date: new Date(),
+  met: 0,
+  audio: 'ON',
+});
+
+let lastMetShown = -1;
+let lastFrameMs = null;
+function frame(nowMs) {
+  const frameDt = lastFrameMs === null ? 0 : Math.min(0.1, (nowMs - lastFrameMs) / 1000);
+  lastFrameMs = nowMs;
+  for (const action of input.takeActions()) {
+    if (replay) { onTransport(action); continue; }
+    if (pageOpen === 'start' && (action === 'confirm' || action === 'pause' || action === 'restart')) { closePage(); continue; }
+    if (pageOpen === 'report' && (action === 'confirm' || action === 'pause')) { closePage(); restart(); continue; }
+    if (action === 'restart') { closePage(); restart(); }
+    if (action === 'replay') { closePage(); startReplay(); }
+    if (action === 'pause' && !pageOpen) togglePause();
+    if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
+  }
+  // Any flight command dismisses the start card too.
+  if (pageOpen === 'start') {
+    const c = input.command();
+    if (c.thr || c.rot || c.full || c.cut) closePage();
+  }
+  const { alpha } = loop.advance(nowMs / 1000);
+  if (replay) {
+    advanceReplay(frameDt);
+  } else {
+    // A crash cuts hard to the report; a landing lets the touchdown settle first.
+    if (flight.phase !== 'flying' && !pageOpen && reportDueAt === null) {
+      reportDueAt = flight.tick + (flight.phase === 'landed' ? 75 : 20);
+      if (flight.phase === 'crashed') sfx.crash(); else if (flight.phase === 'landed') sfx.touchdown();
+    }
+    if (reportDueAt !== null && !pageOpen && flight.tick >= reportDueAt) {
+      reportDueAt = null;
+      openPage('report', reportPage(flight));
+    }
+  }
+  const scene = render(alpha, frameDt);
+  const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : true;
+  sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / scene.src.cfg.maxThrust : 0);
+  const metSeconds = Math.floor(scene.view.time);
+  if (metSeconds !== lastMetShown) {
+    lastMetShown = metSeconds;
+    updateTitleBlock(titleBlock, { met: metSeconds });
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+openPage('start', startPage());
+loop.pause();
+// Relabel the card with the keys as printed on this keyboard, once known.
+keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX']).then((keys) => {
+  if (pageOpen === 'start') openPage('start', startPage({ ...keys, ...input.observedLabels }));
+  transport.setKeyLabels({ ...keys, ...input.observedLabels });
+});
+// Browsers without a layout map still reveal the layout as keys get typed.
+input.onLabels((keys) => transport.setKeyLabels(keys));
+
+// Pause the clock while the tab is hidden; resume cleanly when it comes back.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) loop.pause(); else if (!pageOpen && !replay && !userPaused) loop.resume();
+});
+
+surface.onResize(() => { layout(); render(0, 0); });
+
+// Read-only hook for automated playtests (tools/check.js and friends).
+window.__karman = { get flight() { return flight; }, get phase() { return flight.phase; }, get replay() { return replay; } };
+
+
+return __exports;
+})();
+})();
+</script>
+</head>
+<body>
+  <canvas id="stage" aria-label="Kármán Program flight drawing" role="img"></canvas>
+  <div id="overlay">
+    <div id="touch-controls" class="touch-controls" aria-label="Flight controls"></div>
+    <div id="title-block" class="title-block" aria-hidden="true"></div>
+  </div>
+  <div id="transport" aria-label="Replay transport"></div>
+  <div id="page"></div>
+  <noscript><p class="noscript">Kármán Program needs JavaScript to draw.</p></noscript>
+</body>
+</html>
