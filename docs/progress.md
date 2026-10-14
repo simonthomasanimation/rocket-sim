@@ -65,6 +65,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [ ] Rules-based explainer with last-60-seconds figure; covers descent crash, missed orbit, out of fuel at minimum
 - [ ] Maneuver-name detection (Hohmann, circularization, deorbit, TLI, LOI)
 - [ ] CAPCOM chatter bank, context-triggered
+- [ ] Tutorial pages in the manual document (owner request, 2026-10-14): the core mechanics with illustrations (throttle and tilt, staging, AP/PE and the dashed path, reaching orbit, time warp and rails, spheres of influence, the Moon window, re-entry corridor, shield attitude, parachute), plus a glossary of the words the sheets use (LEO, LEO return, periapsis, prograde/retrograde, SOI, delta-v, TWR, Kármán line). Reachable from the flight plan and from the report page's "why did that happen" explainer
 - [ ] Sandbox mode; save/load through save.js with JSON export/import on settings
 - [ ] Gate issue opened
 

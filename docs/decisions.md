@@ -69,4 +69,4 @@
 - 2026-10-14 — ENTER is the next step down the stack: with only the capsule left and the chute stowed it opens the chute (P still works). Detail A frames the whole canopy when it is out.
 - 2026-10-14 — The edge of the air is drawn and named the Kármán line (ring label, ruler tick, CAPCOM call on the way up); the game is named after it.
 - 2026-10-14 — T and G are latching automatic steering (they already were); the rose now shows AUTO PRO / AUTO RET in an inverted cell while it is on, and a tilt key takes over again.
-
+- 2026-10-14 — Tutorial pages are an M5 task (manual document): illustrated mechanics plus a glossary, linked from the flight plan and the explainer. Noted at the owner's request; not before the builder.
