@@ -89,7 +89,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
       if (cmd.warp > 0 && !wantsThrust && railsAllowed(flight, cmd.warp)) { railsStep(flight, cmd, dt * RAILS[cmd.warp - 1].rate); return; }
       const s = flight.state;
       const hadFuel = s.fuel > 0;
-      const { staged } = stepCraft(s, cmd, dt, cfg, body);
+      const { staged } = stepCraft(s, cmd, dt, cfg, flight.body);
       if (staged >= 0) {
         // The spent stage is pushed off backwards along the axis by the
         // separation springs and picks up a slight tumble.
@@ -123,7 +123,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
       }
       const alt = flight.altitude();
       if (alt > flight.stats.maxAltitude) flight.stats.maxAltitude = alt;
-      flight.elements = elementsOf(s, body);
+      flight.elements = elementsOf(s, flight.body);
       if (!flight.stats.orbit && !flight.startedInOrbit && flight.elements.e < 1 && flight.elements.peAlt > ORBIT_MARGIN) {
         flight.stats.orbit = { tick: flight.tick, time: s.time, ap: flight.elements.apAlt, pe: flight.elements.peAlt };
         flight.events.push({ tick: flight.tick, type: 'orbit' });
@@ -172,8 +172,20 @@ function railsStep(flight, cmd, span) {
   const chunk = Math.min(60, span);
   let left = span;
   while (left > 1e-6) {
-    const dt = Math.min(chunk, left);
     const body = flight.body;
+    // Shorter chunks near a sphere-of-influence boundary, so the crossing
+    // lands within a few seconds of where it should.
+    let dt = Math.min(chunk, left);
+    const v = Math.hypot(s.vx, s.vy) + 1000;
+    let gap = Infinity;
+    if (body.parent) gap = Math.abs(body.soi - Math.hypot(s.x, s.y));
+    for (const child of childrenOf(body)) { const c = bodyState(child, flight.clock); gap = Math.min(gap, Math.abs(Math.hypot(s.x - c.x, s.y - c.y) - child.soi)); }
+    // ...and above the air or the ground, so a fast fall stops at the edge
+    // instead of a chunk landing deep inside it.
+    const r0 = Math.hypot(s.x, s.y);
+    if (body.atmosphere) gap = Math.min(gap, Math.max(0, r0 - body.radius - body.atmosphere.height - 2000));
+    gap = Math.min(gap, Math.max(0, r0 - flight.terrain.groundRadiusAt(s.x, s.y) - 1000));
+    if (gap < 3 * v * dt) dt = Math.max(2, Math.min(dt, gap / (3 * v) + 2));
     const next = propagate(s, body.mu, dt);
     s.x = next.x; s.y = next.y; s.vx = next.vx; s.vy = next.vy;
     s.time += dt;

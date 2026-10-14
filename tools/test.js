@@ -16,6 +16,7 @@ import { predictCoast } from '../src/core/predict.js';
 import { createTerrain } from '../src/core/terrain.js';
 import { WARP_LADDER, PHYSICS_LADDER, maxPhysicsWarp, maxWarpIndex, railsAllowed, RAILS, PHYSICS_LEVELS } from '../src/core/warp.js';
 import { propagate } from '../src/core/kepler.js';
+import { flyMission } from './mission.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -300,7 +301,7 @@ test('Kepler propagation matches the integrator and closes an orbit', () => {
 test('a flight on rails replays exactly and reaches the Moon', () => {
   const f = createFlight({ seed: 3, scenario: 'earthOrbit' });
   // Find a translunar burn by prediction, then apply it as a short full burn.
-  for (let i = 0; i < 60 * 150 && f.elements.apAlt < 39.5e6; i++) f.step({ ...NONE, full: 1, hold: 1 });
+  for (let i = 0; i < 60 * 400 && f.elements.apAlt < 39.5e6; i++) f.step({ ...NONE, full: 1, hold: 1 });
   f.step({ ...NONE, cut: 1 });
   let n = 0;
   while (f.body.id !== 'moon' && f.phase === 'flying' && n < 20000) {
@@ -311,7 +312,7 @@ test('a flight on rails replays exactly and reaches the Moon', () => {
   }
   assert.equal(f.body.id, 'moon', `after ${n} ticks still at ${f.body.id}, ap ${(f.elements.apAlt / 1e3).toFixed(0)} km`);
   assert.ok(f.state.time > 20 * 3600 && f.state.time < 70 * 3600, `arrived after ${(f.state.time / 3600).toFixed(1)} h`);
-  const again = replayToEnd(f.recording(), { maxTicks: 60 * 150 + n + 10 });
+  const again = replayToEnd(f.recording(), { maxTicks: 60 * 400 + n + 10 });
   assert.equal(again.body.id, 'moon');
   assert.equal(again.state.x, f.state.x);
   assert.equal(again.state.y, f.state.y);
@@ -404,6 +405,15 @@ test('a capsule rides the heat shield-first, opens the chute and splashes down o
   while (h.phase === 'flying' && n < 60 * 3600) { h.step({ ...NONE, hold: 2, chute: n === 10 ? 1 : 0 }); n += 1; }
   assert.equal(h.state.chute, 2, 'opened at orbital speed the chute tears');
   assert.equal(h.phase, 'crashed');
+});
+
+test('the KP-3 flies the reference mission: Earth pad, Moon landing, splashdown (about ten seconds)', () => {
+  const { report } = flyMission({ seed: 1 });
+  assert.ok(report.orbit.pe > 70000, `Earth orbit periapsis ${(report.orbit.pe / 1e3).toFixed(0)} km`);
+  assert.ok(report.moon.fuel > 0, 'landed on the Moon with fuel to spare');
+  assert.equal(report.home.phase, 'landed', `came home ${report.home.phase}`);
+  assert.ok(report.home.touchdown.verticalSpeed < 10, `came down at ${report.home.touchdown.verticalSpeed.toFixed(1)} m/s`);
+  assert.ok(report.home.heat > 0.1 && report.home.heat < 1, `peak heat ${report.home.heat.toFixed(2)} of the shielded limit`);
 });
 
 let failed = 0;

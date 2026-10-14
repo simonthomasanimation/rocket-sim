@@ -34,6 +34,12 @@ export function orbitalElements(x, y, vx, vy, mu) {
     const since = ((M / TWO_PI) * period + period) % period; // time since periapsis
     timeToPe = period - since;          // in (0, period]: at periapsis a whole orbit away
     timeToAp = (period / 2 - since + period) % period;
+  } else if (e > 1 && nu < 0) {
+    // Hyperbolic, still approaching: time to periapsis from the hyperbolic anomaly.
+    const H = 2 * Math.atanh(Math.sqrt((e - 1) / (e + 1)) * Math.tan(nu / 2));
+    const M = e * Math.sinh(H) - H;
+    const n = Math.sqrt(mu / Math.pow(-a, 3));
+    timeToPe = -M / n;
   }
   return {
     r, v: Math.sqrt(v2), energy, h, e, a, p, rp, ra, period, direction, nu, timeToPe, timeToAp,

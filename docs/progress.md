@@ -45,7 +45,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Time warp 1x–100,000x: on-rails ladder above the ×64 physics ladder per docs/time-warp-reference.md; per-body caps by height, no rails warp in an atmosphere or with the engine on; warp-to-event (Ap, Pe, SOI, atmosphere entry, time)
 - [x] CRT map document per brief; page-turn transition blueprint ↔ CRT
 - [x] Re-entry heating threshold; heat shield part; parachute; splashdown counts as landing
-- [ ] Three-stage test rocket; Earth → Moon landing → return achievable
+- [x] Three-stage test rocket; Earth → Moon landing → return achievable (`node tools/mission.js` flies the KP-3 pad → orbit → Moon landing → lunar orbit → splashdown through the real core; the test suite runs it)
 - [ ] Gate issue opened
 
 ## M4 Builder

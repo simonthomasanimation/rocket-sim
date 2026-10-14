@@ -21,7 +21,8 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
   let curTerrain = terrain;
   let R = cur.radius;
   const s = { x: state.x, y: state.y, vx: state.vx, vy: state.vy };
-  let dt = stepFor(s, cur, el);
+  let period = el.period;
+  let dt = stepFor(s, cur, period);
 
   // Each segment carries the offset that places its frame on the starting
   // one, taken at the moment the segment begins.
@@ -45,9 +46,23 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
 
   for (let i = 0; i < maxSteps && t < maxTime; i++) {
     const px = s.x; const py = s.y; const pvx = s.vx; const pvy = s.vy;
-    // Inside the atmosphere drag changes quickly: keep the step short.
+    // Inside the atmosphere drag changes quickly: keep the step short. Near
+    // a sphere-of-influence boundary the crossing time matters to the
+    // kilometre, so shorten the step there too.
     const inAir = atmTop > 0 && Math.hypot(s.x, s.y) < atmTop + 2000;
-    const step = inAir ? Math.min(dt, 1) : dt;
+    dt = stepFor(s, cur, period);
+    let step = inAir ? Math.min(dt, 1) : dt;
+    if (!inAir && transitions < 4) {
+      const v = Math.hypot(s.vx, s.vy) || 1;
+      const r0 = Math.hypot(s.x, s.y);
+      let gap = Infinity;
+      if (cur.parent) gap = Math.abs(cur.soi - r0);
+      for (const child of childrenOf(cur)) {
+        const c = bodyState(child, clock + t);
+        gap = Math.min(gap, Math.abs(Math.hypot(s.x - c.x, s.y - c.y) - child.soi));
+      }
+      if (gap < 3 * (v + 1000) * step) step = Math.max(2, Math.min(step, gap / (3 * (v + 1000)) + 2));
+    }
     rk4Step(s, step, cur, 0, 0, drag);
     t += step;
     const r = Math.hypot(s.x, s.y);
@@ -110,7 +125,8 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
       prevAngle = Math.atan2(s.x, s.y);
       prevR = Math.hypot(s.x, s.y);
       prevGround = groundRadius(curTerrain, cur, s.x, s.y);
-      dt = stepFor(s, cur, elementsOf(s, cur));
+      period = elementsOf(s, cur).period;
+      dt = stepFor(s, cur, period);
       continue;
     }
     if (!cur.parent && r > ESCAPE_RADIUS) { escaped = true; break; }
@@ -130,12 +146,22 @@ function groundRadius(terrain, body, x, y) {
   return terrain ? terrain.groundRadiusAt(x, y) : body.radius;
 }
 
-// Step size: resolves the path on screen near the craft and the ellipse as
-// a whole; coarser far out where nothing happens quickly.
-function stepFor(s, body, el) {
-  const alt = Math.hypot(s.x, s.y) - body.radius;
-  let dt = 0.012 * (Math.max(alt, 0) + 24) / Math.max(el.v, 1);
-  if (Number.isFinite(el.period)) dt = Math.max(Math.min(dt, el.period / 600), el.period / 3000);
-  else dt = Math.max(dt, Math.hypot(s.x, s.y) / Math.max(el.v, 1) / 400);
+// Step size: resolves the path on screen near the craft, and sweeps the
+// orbit in roughly equal angles (about 600 steps a turn), so a long
+// ellipse is still drawn finely where it dives past a planet.
+function stepFor(s, body, period) {
+  const r = Math.hypot(s.x, s.y);
+  const v = Math.max(Math.hypot(s.vx, s.vy), 1);
+  const alt = r - body.radius;
+  let dt = 0.012 * (Math.max(alt, 0) + 24) / v;
+  const h = Math.abs(s.x * s.vy - s.y * s.vx);
+  let fine = 0;
+  if (h > 0) {
+    const perRadian = (r * r) / h;
+    dt = Math.min(dt, (perRadian * 2 * Math.PI) / 600);
+    fine = (perRadian * 2 * Math.PI) / 3000;
+  }
+  if (Number.isFinite(period)) fine = Math.min(fine, period / 3000);
+  dt = Math.max(dt, fine);
   return Math.max(0.05, Math.min(600, dt));
 }
