@@ -2787,6 +2787,8 @@ function createCamera() {
     cam.offX = clamp(cam.offX, -limit, limit); cam.offY = clamp(cam.offY, -limit, limit);
   };
   cam.isHeld = () => cam.heldScale !== null || cam.offX !== 0 || cam.offY !== 0;
+  // C: back onto the craft, keeping the zoom. 0: that and the automatic zoom too.
+  cam.centre = () => { cam.offX = 0; cam.offY = 0; };
   cam.resetZoom = () => { cam.heldScale = null; cam.offX = 0; cam.offY = 0; };
 
   // A world vector turned into screen pixels (no translation).
@@ -2977,7 +2979,7 @@ function drawScaleBar(ctx, cam, x, y) {
   ctx.moveTo(x + px / 2 + 0.5, y); ctx.lineTo(x + px / 2 + 0.5, y + 3);
   ctx.stroke();
   label(ctx, `SCALE ${formatDistance(step)}`, x, y - 4, 'left', BLUEPRINT.inkPale);
-  if (cam.isHeld && cam.isHeld()) label(ctx, 'VIEW HELD — 0 FOLLOWS THE CRAFT AGAIN', x, y + 16, 'left', BLUEPRINT.inkPale);
+  if (cam.isHeld && cam.isHeld()) label(ctx, 'VIEW HELD — C CENTRES ON THE CRAFT, 0 RESETS THE ZOOM TOO', x, y + 16, 'left', BLUEPRINT.inkPale);
 }
 
 // Altitude ruler down the left edge: ticks in metres above the ground
@@ -4410,6 +4412,7 @@ function createMapCamera() {
   cam.zoom = (steps) => { cam.zoomBias = Math.max(-8, Math.min(8, cam.zoomBias + steps)); };
   cam.pan = (dx, dy) => { cam.offX -= dx / cam.scale; cam.offY += dy / cam.scale; };
   cam.isHeld = () => cam.zoomBias !== 0 || cam.offX !== 0 || cam.offY !== 0;
+  cam.centre = () => { cam.offX = 0; cam.offY = 0; };
   cam.resetZoom = () => { cam.zoomBias = 0; cam.offX = 0; cam.offY = 0; };
   cam.toScreen = (wx, wy) => ({ x: cam.width / 2 + (wx - cam.cx) * cam.scale, y: cam.height / 2 - (wy - cam.cy) * cam.scale });
   // Fit a box [minX, maxX] x [minY, maxY] (world) with a margin, eased.
@@ -4980,7 +4983,7 @@ function startPage(keys = {}) {
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
       'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry, and under the parachutes the main chute and then touchdown. Under a canopy the full ×64 is allowed at any height. SPACE pauses. The same arrows shuttle a replay.',
-      'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom (mouse wheel and pinch too), and a zoom you set holds until you press 0. Drag the sheet with the mouse or a finger to look around, at the Moon’s path for instance; 0 brings the view back to the craft and lets the automatic zoom follow again.',
+      'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom (mouse wheel and pinch too), and a zoom you set holds until you press 0. Drag the sheet with the mouse or a finger to look around, at the Moon’s path for instance; C centres the view on the craft again (keeping your zoom), 0 does that and hands the zoom back to the automatic one.',
       'ENTER also opens the parachutes once only the capsule is left (under 250 m/s; P works too): the drogue comes out first, and the main follows on its own under 90 m/s and 3 km above the ground, reefed for four seconds, then full. R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
@@ -5036,9 +5039,9 @@ const KEYS = {
   KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
-const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', p: 'chute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7' };
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', p: 'chute', c: 'centre', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7' };
 const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut', Tab: 'map' };
-const REPLAY_BY_KEY = { r: 'restart', m: 'mute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
+const REPLAY_BY_KEY = { r: 'restart', m: 'mute', c: 'centre', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
   ArrowLeft: 'rev', ArrowRight: 'fwd', Tab: 'map',
   Space: 'toggle', Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut',
@@ -5074,6 +5077,7 @@ const BUTTONS = [
   { id: 'warpUp', label: 'WARP +', cluster: 'left', tap: true },
   { id: 'map', label: 'MAP', cluster: 'left', tap: true },
   { id: 'warpTo', label: 'EVENT', cluster: 'left', tap: true },
+  { id: 'centre', label: 'CENTRE', cluster: 'left', tap: true },
   { id: 'thrUp', label: 'THR +', cluster: 'right' },
   { id: 'thrDown', label: 'THR −', cluster: 'right' },
   { id: 'full', label: 'FULL', cluster: 'right' },
@@ -6274,6 +6278,7 @@ function onTransport(action, value) {
     case 'zoomIn': zoomBy(0.5); break;
     case 'zoomOut': zoomBy(-0.5); break;
     case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
+    case 'centre': (doc === 'crt' ? mapCamera : camera).centre(); break;
     case 'zoom': zoomBy(value); break;
     case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
     case 'map': turnPage(); break;
@@ -6518,6 +6523,7 @@ function frame(nowMs) {
       case 'zoomIn': zoomBy(0.5); break;
       case 'zoomOut': zoomBy(-0.5); break;
       case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
+      case 'centre': (doc === 'crt' ? mapCamera : camera).centre(); break;
       case 'zoom': zoomBy(value); break;
       case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
       case 'map': turnPage(); break;
