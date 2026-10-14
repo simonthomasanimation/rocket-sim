@@ -2,18 +2,15 @@
 // the canvas, shown only while a recording is being replayed. Buttons work
 // with mouse and touch; the keyboard shortcuts are listed on each button.
 //
-// Actions sent to the handler: 'exit', 'rev', 'stepBack', 'toggle', 'stepFwd',
-// 'fwd', 'start', 'end', and 'seek' with a fraction 0..1 while scrubbing.
+// Actions sent to the handler: 'exit', 'rev', 'toggle', 'fwd', and 'seek'
+// with a fraction 0..1 while scrubbing. REV and FWD are the rotate keys;
+// each press in the same direction goes a notch faster.
 
-// Home / End jump to the ends of the tape from the keyboard; the tape itself
-// does the same by touch, so they need no buttons.
 const BUTTONS = [
   { action: 'exit', label: 'EXIT', key: 'ESC' },
-  { action: 'rev', label: 'REV', key: 'J' },
-  { action: 'stepBack', label: 'STEP −', key: ',', repeat: true },
+  { action: 'rev', label: 'REV', key: 'A', code: 'KeyA' },
   { action: 'toggle', label: 'PLAY', key: 'SPACE', id: 'toggle' },
-  { action: 'stepFwd', label: 'STEP +', key: '.', code: 'Period', repeat: true },
-  { action: 'fwd', label: 'FWD', key: 'L' },
+  { action: 'fwd', label: 'FWD', key: 'D', code: 'KeyD' },
 ];
 
 export function createTransport(root, onAction) {
@@ -61,25 +58,9 @@ export function createTransport(root, onAction) {
     if (b.code) kbd.dataset.code = b.code;
     btn.append(kbd);
     btn.dataset.action = b.action;
-    let timer = null;
-    if (b.repeat) {
-      // Jog buttons act on finger-down and repeat while held.
-      btn.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        btn.setPointerCapture?.(e.pointerId);
-        onAction(b.action);
-        clearInterval(timer);
-        timer = setInterval(() => onAction(b.action), 1000 / 15);
-      });
-      const release = () => { if (timer) { clearInterval(timer); timer = null; } };
-      btn.addEventListener('pointerup', release);
-      btn.addEventListener('pointercancel', release);
-      btn.addEventListener('lostpointercapture', release);
-    } else {
-      // Others act on the completed tap, so whatever appears underneath
-      // (the flight report after EXIT) does not catch the finger-up.
-      btn.addEventListener('click', () => onAction(b.action));
-    }
+    // Act on the completed tap, so whatever appears underneath (the flight
+    // report after EXIT) does not catch the finger-up.
+    btn.addEventListener('click', () => onAction(b.action));
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
     buttons.append(btn);
     if (b.id) byId[b.id] = btn;
@@ -126,7 +107,8 @@ export function createTransport(root, onAction) {
       timeEnd.textContent = clock(duration);
       tape.setAttribute('aria-valuenow', String(Math.round(f * 100)));
       byId.toggle.querySelector('.transport-label').textContent = playing ? 'PAUSE' : 'PLAY';
-      speed.textContent = playing ? (spd < 0 ? `◂ ×${Math.abs(spd)}` : `×${spd} ▸`) : 'PAUSED';
+      const mag = `×${Math.abs(spd) % 1 === 0 ? Math.abs(spd) : Math.abs(spd).toFixed(1)}`;
+      speed.textContent = playing ? (spd < 0 ? `◂ ${mag}` : `${mag} ▸`) : 'PAUSED';
     },
   };
 }

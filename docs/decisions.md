@@ -1,5 +1,6 @@
 # Decisions log (one line each, newest first)
 
+- 2026-10-14 — Replay transport simplified (owner): the rotate keys shuttle the tape (left key backwards, right key forwards, each repeat press one notch up a ×1, ×1.5, ×2, ×3, ×4, ×6, ×8 … ×64 ladder), Space pauses / plays at ×1 in both flight and replay; no step keys, no J/K/L, no P.
 - 2026-10-14 — Keys: held flight controls go by physical position (WASD = ZQSD on AZERTY); one-shot letters go by the typed character so M mutes on any layout. P pauses the live flight (owner request), V watches the replay, R restarts. The descent card reads key names from the browser's keyboard layout map when available.
 - 2026-10-14 — Replay is a scrubbable tape: the recording is run to its end once with every tick kept (a few thousand small frames), then a cursor plays it at ×1/×4/×8/×16 either way, steps a tick at a time or scrubs; editing-suite keys J/K/L, arrows and comma/period, Esc exits to the flight report. A replay of a flight still in progress stops at "now" and Esc resumes the live flight.
 - 2026-10-14 — Flights that climb above 1,500 m are aborted (ABORTED stamp) so a runaway burn ends instead of running for minutes.

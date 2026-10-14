@@ -34,7 +34,8 @@ let flight = createFlight({ seed: 1 });
 let alerts = null;
 let replay = null;          // { timeline, cursor, speed, playing } while replaying
 let lastRecording = null;   // the most recent live flight, for replay
-const SPEEDS = [1, 4, 8, 16];
+// Shuttle ladder: each press in the same direction climbs one notch.
+const SPEEDS = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
 function stepGame(dt) {
   flight.step(input.command(), dt);
   const prediction = flight.phase === 'flying' ? predictDescent(flight.state, flight.terrain, flight.body.gravity) : null;
@@ -65,7 +66,7 @@ function handleAction(action) {
   if (action === 'replay') { closePage(); startReplay(); return; }
 }
 
-// P holds the live flight; P again (or any restart) lets it go.
+// Space holds the live flight; Space again (or any restart) lets it go.
 let userPaused = false;
 function togglePause() {
   userPaused = !userPaused;
@@ -143,8 +144,6 @@ function onTransport(action, value) {
       if (r.playing) r.playing = false;
       else { if (r.cursor >= last) r.cursor = 0; r.speed = 1; r.playing = true; }
       break;
-    case 'stepBack': r.playing = false; r.cursor = Math.max(0, Math.ceil(r.cursor) - 1); break;
-    case 'stepFwd': r.playing = false; r.cursor = Math.min(last, Math.floor(r.cursor) + 1); break;
     case 'start': r.cursor = 0; camera.snap(r.timeline.at(0).state); break;
     case 'end': r.cursor = last; r.playing = false; camera.snap(r.timeline.at(last).state); break;
     case 'seek': {
@@ -232,8 +231,8 @@ function frame(nowMs) {
   lastFrameMs = nowMs;
   for (const action of input.takeActions()) {
     if (replay) { onTransport(action); continue; }
-    if (pageOpen === 'start' && (action === 'confirm' || action === 'restart')) { closePage(); continue; }
-    if (pageOpen === 'report' && action === 'confirm') { closePage(); restart(); continue; }
+    if (pageOpen === 'start' && (action === 'confirm' || action === 'pause' || action === 'restart')) { closePage(); continue; }
+    if (pageOpen === 'report' && (action === 'confirm' || action === 'pause')) { closePage(); restart(); continue; }
     if (action === 'restart') { closePage(); restart(); }
     if (action === 'replay') { closePage(); startReplay(); }
     if (action === 'pause' && !pageOpen) togglePause();
@@ -272,7 +271,7 @@ requestAnimationFrame(frame);
 openPage('start', startPage());
 loop.pause();
 // Relabel the card with the keys as printed on this keyboard, once known.
-keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX', 'Comma', 'Period']).then((keys) => {
+keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX']).then((keys) => {
   if (pageOpen === 'start') openPage('start', startPage(keys));
   transport.setKeyLabels(keys);
 });

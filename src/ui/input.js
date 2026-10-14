@@ -24,16 +24,13 @@ const KEYS = {
   ArrowRight: 'rotRight', KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
-const ACTIONS_BY_KEY = { r: 'restart', p: 'pause', m: 'mute', v: 'replay' };
-const ACTIONS_BY_CODE = { Enter: 'confirm', Space: 'confirm', Escape: 'back' };
-// Stepping goes by the typed character: , steps back; . or : steps forward
-// (: is the unshifted key on AZERTY where QWERTY has .).
-const REPLAY_BY_KEY = { j: 'rev', k: 'pause', p: 'pause', l: 'fwd', ',': 'stepBack', '.': 'stepFwd', ':': 'stepFwd', r: 'restart', m: 'mute' };
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay' };
+const ACTIONS_BY_CODE = { Enter: 'confirm', Space: 'pause', Escape: 'back' };
+const REPLAY_BY_KEY = { r: 'restart', m: 'mute' };
 const REPLAY_BY_CODE = {
-  Space: 'toggle', ArrowLeft: 'stepBack', ArrowRight: 'stepFwd',
-  Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit',
+  KeyA: 'rev', ArrowLeft: 'rev', KeyD: 'fwd', ArrowRight: 'fwd',
+  Space: 'toggle', Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit',
 };
-const REPEATABLE = new Set(['stepBack', 'stepFwd']);
 
 function actionFor(e, byKey, byCode) {
   const typed = typeof e.key === 'string' && e.key.length === 1 ? e.key.toLowerCase() : null;
@@ -84,7 +81,7 @@ export function createInput({ touchRoot } = {}) {
       const action = actionFor(e, REPLAY_BY_KEY, REPLAY_BY_CODE);
       if (!action) return;
       e.preventDefault();
-      if (e.repeat && !REPEATABLE.has(action)) return;
+      if (e.repeat) return;
       gesture();
       actions.push(action);
       return;
