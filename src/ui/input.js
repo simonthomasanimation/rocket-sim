@@ -29,9 +29,9 @@ const KEYS = {
   KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
-const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', p: 'chute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7' };
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', p: 'chute', c: 'centre', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7' };
 const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut', Tab: 'map' };
-const REPLAY_BY_KEY = { r: 'restart', m: 'mute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
+const REPLAY_BY_KEY = { r: 'restart', m: 'mute', c: 'centre', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
   ArrowLeft: 'rev', ArrowRight: 'fwd', Tab: 'map',
   Space: 'toggle', Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut',
@@ -67,6 +67,7 @@ const BUTTONS = [
   { id: 'warpUp', label: 'WARP +', cluster: 'left', tap: true },
   { id: 'map', label: 'MAP', cluster: 'left', tap: true },
   { id: 'warpTo', label: 'EVENT', cluster: 'left', tap: true },
+  { id: 'centre', label: 'CENTRE', cluster: 'left', tap: true },
   { id: 'thrUp', label: 'THR +', cluster: 'right' },
   { id: 'thrDown', label: 'THR −', cluster: 'right' },
   { id: 'full', label: 'FULL', cluster: 'right' },

@@ -144,7 +144,7 @@ export function drawScaleBar(ctx, cam, x, y) {
   ctx.moveTo(x + px / 2 + 0.5, y); ctx.lineTo(x + px / 2 + 0.5, y + 3);
   ctx.stroke();
   label(ctx, `SCALE ${formatDistance(step)}`, x, y - 4, 'left', BLUEPRINT.inkPale);
-  if (cam.isHeld && cam.isHeld()) label(ctx, 'VIEW HELD — 0 FOLLOWS THE CRAFT AGAIN', x, y + 16, 'left', BLUEPRINT.inkPale);
+  if (cam.isHeld && cam.isHeld()) label(ctx, 'VIEW HELD — C CENTRES ON THE CRAFT, 0 RESETS THE ZOOM TOO', x, y + 16, 'left', BLUEPRINT.inkPale);
 }
 
 // Altitude ruler down the left edge: ticks in metres above the ground

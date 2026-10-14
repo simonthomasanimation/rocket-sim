@@ -26,6 +26,7 @@ export function createMapCamera() {
   cam.zoom = (steps) => { cam.zoomBias = Math.max(-8, Math.min(8, cam.zoomBias + steps)); };
   cam.pan = (dx, dy) => { cam.offX -= dx / cam.scale; cam.offY += dy / cam.scale; };
   cam.isHeld = () => cam.zoomBias !== 0 || cam.offX !== 0 || cam.offY !== 0;
+  cam.centre = () => { cam.offX = 0; cam.offY = 0; };
   cam.resetZoom = () => { cam.zoomBias = 0; cam.offX = 0; cam.offY = 0; };
   cam.toScreen = (wx, wy) => ({ x: cam.width / 2 + (wx - cam.cx) * cam.scale, y: cam.height / 2 - (wy - cam.cy) * cam.scale });
   // Fit a box [minX, maxX] x [minY, maxY] (world) with a margin, eased.

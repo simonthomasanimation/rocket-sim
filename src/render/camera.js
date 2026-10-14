@@ -95,6 +95,8 @@ export function createCamera() {
     cam.offX = clamp(cam.offX, -limit, limit); cam.offY = clamp(cam.offY, -limit, limit);
   };
   cam.isHeld = () => cam.heldScale !== null || cam.offX !== 0 || cam.offY !== 0;
+  // C: back onto the craft, keeping the zoom. 0: that and the automatic zoom too.
+  cam.centre = () => { cam.offX = 0; cam.offY = 0; };
   cam.resetZoom = () => { cam.heldScale = null; cam.offX = 0; cam.offY = 0; };
 
   // A world vector turned into screen pixels (no translation).

@@ -56,6 +56,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Camera that stays where you put it (owner request, 2026-10-14): a zoom you set holds as an absolute scale instead of multiplying the automatic one (which ran away to 10,000 km as the craft climbed), 0 hands the view back; drag with the mouse or a finger pans the sheet and the map, with a pointer back to the craft and a VIEW HELD note by the scale bar
 - [x] Planning the Moon (owner request, 2026-10-14): the Moon's path round Earth (and Earth's apparent path round the Moon) as a fine dotted ring on the sheet; once the predicted path reaches a quarter of the way out, a ghost of the Moon where it will be when the path passes nearest to it, tied to that point, with the miss distance; the same ghost on the CRT map
 - [x] Rings for the wide view only (owner request, 2026-10-14): the spheres of influence, Earth's edge of reach (now named EARTH SOI) and the bodies' paths appear once the view is wide enough for a ring to read as a ring (radius under one and a half sheet diagonals), never at planet level
+- [x] Centre on the rocket (owner request, 2026-10-14): C (and a CENTRE stamp on touch) puts the view back on the craft keeping the zoom you set; 0 still resets both
 
 ## M4 Builder
 - [ ] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class)
