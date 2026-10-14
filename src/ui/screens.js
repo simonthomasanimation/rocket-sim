@@ -244,6 +244,35 @@ export function reportPage(flight) {
   };
 }
 
+// The card that lands when a flight whose goal is orbit gets there.
+export function orbitPage(flight) {
+  const o = flight.stats.orbit;
+  const s = flight.state;
+  const stage = flight.cfg.stages[s.stage];
+  const fuelPct = Math.round((s.fuel / stage.fuelMass) * 100);
+  return {
+    section: flight.scenario.section,
+    title: 'ORBIT REPORT',
+    page: 'PAGE 2',
+    stamp: { text: 'ORBIT', tone: 'ink' },
+    rows: [
+      ['OUTCOME', 'Stable orbit achieved'],
+      ['TIME TO ORBIT', formatSeconds(o.time)],
+      ['APOAPSIS', km(o.ap)],
+      ['PERIAPSIS', km(o.pe)],
+      ['FUEL LEFT', `${s.fuel.toFixed(0)} KG  (${fuelPct}%, ${stage.name})`],
+      ['STAGES LEFT', `${flight.cfg.stages.length - s.stage} OF ${flight.cfg.stages.length}`],
+    ],
+    figure: 'FIG. 2',
+    caption: 'Periapsis clear of the ground: the vehicle will not come down on its own. Carry on flying, or bring it home with a retrograde burn.',
+    buttons: [
+      { label: 'CONTINUE', key: 'ENTER', action: 'begin' },
+      { label: 'FLY AGAIN', key: 'R', action: 'restart' },
+      { label: 'FLIGHT PLAN', key: 'N', action: 'newStart' },
+    ],
+  };
+}
+
 // The flight plan: choose where to start, with the controls as printed on
 // the player's keyboard. keys: labels for KeyW, KeyS, KeyA, KeyD, KeyZ,
 // KeyX (see keyLabels in input.js).
@@ -253,11 +282,11 @@ export function startPage(keys = {}) {
     section: 'SECTION 2 — ORBITAL FLIGHT',
     title: 'FLIGHT PLAN',
     page: 'PAGE 1',
-    choices: SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: SCENARIOS[id].brief })),
+    choices: SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: `${SCENARIOS[id].brief} GOAL — ${SCENARIOS[id].goalText}` })),
     lines: [
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
-      'TIME: Right arrow runs time faster, a notch per press (up to ×64, less near the ground); Left arrow pauses; Right or SPACE plays again at ×1. The same keys shuttle a replay.',
+      'TIME: Right arrow runs time faster, Left arrow slower, a notch per press (×1 up to ×64, less near the ground). SPACE pauses. The same arrows shuttle a replay.',
       'ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
       'R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',

@@ -84,6 +84,12 @@ html, body {
   font-weight: 400;
 }
 
+/* Time running faster than real: the WARP cell inverts */
+.title-block td.is-active {
+  background: var(--bp-ink);
+  color: var(--bp-paper);
+}
+
 /* A milestone stamp landing on the title block (110% to 100% in 80 ms) */
 .title-stamp {
   position: absolute;

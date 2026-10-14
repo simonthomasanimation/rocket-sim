@@ -79,6 +79,46 @@ export function drawScene(ctx, cam, scene) {
   ctx.restore();
 }
 
+// Detail inset: the vehicle full-frame in a boxed callout (an engineering
+// "DETAIL A") whenever the main view draws it under 48 px tall, so its
+// tilt, exhaust and remaining stages stay readable from any distance.
+export function drawDetail(ctx, cam, { state, cfg, phase }, box) {
+  const h = craftHeight(state, cfg);
+  if (h * cam.scale >= 48) return;
+  const k = (box.h * 0.66) / h;
+  const tilt = state.angle - Math.atan2(state.x, state.y);
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h * 0.56;
+  // Place the base so the body sits centred whatever the tilt.
+  const base = { x: cx - Math.sin(tilt) * (h * k) / 2, y: cy + Math.cos(tilt) * (h * k) / 2 };
+  const mini = { scale: k, rot: Math.atan2(state.x, state.y), toScreen: () => base };
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(box.x, box.y, box.w, box.h);
+  ctx.clip();
+  ctx.fillStyle = BLUEPRINT.paper;
+  ctx.fillRect(box.x, box.y, box.w, box.h);
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = BLUEPRINT.ink;
+  for (let x = box.x + 8; x < box.x + box.w; x += 8) ctx.fillRect(x, box.y, 1, box.h);
+  for (let y = box.y + 8; y < box.y + box.h; y += 8) ctx.fillRect(box.x, y, box.w, 1);
+  ctx.globalAlpha = 1;
+  // Local horizon tick marks at the bottom corners so "up" is explicit.
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  ctx.moveTo(box.x + 8, box.y + box.h - 20); ctx.lineTo(box.x + 28, box.y + box.h - 20);
+  ctx.moveTo(box.x + box.w - 8, box.y + box.h - 20); ctx.lineTo(box.x + box.w - 28, box.y + box.h - 20);
+  ctx.stroke();
+  drawCraft(ctx, mini, state, cfg, phase);
+  ctx.restore();
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.structure;
+  ctx.strokeRect(box.x + 0.5, box.y + 0.5, box.w, box.h);
+  label(ctx, 'DETAIL A', box.x + 8, box.y + 16, 'left', BLUEPRINT.inkPale);
+  label(ctx, `${cfg.name}  ${cfg.stages.length - state.stage} STG`, box.x + 8, box.y + box.h - 6, 'left', BLUEPRINT.ink);
+}
+
 // Formats an altitude for a typewriter label.
 export function formatDistance(m) {
   if (!Number.isFinite(m)) return '---';

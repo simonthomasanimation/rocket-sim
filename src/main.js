@@ -13,8 +13,8 @@ import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
 import { WARP_LADDER, maxWarpIndex } from './core/warp.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
-import { drawPaper, drawScene } from './render/blueprint.js';
-import { mountTitleBlock, updateTitleBlock, stampTitleBlock, mountPage, unmountPage, reportPage, startPage } from './ui/screens.js';
+import { drawPaper, drawScene, drawDetail } from './render/blueprint.js';
+import { mountTitleBlock, updateTitleBlock, stampTitleBlock, mountPage, unmountPage, reportPage, orbitPage, startPage } from './ui/screens.js';
 import { createInput, keyLabels } from './ui/input.js';
 import { createHud, hudHeight } from './ui/hud.js';
 import { createTransport } from './ui/transport.js';
@@ -52,6 +52,9 @@ function setWarp(i) {
   const w = WARPS[warp];
   const text = `×${w % 1 === 0 ? w : w.toFixed(1)}`;
   updateTitleBlock(titleBlock, { warp: warp === cap && cap < WARPS.length - 1 ? `${text} MAX` : text });
+  // Faster than real time is shown inverted so it cannot be forgotten.
+  const cell = titleBlock.querySelector('[data-field="warp"]');
+  if (cell) cell.classList.toggle('is-active', warp > 0);
 }
 
 let shortPrediction = null;
@@ -79,6 +82,8 @@ const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: stepGame });
 
 let pageOpen = null;        // 'start' | 'report' | null
 let reportDueAt = null;     // flight tick at which the report page opens
+let orbitDueAt = null;      // flight tick at which the orbit report opens (goal: orbit)
+let orbitShown = false;
 
 function openPage(kind, page) {
   pageOpen = kind;
@@ -108,8 +113,8 @@ function showPlan() {
   openPage('start', startPage({ ...knownKeys, ...input.observedLabels }));
 }
 
-// Space or the left arrow holds the live flight; Space or the right arrow
-// (or any restart) lets it go again, always at x1.
+// Space holds the live flight; Space or the right arrow (or any restart)
+// lets it go again, always at x1.
 let userPaused = false;
 function setPaused(value) {
   if (userPaused === value) return;
@@ -119,10 +124,10 @@ function setPaused(value) {
   updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : 'BLUEPRINT' });
 }
 function togglePause() { setPaused(!userPaused); }
-// Right arrow: a notch faster, or play again from pause. Left arrow: the
-// other direction, which live can only mean pause.
+// Right arrow: a notch faster, or play again from pause. Left arrow: a
+// notch slower, down to x1 (Space is the pause).
 function warpUp() { if (userPaused) setPaused(false); else setWarp(warp + 1); }
-function warpDown() { if (!userPaused) setPaused(true); }
+function warpDown() { if (!userPaused) setWarp(warp - 1); }
 
 function restart() {
   userPaused = false;
@@ -135,6 +140,8 @@ function restart() {
   sinceShort = 99;
   seenEvents = 0;
   reportDueAt = null;
+  orbitDueAt = null;
+  orbitShown = false;
   input.setHold(0);
   loop.reset();
   if (!pageOpen) loop.resume();
@@ -281,12 +288,19 @@ function render(alpha, frameDt) {
   camera.follow(view, frameDt, reachOf(view, prediction));
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
   drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body: src.body, terrain: src.terrain, prediction, debris: scene.debris });
+  // Detail inset: the vehicle full-frame whenever the main view draws it small.
+  const isNarrow = narrow();
+  const box = isNarrow
+    ? { x: surface.width - 16 - 112, y: 16 + (titleBlock.offsetHeight || 170) + 8, w: 112, h: 136 }
+    : { x: surface.width - 16 - 176, y: 16, w: 176, h: 208 };
+  drawDetail(surface.ctx, camera, { state: view, cfg: src.cfg, phase }, box);
   const a = scene.alerts || alerts || computeAlerts(src, prediction);
   hud.update(view, a, scene.capcom, frameDt);
   const up = Math.atan2(view.x, view.y);
   const speed = Math.hypot(view.vx, view.vy);
   const info = {
     stageText: `${view.stage + 1}/${src.cfg.stages.length}`,
+    stages: src.cfg.stages.map((st, i) => ({ name: st.name, frac: i === view.stage ? view.fuel / st.fuelMass : i > view.stage ? 1 : 0, state: i < view.stage ? 'dropped' : i === view.stage ? 'live' : 'full' })),
     dv: deltaV(view, src.cfg),
     twr: twr(view, src.cfg, src.body),
     hold: scene.hold,
@@ -297,7 +311,7 @@ function render(alpha, frameDt) {
     width: surface.width,
     height: surface.height,
     titleBlockWidth: titleBlock.offsetWidth || 240,
-    narrow: narrow(),
+    narrow: isNarrow,
     timeSeconds: performance.now() / 1000,
   }, view, a, scene.capcom, info);
   return scene;
@@ -327,6 +341,14 @@ function frame(nowMs) {
       const pick = /^pick(\d)$/.exec(action);
       if (pick) handleAction(action);
       else if (action === 'confirm' || action === 'pause' || action === 'back') closePage();
+      continue;
+    }
+    if (pageOpen === 'orbit') {
+      // The orbit card: Enter or Space carries on flying.
+      if (action === 'confirm' || action === 'pause' || action === 'back') closePage();
+      else if (action === 'newStart') showPlan();
+      else if (action === 'restart') { closePage(); restart(); }
+      else if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
       continue;
     }
     if (pageOpen === 'report') {
@@ -367,6 +389,14 @@ function frame(nowMs) {
     if (reportDueAt !== null && !pageOpen && flight.tick >= reportDueAt) {
       reportDueAt = null;
       openPage('report', reportPage(flight));
+    }
+    // A flight whose goal is orbit gets its card once the stamp has landed.
+    if (!orbitShown && flight.stats.orbit && flight.scenario.goal === 'orbit' && orbitDueAt === null) orbitDueAt = flight.tick + 150;
+    if (orbitDueAt !== null && !pageOpen && !over && flight.tick >= orbitDueAt) {
+      orbitDueAt = null;
+      orbitShown = true;
+      setWarp(0);
+      openPage('orbit', orbitPage(flight));
     }
   }
   const scene = render(alpha, frameDt);

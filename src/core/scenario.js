@@ -12,7 +12,9 @@ export const SCENARIOS = {
     craft: 'lander',
     onPad: false,
     section: 'SECTION 1 — LUNAR DESCENT TRAINER',
-    brief: '150 m up, drifting and sinking. Land with vertical speed under 3 m/s, sideways under 1 m/s, within 10° of upright.',
+    goal: 'land',
+    goalText: 'Land: under 3 m/s down, under 1 m/s sideways, within 10° of upright.',
+    brief: '150 m up, drifting and sinking.',
     start: (body) => ({ x: 0, y: body.radius + 150, vx: 3, vy: -6, angle: 0 }),
   },
   launch: {
@@ -21,7 +23,9 @@ export const SCENARIOS = {
     craft: 'rocket',
     onPad: true,
     section: 'SECTION 2 — ORBITAL FLIGHT',
-    brief: 'A two-stage rocket on Pad 1. Climb, tip over and keep burning sideways until the periapsis clears the ground. Stage when the first tank runs dry.',
+    goal: 'orbit',
+    goalText: 'Reach orbit: burn sideways until PE is above the ground. Fuel left is your score.',
+    brief: 'A two-stage rocket on Pad 1. Climb, tip over, stage when the first tank runs dry.',
     start: (body) => ({ x: 0, y: body.radius, vx: 0, vy: 0, angle: 0 }),
   },
   orbit: {
@@ -30,7 +34,9 @@ export const SCENARIOS = {
     craft: 'rocket',
     onPad: false,
     section: 'SECTION 2 — ORBITAL FLIGHT',
-    brief: 'The second stage, circling 15 km up. Burn retrograde to come down, then land on the fins.',
+    goal: 'land',
+    goalText: 'Come down and land on the fins: under 3 m/s down, under 1 m/s sideways, upright.',
+    brief: 'The second stage, circling 15 km up. Burn retrograde to drop PE below the ground.',
     start: (body) => {
       const r = body.radius + LOW_ORBIT_ALTITUDE;
       return { x: 0, y: r, vx: circularSpeed(body, r), vy: 0, angle: Math.PI / 2, stage: 1 };

@@ -82,8 +82,8 @@ export function createHud() {
     const altText = ar.unit === 'M' ? `${altVal.toFixed(0)} M` : `${(altVal / 1000).toFixed(altVal < 100000 ? 1 : 0)} KM`;
     // Two layouts on the 8px grid: one row, or two rows for phones.
     const L = narrow
-      ? { r: 4.5 * G, d1: 6 * G, d2: 16 * G, rx: 22 * G, rw: 12 * G, t1: 37 * G, t2: 43 * G, row2: 11 * G, rose: 6 * G, ox: 12 * G, ow: 12 * G, sx: 26 * G, sw: 12 * G, cap: 999 * G }
-      : { r: 5 * G, d1: 7 * G, d2: 19 * G, rx: 26 * G, rw: 13 * G, t1: 56 * G, t2: 62 * G, row2: 0, rose: 71 * G, ox: 41 * G, ow: 13 * G, sx: 79 * G, sw: 12 * G, cap: 93 * G };
+      ? { r: 4.5 * G, d1: 6 * G, d2: 16 * G, rx: 22 * G, rw: 12 * G, t1: 37 * G, t2: 43 * G, row2: 11 * G, rose: 6 * G, ox: 12 * G, ow: 12 * G, sx: 26 * G, sw: 12 * G, stack: 41 * G, cap: 999 * G }
+      : { r: 5 * G, d1: 7 * G, d2: 19 * G, rx: 26 * G, rw: 13 * G, t1: 56 * G, t2: 62 * G, row2: 0, rose: 71 * G, ox: 41 * G, ow: 13 * G, sx: 79 * G, sw: 12 * G, stack: 94 * G, cap: 98 * G };
     dial(ctx, L.d1, top + 7 * G, L.r, Math.min(ar.max, Math.max(0, shown.alt)) / ar.max, `ALT ${ar.unit}`, altText, ar.ticks, tone(alerts.descent));
     dial(ctx, L.d2, top + 7 * G, L.r, Math.min(vr.max, shown.vel) / vr.max, `VEL ${vr.unit}`, `${alerts.speed.toFixed(alerts.speed < 100 ? 1 : 0)} M/S`, vr.ticks, 'none');
 
@@ -107,6 +107,7 @@ export function createHud() {
     readout(ctx, L.sx, oy + 3 * G, L.sw, 'STAGE', info.stageText, 'none');
     readout(ctx, L.sx, oy + 6 * G, L.sw, 'DV', `${Math.round(info.dv)} M/S`, 'none');
     readout(ctx, L.sx, oy + 9 * G, L.sw, 'TWR', info.twr.toFixed(1), 'none');
+    if (info.stages) stack(ctx, L.stack, oy + 11 * G, info.stages);
 
     // CAPCOM line: in the strip when there is room, else top left of the
     // sheet beside the title block, wrapped onto two lines.
@@ -238,6 +239,39 @@ function rose(ctx, cx, cy, r, info, pitch) {
   ctx.stroke();
   const holdText = info.hold === 1 ? 'HOLD PRO' : info.hold === 2 ? 'HOLD RET' : 'ATT';
   text(ctx, holdText, cx, cy + r + 9, { size: 9, weight: info.hold ? 500 : 400, align: 'center', colour: info.hold ? BLUEPRINT.ink : BLUEPRINT.inkPale });
+}
+
+// The vehicle as a stack of stage boxes from the bottom up: hatched to the
+// fuel left, the live stage in the heavy stroke, dropped stages crossed out.
+function stack(ctx, x, bottom, stages) {
+  const w = 2 * G; const h = 12; const gap = 4;
+  stages.forEach((st, i) => {
+    const y = bottom - (i + 1) * (h + gap);
+    const live = st.state === 'live';
+    ctx.strokeStyle = live ? BLUEPRINT.ink : BLUEPRINT.inkPale;
+    ctx.lineWidth = live ? STROKE.structure : STROKE.annotation;
+    ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+    if (st.state === 'dropped') {
+      ctx.beginPath();
+      ctx.moveTo(x + 2, y + 2); ctx.lineTo(x + w - 2, y + h - 2);
+      ctx.moveTo(x + w - 2, y + 2); ctx.lineTo(x + 2, y + h - 2);
+      ctx.stroke();
+    } else if (st.frac > 0) {
+      const fw = Math.max(1, Math.round((w - 2) * Math.min(1, st.frac)));
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 1, y + 1, fw, h - 1);
+      ctx.clip();
+      ctx.strokeStyle = BLUEPRINT.inkPale;
+      ctx.lineWidth = STROKE.annotation;
+      ctx.beginPath();
+      for (let d = -h; d < w; d += 4) { ctx.moveTo(x + d, y + h); ctx.lineTo(x + d + h, y); }
+      ctx.stroke();
+      ctx.restore();
+    }
+    text(ctx, `S${i + 1}`, x - 4, y + h / 2, { size: 8, weight: 400, align: 'right', colour: live ? BLUEPRINT.ink : BLUEPRINT.inkPale });
+  });
+  text(ctx, 'STACK', x + w / 2, bottom - stages.length * (h + gap) - 7, { size: 9, weight: 400, align: 'center', colour: BLUEPRINT.inkPale });
 }
 
 // Label left, value right-aligned in the field, boxed only when alerting.
