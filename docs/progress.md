@@ -46,7 +46,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] CRT map document per brief; page-turn transition blueprint ↔ CRT
 - [x] Re-entry heating threshold; heat shield part; parachute; splashdown counts as landing
 - [x] Three-stage test rocket; Earth → Moon landing → return achievable (`node tools/mission.js` flies the KP-3 pad → orbit → Moon landing → lunar orbit → splashdown through the real core; the test suite runs it)
-- [ ] Gate issue opened
+- [x] Gate issue opened (#4)
 
 ## M4 Builder
 - [ ] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class)
