@@ -146,7 +146,7 @@ function drawAltitudeRuler(ctx, cam, body, terrain, state) {
 export function drawDetail(ctx, cam, { state, cfg, phase }, box) {
   const h = craftHeight(state, cfg);
   if (h * cam.scale >= 48) return;
-  const k = (box.h * 0.72) / h;
+  const k = (box.h * 0.6) / h;
   const tilt = state.angle - Math.atan2(state.x, state.y);
   const cx = box.x + box.w / 2;
   const cy = box.y + box.h * 0.54;
