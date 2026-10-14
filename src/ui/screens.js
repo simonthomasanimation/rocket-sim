@@ -1,5 +1,7 @@
 // Screen chrome drawn in HTML over the canvas: title blocks, stamps, pages.
 
+import { SCENARIOS, SCENARIO_ORDER } from '../core/scenario.js';
+
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 export function formatDrawingDate(date) {
@@ -28,8 +30,8 @@ function cell(label, value, key) {
   return tr;
 }
 
-// Engineering title block: program name, document, sheet number, date, MET.
-export function mountTitleBlock(el, { program, document: doc, sheet, of, date, met = 0, audio = null }) {
+// Engineering title block: program name, document, sheet number, date, MET, warp, audio.
+export function mountTitleBlock(el, { program, document: doc, sheet, of, date, met = 0, warp = null, audio = null }) {
   el.replaceChildren();
   const table = document.createElement('table');
   const head = document.createElement('tr');
@@ -42,6 +44,7 @@ export function mountTitleBlock(el, { program, document: doc, sheet, of, date, m
   table.append(cell('SHEET', `${sheet} OF ${of}`, 'sheet'));
   table.append(cell('DATE', formatDrawingDate(date), 'date'));
   table.append(cell('MET', formatMet(met), 'met'));
+  if (warp !== null) table.append(cell('WARP', warp, 'warp'));
   if (audio !== null) table.append(cell('AUDIO', audio, 'audio'));
   el.append(table);
 }
@@ -54,6 +57,17 @@ export function updateTitleBlock(el, fields) {
     const text = key === 'met' ? formatMet(value) : String(value);
     if (td.textContent !== text) td.textContent = text;
   }
+}
+
+// A milestone stamp lands on the title block (ORBIT); null clears it.
+export function stampTitleBlock(el, text) {
+  el.querySelectorAll('.title-stamp').forEach((n) => n.remove());
+  if (!text) return;
+  const stamp = document.createElement('div');
+  stamp.className = 'title-stamp';
+  stamp.textContent = text;
+  el.append(stamp);
+  requestAnimationFrame(() => stamp.classList.add('is-landed'));
 }
 
 // --- Manual pages -----------------------------------------------------------
@@ -69,7 +83,8 @@ function el(tag, className, textContent) {
 }
 
 // page: { section, title, figure, stamp: { text, tone }, rows: [[label, value, tone?]],
-//         caption, buttons: [{ label, key, action }], page }
+//         choices: [{ label, key, text, action }], lines, caption,
+//         buttons: [{ label, key, action }], page }
 // onAction(action) is called when a button is pressed.
 export function mountPage(root, page, onAction) {
   root.replaceChildren();
@@ -86,6 +101,28 @@ export function mountPage(root, page, onAction) {
   if (page.stamp) {
     const stamp = el('div', `manual-stamp tone-${page.stamp.tone || 'ink'}`, page.stamp.text);
     sheet.append(stamp);
+  }
+
+  const openedAt = performance.now();
+  const button = (b, className) => {
+    const btn = el('button', className);
+    btn.type = 'button';
+    btn.append(el('span', null, b.label));
+    if (b.key) btn.append(el('kbd', null, b.key));
+    // A page that appears under a finger must not take that same tap.
+    btn.addEventListener('click', () => { if (performance.now() - openedAt > 250) onAction(b.action); });
+    return btn;
+  };
+
+  if (page.choices && page.choices.length) {
+    const list = el('div', 'manual-choices');
+    for (const c of page.choices) {
+      const row = el('div', 'manual-choice');
+      row.append(button(c, 'manual-button'));
+      row.append(el('p', null, c.text));
+      list.append(row);
+    }
+    sheet.append(list);
   }
 
   if (page.rows && page.rows.length) {
@@ -115,16 +152,7 @@ export function mountPage(root, page, onAction) {
 
   if (page.buttons && page.buttons.length) {
     const bar = el('div', 'manual-buttons');
-    const openedAt = performance.now();
-    for (const b of page.buttons) {
-      const btn = el('button', 'manual-button');
-      btn.type = 'button';
-      btn.append(el('span', null, b.label));
-      if (b.key) btn.append(el('kbd', null, b.key));
-      // A page that appears under a finger must not take that same tap.
-      btn.addEventListener('click', () => { if (performance.now() - openedAt > 250) onAction(b.action); });
-      bar.append(btn);
-    }
+    for (const b of page.buttons) bar.append(button(b, 'manual-button'));
     sheet.append(bar);
   }
 
@@ -148,84 +176,92 @@ export function formatSeconds(t) {
   return m > 0 ? `${m} MIN ${s.toFixed(1)} S` : `${s.toFixed(1)} S`;
 }
 
+function km(m) { return m < 10000 ? `${m.toFixed(0)} M` : `${(m / 1000).toFixed(1)} KM`; }
+
 const REASON_TEXT = {
   verticalSpeed: 'Came down too fast',
   horizontalSpeed: 'Still moving sideways',
   tilt: 'Not upright',
 };
 
+const REPORT_BUTTONS = [
+  { label: 'FLY AGAIN', key: 'R', action: 'restart' },
+  { label: 'FLIGHT PLAN', key: 'N', action: 'newStart' },
+  { label: 'WATCH REPLAY', key: 'V', action: 'replay' },
+];
+
 // Builds the flight report page from a finished flight.
 export function reportPage(flight) {
   const td = flight.stats.touchdown;
   const landed = flight.phase === 'landed';
-  const fuelPct = Math.round((flight.state.fuel / flight.cfg.fuelMass) * 100);
+  const s = flight.state;
+  const stage = flight.cfg.stages[s.stage];
+  const fuelPct = Math.round((s.fuel / stage.fuelMass) * 100);
   const limits = flight.limits;
   const deg = (limits.tilt * 180) / Math.PI;
-  const buttons = [
-    { label: 'FLY AGAIN', key: 'R', action: 'restart' },
-    { label: 'WATCH REPLAY', key: 'V', action: 'replay' },
+  const section = flight.scenario.section;
+  const orbit = flight.stats.orbit;
+  const common = [
+    ['FLIGHT TIME', formatSeconds(td ? td.time : s.time)],
+    ['FUEL LEFT', `${s.fuel.toFixed(0)} KG  (${fuelPct}%, ${stage.name})`],
+    ['MAX SPEED', `${flight.stats.maxSpeed.toFixed(1)} M/S`],
+    ['MAX ALTITUDE', km(flight.stats.maxAltitude)],
   ];
+  if (orbit) common.push(['ORBIT REACHED', `AP ${km(orbit.ap)}  PE ${km(orbit.pe)}`]);
   if (!td) {
-    // No touchdown: the flight climbed out of the training area.
+    // No touchdown: the flight left lunar space.
     return {
-      section: 'SECTION 1 — LUNAR DESCENT TRAINER',
+      section,
       title: 'FLIGHT REPORT',
       page: 'PAGE 2',
       stamp: { text: 'ABORTED', tone: 'spot' },
-      rows: [
-        ['OUTCOME', 'Left the training area', 'spot'],
-        ['FLIGHT TIME', formatSeconds(flight.state.time)],
-        ['FUEL LEFT', `${flight.state.fuel.toFixed(0)} KG  (${fuelPct}%)`],
-        ['MAX SPEED', `${flight.stats.maxSpeed.toFixed(1)} M/S`],
-        ['ALTITUDE', `${flight.state.y.toFixed(0)} M`],
-      ],
+      rows: [['OUTCOME', 'Left lunar space', 'spot'], ...common],
       figure: 'FIG. 2',
-      caption: 'Climbed past the ceiling with the engine running. The Moon is the other way.',
-      buttons,
+      caption: 'Passed three Moon radii out with no way back. The Moon is the other way.',
+      buttons: REPORT_BUTTONS,
     };
   }
   const rows = [
     ['OUTCOME', landed ? 'Landed on the surface' : 'Crashed on the surface', landed ? null : 'spot'],
-    ['FLIGHT TIME', formatSeconds(td.time)],
-    ['FUEL LEFT', `${flight.state.fuel.toFixed(0)} KG  (${fuelPct}%)`],
-    ['MAX SPEED', `${flight.stats.maxSpeed.toFixed(1)} M/S`],
+    ...common,
     ['TOUCHDOWN V-SPEED', `${td.verticalSpeed.toFixed(1)} M/S  (LIMIT ${limits.verticalSpeed.toFixed(0)})`, td.reasons.includes('verticalSpeed') ? 'spot' : null],
     ['TOUCHDOWN H-SPEED', `${td.horizontalSpeed.toFixed(1)} M/S  (LIMIT ${limits.horizontalSpeed.toFixed(0)})`, td.reasons.includes('horizontalSpeed') ? 'spot' : null],
     ['TOUCHDOWN TILT', `${Math.abs((td.tilt * 180) / Math.PI).toFixed(0)} DEG  (LIMIT ${deg.toFixed(0)})`, td.reasons.includes('tilt') ? 'spot' : null],
+    ['DOWNRANGE', `${(td.arc / 1000).toFixed(td.arc > 10000 ? 0 : 1)} KM FROM PAD 1`],
   ];
   const caption = landed
     ? 'Descent within limits. Crew reports the surface is firm.'
     : `${td.reasons.map((r) => REASON_TEXT[r]).join('; ')}. Vehicle lost.`;
   return {
-    section: 'SECTION 1 — LUNAR DESCENT TRAINER',
+    section,
     title: 'FLIGHT REPORT',
     page: 'PAGE 2',
     stamp: { text: landed ? 'LANDED' : 'CRASHED', tone: landed ? 'ink' : 'spot' },
     rows,
     figure: 'FIG. 2',
     caption,
-    buttons,
+    buttons: REPORT_BUTTONS,
   };
 }
 
-// keys: labels for KeyW, KeyS, KeyA, KeyD, KeyZ, KeyX as printed on the
-// player's keyboard (see keyLabels in input.js).
-export function startPage(keys = { KeyW: 'W', KeyS: 'S', KeyA: 'A', KeyD: 'D', KeyZ: 'Z', KeyX: 'X' }) {
+// The flight plan: choose where to start, with the controls as printed on
+// the player's keyboard. keys: labels for KeyW, KeyS, KeyA, KeyD, KeyZ,
+// KeyX, Comma, Period (see keyLabels in input.js).
+export function startPage(keys = {}) {
+  const k = { KeyW: 'W', KeyS: 'S', KeyA: 'A', KeyD: 'D', KeyZ: 'Z', KeyX: 'X', Comma: ',', Period: '.', ...keys };
   return {
-    section: 'SECTION 1 — LUNAR DESCENT TRAINER',
-    title: 'DESCENT CARD',
+    section: 'SECTION 2 — ORBITAL FLIGHT',
+    title: 'FLIGHT PLAN',
     page: 'PAGE 1',
+    choices: SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: SCENARIOS[id].brief })),
     lines: [
-      'You are 150 m above the Moon, drifting and sinking.',
-      'Land with vertical speed under 3 m/s, sideways under 1 m/s, within 10° of upright.',
-      `THROTTLE: ${keys.KeyW} or Up to raise, ${keys.KeyS} or Down to lower (Shift / Ctrl work too). ${keys.KeyZ} full, ${keys.KeyX} cut.`,
-      `TILT: ${keys.KeyA} / Left and ${keys.KeyD} / Right. The engine pushes the way the top leans.`,
-      'SPACE pauses. R restarts at any time. V replays the last flight. M mutes the sound.',
-      `In a replay, ${keys.KeyA} and ${keys.KeyD} play backwards and forwards; press again to go faster. SPACE pauses.`,
+      `THROTTLE: ${k.KeyW} / Up raises, ${k.KeyS} / Down lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
+      `TILT: ${k.KeyA} / Left and ${k.KeyD} / Right. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
+      `ENTER stages. ${k.Comma} and ${k.Period} change the time warp. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.`,
+      'SPACE pauses. R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',
-    caption: 'The dashed line shows where you fall if the engine stays off.',
-    buttons: [{ label: 'BEGIN DESCENT', key: 'ENTER', action: 'begin' }],
+    caption: 'The dashed line is where you coast if the engine stays off; AP and PE mark its highest and lowest points.',
   };
 }

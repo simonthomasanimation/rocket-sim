@@ -26,14 +26,15 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Milestone build kept in snapshots/m1-lander.html
 
 ## M2 Orbit
-- [ ] Round body, inverse-square gravity, body-relative coordinates
-- [ ] Integrator upgraded to Velocity Verlet or RK4; circular-orbit stability test (100 periods)
-- [ ] Follow camera with continuous zoom; screen-space-constant line weights; labels fade below 12px
-- [ ] Trajectory prediction without thrust; dashed path; Ap/Pe markers with typewriter labels; red-orange Pe when below surface
-- [ ] HUD orbital readouts: Ap, Pe, period
-- [ ] Compass-rose attitude indicator; prograde/retrograde hold
-- [ ] Fixed two-stage rocket with staging; surface-to-orbit achievable
-- [ ] Sandbox start chooser: surface or low orbit
+- [x] Round body, inverse-square gravity, body-relative coordinates
+- [x] Integrator upgraded to Velocity Verlet or RK4; circular-orbit stability test (100 periods)
+- [x] Follow camera with continuous zoom; screen-space-constant line weights; labels fade below 12px
+- [x] Trajectory prediction without thrust; dashed path; Ap/Pe markers with typewriter labels; red-orange Pe when below surface
+- [x] HUD orbital readouts: Ap, Pe, period
+- [x] Compass-rose attitude indicator; prograde/retrograde hold
+- [x] Fixed two-stage rocket with staging; surface-to-orbit achievable
+- [x] Sandbox start chooser: surface or low orbit
+- [x] Physics time warp ×1–×50 so an orbit can be watched, limited near the ground (added: M3 brings the full ladder and warp-to-event)
 - [ ] Gate issue opened
 
 ## M3 Earth–Moon

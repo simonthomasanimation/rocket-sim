@@ -2,26 +2,46 @@
 // outline blinking at 1 Hz, 'critical' an accent fill blinking at 2 Hz, and
 // nothing else is ever red-orange. Pure function of flight state.
 
+import { activeStage } from './craft.js';
+
 export function computeAlerts(flight, prediction) {
   const s = flight.state;
   const { limits, cfg } = flight;
   const alt = flight.altitude();
-  const vSpeed = -s.vy;
-  const hSpeed = Math.abs(s.vx);
-  const fuelFrac = s.fuel / cfg.fuelMass;
+  const { vertical, horizontal } = flight.groundSpeeds();
+  const vSpeed = -vertical;
+  const hSpeed = Math.abs(horizontal);
+  const tiltAngle = flight.tilt();
+  const stage = activeStage(s, cfg);
+  const fuelFrac = stage.fuelMass > 0 ? s.fuel / stage.fuelMass : 0;
+  const moreStages = s.stage < cfg.stages.length - 1;
   const impact = prediction && prediction.impact;
   const flying = flight.phase === 'flying';
+  const el = flight.elements;
 
-  const fuel = !flying ? 'none' : s.fuel <= 0 ? 'critical' : fuelFrac < 0.15 ? 'caution' : 'none';
+  // An empty tank is critical unless there is another stage to light.
+  const fuel = !flying && flight.phase !== 'pad' ? 'none' : s.fuel <= 0 ? (moreStages ? 'caution' : 'critical') : fuelFrac < 0.15 ? 'caution' : 'none';
   // Falling fast with the ground close: critical when the engine-off impact
   // is under ten seconds and too hard; caution when the rate is over the
   // limit within the last sixty metres.
   const descent = !flying ? 'none'
-    : impact && impact.t < 10 && -impact.vy >= limits.verticalSpeed * 2 ? 'critical'
+    : impact && impact.t < 10 && -impact.vRadial >= limits.verticalSpeed * 2 ? 'critical'
     : alt < 60 && vSpeed >= limits.verticalSpeed ? 'caution'
     : 'none';
   const drift = !flying ? 'none' : alt < 30 && hSpeed >= limits.horizontalSpeed ? 'caution' : 'none';
-  const tilt = !flying ? 'none' : alt < 30 && Math.abs(s.angle) >= limits.tilt ? 'caution' : 'none';
+  const tilt = !flying ? 'none' : alt < 30 && Math.abs(tiltAngle) >= limits.tilt ? 'caution' : 'none';
   const worst = ['critical', 'caution', 'none'].find((l) => [fuel, descent, drift, tilt].includes(l));
-  return { fuel, descent, drift, tilt, overall: worst, altitude: alt, vSpeed, hSpeed, fuelFrac };
+  return {
+    fuel, descent, drift, tilt,
+    overall: worst,
+    altitude: alt,
+    vSpeed, hSpeed, tiltAngle, fuelFrac,
+    speed: Math.hypot(s.vx, s.vy),
+    // Orbit figures for the readouts; the periapsis is marked (static
+    // accent) while it lies below the surface, i.e. the path meets the ground.
+    apAlt: el ? el.apAlt : Infinity,
+    peAlt: el ? el.peAlt : -Infinity,
+    period: el ? el.period : Infinity,
+    peBelow: !!el && el.peAlt < 0,
+  };
 }

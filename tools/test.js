@@ -9,13 +9,19 @@ import { encodeCommand, decodeCommand } from '../src/core/recording.js';
 import { replayToEnd } from '../src/core/playback.js';
 import { buildTimeline, sampleTimeline } from '../src/core/timeline.js';
 import { createFixedLoop } from '../src/core/loop.js';
+import { MOON, circularSpeed, gravityAt } from '../src/core/body.js';
+import { createCraftState, rk4Step, ROCKET, deltaV } from '../src/core/craft.js';
+import { elementsOf } from '../src/core/orbit.js';
+import { predictCoast } from '../src/core/predict.js';
+import { createTerrain } from '../src/core/terrain.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
+const NONE = { thr: 0, rot: 0, full: 0, cut: 0, stage: 0, hold: 0 };
 
 test('command codes round-trip', () => {
-  for (const thr of [-1, 0, 1]) for (const rot of [-1, 0, 1]) for (const full of [0, 1]) for (const cut of [0, 1]) {
-    const c = { thr, rot, full, cut };
+  for (const thr of [-1, 0, 1]) for (const rot of [-1, 0, 1]) for (const full of [0, 1]) for (const cut of [0, 1]) for (const stage of [0, 1]) for (const hold of [0, 1, 2]) {
+    const c = { thr, rot, full, cut, stage, hold };
     assert.deepEqual(decodeCommand(encodeCommand(c)), c);
   }
 });
@@ -32,20 +38,29 @@ test('fixed loop steps in whole ticks and caps catch-up', () => {
   assert.ok(alpha > 0.49 && alpha < 0.51);
 });
 
+test('gravity is inverse-square and 1.62 m/s^2 at the surface', () => {
+  const g = gravityAt(MOON, 0, MOON.radius);
+  assert.ok(Math.abs(g.ay + 1.62) < 1e-9 && Math.abs(g.ax) < 1e-9);
+  const far = gravityAt(MOON, 0, 2 * MOON.radius);
+  assert.ok(Math.abs(far.ay + 1.62 / 4) < 1e-9);
+});
+
 test('free fall from 150 m hits the ground at the expected speed', () => {
-  const f = createFlight({ seed: 7, start: { x: 0, y: 150, vx: 0, vy: 0, angle: 0 } });
-  while (f.phase === 'flying') f.step({ thr: 0, rot: 0, full: 0, cut: 0 });
+  const f = createFlight({ seed: 7, scenario: 'descent' });
+  f.state.vx = 0; f.state.vy = 0;
+  while (f.phase === 'flying') f.step(NONE);
   assert.equal(f.phase, 'crashed');
   const expected = Math.sqrt(2 * 1.62 * 150);
   assert.ok(Math.abs(f.stats.touchdown.verticalSpeed - expected) < 0.3, `got ${f.stats.touchdown.verticalSpeed}`);
 });
 
 test('a gentle flown descent is judged a landing', () => {
-  const f = createFlight({ seed: 7, start: { x: 0, y: 150, vx: 0, vy: -6, angle: 0 } });
+  const f = createFlight({ seed: 7, scenario: 'descent' });
+  f.state.vx = 0;
   while (f.phase === 'flying') {
-    const s = f.state;
     const want = -Math.min(2.5, 0.2 * f.altitude() + 0.3);
-    f.step({ thr: 0, rot: 0, full: s.vy < want ? 1 : 0, cut: s.vy >= want ? 1 : 0 });
+    const v = f.groundSpeeds().vertical;
+    f.step({ ...NONE, full: v < want ? 1 : 0, cut: v >= want ? 1 : 0 });
   }
   assert.equal(f.phase, 'landed');
   assert.ok(f.stats.touchdown.verticalSpeed < 3);
@@ -54,14 +69,14 @@ test('a gentle flown descent is judged a landing', () => {
 // A noisy pilot: pseudo-random commands with a bias towards slowing down.
 function flyNoisy(seed) {
   const rng = createRng(seed);
-  const f = createFlight({ seed });
-  let cmd = { thr: 0, rot: 0, full: 0, cut: 0 };
+  const f = createFlight({ seed, scenario: 'descent' });
+  let cmd = NONE;
   let n = 0;
   while (f.phase === 'flying' && n < 60 * 120) {
     if (rng.next() < 0.1) {
-      const s = f.state;
+      const v = f.groundSpeeds().vertical;
       const want = -Math.min(3, 0.15 * f.altitude() + 0.5);
-      cmd = { thr: rng.int(-1, 1), rot: rng.next() < 0.3 ? rng.int(-1, 1) : 0, full: s.vy < want ? 1 : 0, cut: s.vy >= want && rng.next() < 0.5 ? 1 : 0 };
+      cmd = { ...NONE, thr: rng.int(-1, 1), rot: rng.next() < 0.3 ? rng.int(-1, 1) : 0, full: v < want ? 1 : 0, cut: v >= want && rng.next() < 0.5 ? 1 : 0 };
     }
     f.step(cmd);
     n += 1;
@@ -90,39 +105,136 @@ test('replaying a recording reproduces the flight exactly', () => {
 test('a timeline keeps every tick and stops where the recording stops', () => {
   const live = flyNoisy(3);
   const tl = buildTimeline(live.recording());
+  assert.equal(tl.stride, 1);
   assert.equal(tl.at(tl.length - 1).phase, live.phase);
   assert.equal(tl.at(live.tick).state.x, live.state.x);
   const mid = sampleTimeline(tl, 10.5);
   assert.ok(mid.state.y < tl.at(10).state.y && mid.state.y > tl.at(11).state.y || mid.state.y > tl.at(10).state.y && mid.state.y < tl.at(11).state.y);
   // An unfinished flight replays only up to "now".
-  const f = createFlight({ seed: 9 });
-  for (let i = 0; i < 100; i++) f.step({ thr: 1, rot: 0, full: 0, cut: 0 });
+  const f = createFlight({ seed: 9, scenario: 'descent' });
+  for (let i = 0; i < 100; i++) f.step({ ...NONE, thr: 1 });
   const partial = buildTimeline(f.recording());
   assert.equal(partial.length, 101);
   assert.equal(partial.at(100).phase, 'flying');
   assert.equal(partial.at(100).state.y, f.state.y);
 });
 
-test('climbing out of the training area aborts the flight', () => {
-  const f = createFlight({ seed: 1 });
-  let n = 0;
-  while (f.phase === 'flying' && n < 60 * 600) { f.step({ thr: 0, rot: 0, full: 1, cut: 0 }); n += 1; }
-  assert.equal(f.phase, 'aborted');
-  assert.ok(f.state.y > 1500);
+test('a long flight is kept on a strided tape', () => {
+  const f = createFlight({ seed: 9, scenario: 'orbit' });
+  for (let i = 0; i < 30000; i++) f.step(NONE);
+  const tl = buildTimeline(f.recording(), { maxFrames: 1000 });
+  assert.equal(tl.stride, 30);
+  assert.ok(tl.length <= 1002 && tl.length >= 1000, `${tl.length} frames`);
+  assert.equal(tl.at(tl.length - 1).tick, 30000);
+  assert.equal(tl.at(tl.length - 1).state.x, f.state.x);
 });
 
-test('terrain is flat across the landing site and seeded', () => {
-  const a = createFlight({ seed: 5 }).terrain;
-  const b = createFlight({ seed: 5 }).terrain;
-  const c = createFlight({ seed: 6 }).terrain;
+test('burning straight up with the lander leaves lunar space', () => {
+  const f = createFlight({ seed: 1, scenario: 'descent' });
+  let n = 0;
+  while ((f.phase === 'flying') && n < 60 * 3600) { f.step({ ...NONE, full: 1 }); n += 1; }
+  assert.equal(f.phase, 'escaped');
+  assert.ok(f.radius() > 3 * MOON.radius);
+});
+
+test('terrain is flat across the landing site, seeded and wraps round', () => {
+  const a = createTerrain(5, MOON);
+  const b = createTerrain(5, MOON);
+  const c = createTerrain(6, MOON);
   for (let x = a.site.from; x <= a.site.to; x += 5) assert.equal(a.height(x), 0);
   assert.deepEqual(a.craters, b.craters);
   assert.notDeepEqual(a.craters, c.craters);
+  assert.ok(a.basins.length > 10, `${a.basins.length} basins`);
+  const C = a.circumference;
+  for (const s of [123.4, 5000, -70000, C / 2 - 3]) assert.ok(Math.abs(a.height(s) - a.height(s + C)) < 1e-6, `wraps at ${s}`);
+});
+
+test('a circular orbit stays circular for 100 periods', () => {
+  const r = MOON.radius + 15000;
+  const v = circularSpeed(MOON, r);
+  const s = { x: 0, y: r, vx: v, vy: 0 };
+  const el0 = elementsOf(s, MOON);
+  const dt = 1 / 60;
+  const steps = Math.round((100 * el0.period) / dt);
+  let minR = r; let maxR = r;
+  for (let i = 0; i < steps; i++) {
+    rk4Step(s, dt, MOON);
+    if ((i & 63) === 0) { const rr = Math.hypot(s.x, s.y); if (rr < minR) minR = rr; if (rr > maxR) maxR = rr; }
+  }
+  const el1 = elementsOf(s, MOON);
+  assert.ok(maxR - minR < 1, `radius wandered ${(maxR - minR).toFixed(3)} m over 100 periods`);
+  assert.ok(Math.abs(el1.a - el0.a) < 0.5, `semi-major axis drifted ${(el1.a - el0.a).toFixed(3)} m`);
+  assert.ok(el1.e < 1e-5, `eccentricity grew to ${el1.e}`);
+});
+
+test('orbital elements match the state they came from', () => {
+  const r = MOON.radius + 15000;
+  const el = elementsOf({ x: 0, y: r, vx: circularSpeed(MOON, r), vy: 0 }, MOON);
+  assert.ok(Math.abs(el.apAlt - 15000) < 1e-3 && Math.abs(el.peAlt - 15000) < 1e-3);
+  assert.ok(Math.abs(el.period - 2 * Math.PI * Math.sqrt(r ** 3 / MOON.mu)) < 1e-6);
+  // Faster at the top of the orbit: this is the periapsis of an ellipse.
+  const fast = elementsOf({ x: 0, y: r, vx: circularSpeed(MOON, r) * 1.1, vy: 0 }, MOON);
+  assert.ok(Math.abs(fast.peAlt - 15000) < 1e-3, `pe ${fast.peAlt}`);
+  assert.ok(fast.apAlt > 15000 && fast.timeToPe > fast.timeToAp);
+  assert.ok(Math.abs(fast.timeToAp - fast.period / 2) < 1e-6);
+});
+
+test('the coast prediction closes an orbit and finds the ground of a hop', () => {
+  const f = createFlight({ seed: 2, scenario: 'orbit' });
+  const p = predictCoast(f.state, f.body, f.terrain);
+  assert.ok(p.closed && !p.impact, 'orbit closes');
+  assert.ok(p.points.length > 300 && p.points.length <= 4000, `${p.points.length} points`);
+  const last = p.points[p.points.length - 1];
+  assert.ok(Math.abs(Math.hypot(last.x, last.y) - f.radius()) < 2, 'ends at the same radius');
+  const hop = createFlight({ seed: 2, scenario: 'descent' });
+  const q = predictCoast(hop.state, hop.body, hop.terrain);
+  assert.ok(q.impact && q.impact.t > 5 && q.impact.t < 20, `impact at ${q.impact && q.impact.t}`);
+  assert.ok(q.impact.vRadial < -15);
+  // The predicted impact agrees with the flown one.
+  while (hop.phase === 'flying') hop.step(NONE);
+  assert.ok(Math.abs(hop.stats.touchdown.time - q.impact.t) < 0.2, `flown ${hop.stats.touchdown.time} vs predicted ${q.impact.t}`);
+});
+
+test('the rocket lifts off the pad, stages and has the delta-v to orbit', () => {
+  const f = createFlight({ seed: 1, scenario: 'launch' });
+  assert.equal(f.phase, 'pad');
+  const dv = deltaV(f.state, f.cfg);
+  assert.ok(dv > 1500 && dv < 1800, `${dv.toFixed(0)} m/s`);
+  f.step(NONE);
+  assert.equal(f.phase, 'pad');
+  for (let i = 0; i < 30; i++) f.step({ ...NONE, full: 1 });
+  assert.equal(f.phase, 'flying');
+  assert.ok(f.events.some((e) => e.type === 'liftoff'));
+  f.step({ ...NONE, full: 1, stage: 1 });
+  assert.equal(f.state.stage, 1);
+  assert.equal(f.debris.length, 1);
+  assert.ok(ROCKET.stages[1].fuelMass - f.state.fuel < 1, 'second stage lit on staging');
+  assert.ok(f.events.some((e) => e.type === 'staged'));
+});
+
+test('a scripted gravity turn reaches orbit', () => {
+  const f = createFlight({ seed: 1, scenario: 'launch' });
+  let n = 0;
+  while ((f.phase === 'pad' || f.phase === 'flying') && !f.stats.orbit && n < 60 * 900) {
+    const alt = f.altitude();
+    const tilt = f.tilt();
+    const want = alt < 300 ? 0 : Math.min(Math.PI / 2 - 0.05, (alt - 300) / 6000 * (Math.PI / 2));
+    const stage = f.state.fuel <= 0 && f.state.stage === 0 ? 1 : 0;
+    const el = f.elements;
+    const burn = el.apAlt < 18000 ? 1 : 0;
+    const hold = el.apAlt >= 18000 && el.peAlt < 14000 && el.timeToAp < 60 ? 1 : 0;
+    f.step({ ...NONE, full: burn || hold ? 1 : 0, cut: burn || hold ? 0 : 1, rot: tilt < want - 0.01 ? 1 : tilt > want + 0.01 ? -1 : 0, stage, hold: 0 });
+    n += 1;
+  }
+  assert.ok(f.stats.orbit, `no orbit after ${n} ticks, pe ${f.elements.peAlt.toFixed(0)}`);
+  assert.equal(f.state.stage, 1, 'the first stage alone cannot make orbit');
+  assert.ok(f.state.fuel > 50, `fuel left ${f.state.fuel.toFixed(0)} kg`);
 });
 
 let failed = 0;
 for (const { name, fn } of tests) {
-  try { fn(); console.log(`ok   ${name}`); } catch (e) { failed += 1; console.error(`FAIL ${name}\n     ${e.message}`); }
+  const t0 = Date.now();
+  try { fn(); console.log(`ok   ${name} (${Date.now() - t0} ms)`); } catch (e) { failed += 1; console.error(`FAIL ${name}\n     ${e.message}`); }
 }
 console.log(`${tests.length - failed}/${tests.length} passed`);
 process.exit(failed ? 1 : 0);

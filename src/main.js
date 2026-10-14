@@ -4,16 +4,18 @@
 
 import { createFixedLoop } from './core/loop.js';
 import { createFlight, interpolated } from './core/flight.js';
-import { predictDescent } from './core/predict.js';
+import { predictCoast } from './core/predict.js';
 import { computeAlerts } from './core/alerts.js';
 import { createCapcom } from './core/capcom.js';
 import { buildTimeline, sampleTimeline } from './core/timeline.js';
+import { deltaV, twr, activeStage, progradeAngle } from './core/craft.js';
+import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene } from './render/blueprint.js';
-import { mountTitleBlock, updateTitleBlock, mountPage, unmountPage, reportPage, startPage } from './ui/screens.js';
+import { mountTitleBlock, updateTitleBlock, stampTitleBlock, mountPage, unmountPage, reportPage, startPage } from './ui/screens.js';
 import { createInput, keyLabels } from './ui/input.js';
-import { createHud, HUD_HEIGHT } from './ui/hud.js';
+import { createHud, hudHeight } from './ui/hud.js';
 import { createTransport } from './ui/transport.js';
 import { createMixer } from './audio/mixer.js';
 import { createSfx } from './audio/sfx.js';
@@ -24,25 +26,55 @@ const pageRoot = document.getElementById('page');
 const camera = createCamera();
 const hud = createHud();
 let capcom = createCapcom();
-const input = createInput({ touchRoot: document.getElementById('touch-controls') });
+const input = createInput({ touchRoot: document.getElementById('touch-controls'), zoomTarget: surface.canvas });
 window.addEventListener('touchstart', () => layout(), { passive: true, once: true });
 const mixer = createMixer();
 const sfx = createSfx(mixer);
 input.onFirstGesture(() => mixer.start());
 
-let flight = createFlight({ seed: 1 });
+let scenarioId = 'descent';
+let flight = createFlight({ seed: 1, scenario: scenarioId });
+camera.bodyRadius = flight.body.radius;
 let alerts = null;
 let replay = null;          // { timeline, cursor, speed, playing } while replaying
 let lastRecording = null;   // the most recent live flight, for replay
 // Shuttle ladder: each press in the same direction climbs one notch.
 const SPEEDS = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+// Time warp: physics steps per frame scale with it; limited near the ground.
+const WARPS = [1, 2, 5, 10, 50];
+let warp = 0;
+function maxWarpIndex() {
+  const alt = flight.altitude();
+  if (flight.phase !== 'flying' || alt < 1000) return 0;
+  if (alt < 10000) return 3;
+  return WARPS.length - 1;
+}
+function setWarp(i) {
+  warp = Math.max(0, Math.min(maxWarpIndex(), i));
+  updateTitleBlock(titleBlock, { warp: `×${WARPS[warp]}` });
+}
+
+let shortPrediction = null;
+let sinceShort = 99;
+let seenEvents = 0;
 function stepGame(dt) {
   flight.step(input.command(), dt);
-  const prediction = flight.phase === 'flying' ? predictDescent(flight.state, flight.terrain, flight.body.gravity) : null;
-  alerts = computeAlerts(flight, prediction);
+  // The alert rules look ten seconds ahead; a short prediction every third
+  // tick is plenty. The drawing predicts the whole path from the view.
+  if (flight.phase !== 'flying') shortPrediction = null;
+  else if (sinceShort >= 3) { shortPrediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400 }); sinceShort = 0; }
+  sinceShort += 1;
+  alerts = computeAlerts(flight, shortPrediction);
   capcom.update(flight, alerts);
+  // Sounds and stamps for new events.
+  for (; seenEvents < flight.events.length; seenEvents++) {
+    const ev = flight.events[seenEvents];
+    if (ev.type === 'staged') sfx.stage();
+    else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
+  }
+  if (warp > maxWarpIndex()) setWarp(maxWarpIndex());
 }
-const loop = createFixedLoop({ hz: 60, step: stepGame });
+const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: stepGame });
 
 let pageOpen = null;        // 'start' | 'report' | null
 let reportDueAt = null;     // flight tick at which the report page opens
@@ -61,9 +93,18 @@ function closePage() {
 }
 
 function handleAction(action) {
+  const pick = /^pick(\d)$/.exec(action);
+  if (pick) { const id = SCENARIO_ORDER[Number(pick[1]) - 1]; if (id) { closePage(); scenarioId = id; restart(); } return; }
   if (action === 'begin') { closePage(); return; }
   if (action === 'restart') { closePage(); restart(); return; }
+  if (action === 'newStart') { showPlan(); return; }
   if (action === 'replay') { closePage(); startReplay(); return; }
+}
+
+function showPlan() {
+  if (replay) exitReplay(false);
+  loop.pause();
+  openPage('start', startPage({ ...knownKeys, ...input.observedLabels }));
 }
 
 // Space holds the live flight; Space again (or any restart) lets it go.
@@ -78,21 +119,28 @@ function restart() {
   userPaused = false;
   if (replay) exitReplay(false);
   else if (flight.tick > 0) lastRecording = flight.recording();
-  flight = createFlight({ seed: 1 });
+  flight = createFlight({ seed: 1, scenario: scenarioId });
   capcom = createCapcom();
   alerts = null;
+  shortPrediction = null;
+  sinceShort = 99;
+  seenEvents = 0;
   reportDueAt = null;
+  input.setHold(0);
   loop.reset();
   if (!pageOpen) loop.resume();
+  camera.resetZoom();
   camera.snap(flight.state);
   lastMetShown = -1;
-  updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
+  stampTitleBlock(titleBlock, null);
+  setWarp(0);
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT', sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}` });
 }
 
 // --- Replay -------------------------------------------------------------------
-// The last live flight is run to its end from its recording with every tick
-// kept, then a cursor moves over that tape: forwards, backwards, stepping
-// or scrubbing. Same seed, same inputs, same landing spot.
+// The last live flight is run to its end from its recording with its ticks
+// kept, then a cursor moves over that tape: forwards, backwards or
+// scrubbing. Same seed, same inputs, same landing spot.
 const transport = createTransport(document.getElementById('transport'), onTransport);
 
 function startReplay() {
@@ -121,7 +169,8 @@ function exitReplay(showReport = true) {
   input.setButtonsVisible(true);
   camera.snap(flight.state);
   updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
-  if (showReport && finished.phase !== 'flying') openPage('report', reportPage(finished));
+  const over = finished.phase !== 'flying' && finished.phase !== 'pad';
+  if (showReport && over) openPage('report', reportPage(finished));
   else if (showReport && !userPaused) loop.resume(); // the live flight carries on where it was
 }
 
@@ -156,6 +205,10 @@ function onTransport(action, value) {
     case 'exit': exitReplay(true); break;
     case 'restart': closePage(); restart(); break;
     case 'mute': updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' }); break;
+    case 'zoomIn': camera.zoom(0.5); break;
+    case 'zoomOut': camera.zoom(-0.5); break;
+    case 'zoomReset': camera.resetZoom(); break;
+    case 'zoom': camera.zoom(value); break;
     default: break;
   }
 }
@@ -165,7 +218,7 @@ function advanceReplay(frameDt) {
   const r = replay;
   const last = r.timeline.length - 1;
   if (r.playing) {
-    r.cursor += r.speed * frameDt * 60;
+    r.cursor += (r.speed * frameDt) / r.timeline.dt;
     if (r.cursor >= last) { r.cursor = last; r.playing = false; }
     if (r.cursor <= 0) { r.cursor = 0; r.playing = false; }
   }
@@ -174,11 +227,15 @@ function advanceReplay(frameDt) {
 
 const touchRoot = document.getElementById('touch-controls');
 const coarsePointer = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null;
+function narrow() { return surface.width < 720; }
 function layout() {
-  camera.setViewport(surface.width, Math.max(120, surface.height - HUD_HEIGHT), 0);
+  const isNarrow = narrow();
+  document.documentElement.style.setProperty('--hud-height', `${hudHeight(isNarrow)}px`);
+  camera.setViewport(surface.width, Math.max(120, surface.height - hudHeight(isNarrow)), 0);
   // Keep the surface clear of the on-screen buttons when they are showing.
   const buttonsShown = !replay && ((coarsePointer && coarsePointer.matches) || touchRoot.classList.contains('is-touch'));
-  camera.groundClearance = replay ? transport.height + 32 : buttonsShown ? 168 : 40;
+  const cluster = touchRoot.querySelector('.touch-right');
+  camera.groundClearance = replay ? transport.height + 32 : buttonsShown ? (cluster ? cluster.offsetHeight : 168) + 40 : 40;
 }
 layout();
 camera.snap(flight.state);
@@ -189,28 +246,51 @@ function currentScene(alpha) {
   if (replay) {
     const sample = sampleTimeline(replay.timeline, replay.cursor);
     const src = replay.timeline.flight;
-    return { view: sample.state, phase: sample.phase, alerts: sample.alerts, capcom: sample.capcom, src };
+    return { view: sample.state, phase: sample.phase, alerts: sample.alerts, capcom: sample.capcom, src, debris: sample.debris, hold: 0 };
   }
   const view = interpolated(flight, alpha);
-  return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight };
+  return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight, debris: flight.debris, hold: input.hold };
+}
+
+// How far the predicted path gets from the craft, for the camera's framing.
+function reachOf(view, prediction) {
+  if (!prediction) return 0;
+  let reach = 0;
+  const pts = prediction.points;
+  const stride = Math.max(1, Math.floor(pts.length / 400));
+  for (let i = 0; i < pts.length; i += stride) {
+    const d = Math.hypot(pts[i].x - view.x, pts[i].y - view.y);
+    if (d > reach) reach = d;
+  }
+  return reach;
 }
 
 function render(alpha, frameDt) {
   const scene = currentScene(alpha);
   const { view, phase, src } = scene;
-  camera.follow(view, frameDt);
+  const prediction = phase === 'flying' ? predictCoast(view, src.body, src.terrain) : null;
+  camera.follow(view, frameDt, reachOf(view, prediction));
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
-  const prediction = phase === 'flying' ? predictDescent(view, src.terrain, src.body.gravity) : null;
-  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, terrain: src.terrain, prediction });
+  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body: src.body, terrain: src.terrain, prediction, debris: scene.debris });
   const a = scene.alerts || alerts || computeAlerts(src, prediction);
   hud.update(view, a, scene.capcom, frameDt);
+  const up = Math.atan2(view.x, view.y);
+  const speed = Math.hypot(view.vx, view.vy);
+  const info = {
+    stageText: `${view.stage + 1}/${src.cfg.stages.length}`,
+    dv: deltaV(view, src.cfg),
+    twr: twr(view, src.cfg, src.body),
+    hold: scene.hold,
+    prograde: speed > 0.5 ? progradeAngle(view) - up : null,
+    hDirection: view.vx * Math.cos(up) - view.vy * Math.sin(up),
+  };
   hud.draw(surface.ctx, {
     width: surface.width,
     height: surface.height,
     titleBlockWidth: titleBlock.offsetWidth || 240,
-    narrow: surface.width < 720,
+    narrow: narrow(),
     timeSeconds: performance.now() / 1000,
-  }, view, a, scene.capcom);
+  }, view, a, scene.capcom, info);
   return scene;
 }
 
@@ -218,9 +298,10 @@ mountTitleBlock(titleBlock, {
   program: 'KÁRMÁN PROGRAM',
   document: 'BLUEPRINT',
   sheet: 1,
-  of: 1,
+  of: SCENARIO_ORDER.length,
   date: new Date(),
   met: 0,
+  warp: '×1',
   audio: 'ON',
 });
 
@@ -229,28 +310,51 @@ let lastFrameMs = null;
 function frame(nowMs) {
   const frameDt = lastFrameMs === null ? 0 : Math.min(0.1, (nowMs - lastFrameMs) / 1000);
   lastFrameMs = nowMs;
-  for (const action of input.takeActions()) {
-    if (replay) { onTransport(action); continue; }
-    if (pageOpen === 'start' && (action === 'confirm' || action === 'pause' || action === 'restart')) { closePage(); continue; }
-    if (pageOpen === 'report' && (action === 'confirm' || action === 'pause')) { closePage(); restart(); continue; }
-    if (action === 'restart') { closePage(); restart(); }
-    if (action === 'replay') { closePage(); startReplay(); }
-    if (action === 'pause' && !pageOpen) togglePause();
-    if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
+  for (const raw of input.takeActions()) {
+    const action = typeof raw === 'string' ? raw : raw.type;
+    const value = typeof raw === 'string' ? undefined : raw.value;
+    if (replay) { onTransport(action, value); continue; }
+    if (pageOpen === 'start') {
+      const pick = /^pick(\d)$/.exec(action);
+      if (pick) handleAction(action);
+      else if (action === 'confirm' || action === 'pause' || action === 'back') closePage();
+      continue;
+    }
+    if (pageOpen === 'report') {
+      if (action === 'confirm' || action === 'pause') { closePage(); restart(); }
+      else if (action === 'back' || action === 'newStart') showPlan();
+      else if (action === 'restart') { closePage(); restart(); }
+      else if (action === 'replay') { closePage(); startReplay(); }
+      else if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
+      continue;
+    }
+    switch (action) {
+      case 'restart': restart(); break;
+      case 'newStart': case 'back': showPlan(); break;
+      case 'replay': startReplay(); break;
+      case 'pause': togglePause(); break;
+      case 'confirm': input.stageNow(); break;
+      case 'mute': updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' }); break;
+      case 'warpUp': setWarp(warp + 1); break;
+      case 'warpDown': setWarp(warp - 1); break;
+      case 'warpCycle': setWarp(warp >= maxWarpIndex() ? 0 : warp + 1); break;
+      case 'zoomIn': camera.zoom(0.5); break;
+      case 'zoomOut': camera.zoom(-0.5); break;
+      case 'zoomReset': camera.resetZoom(); break;
+      case 'zoom': camera.zoom(value); break;
+      default: break;
+    }
   }
-  // Any flight command dismisses the start card too.
-  if (pageOpen === 'start') {
-    const c = input.command();
-    if (c.thr || c.rot || c.full || c.cut) closePage();
-  }
-  const { alpha } = loop.advance(nowMs / 1000);
+  const { alpha } = loop.advance(nowMs / 1000, WARPS[warp]);
   if (replay) {
     advanceReplay(frameDt);
   } else {
     // A crash cuts hard to the report; a landing lets the touchdown settle first.
-    if (flight.phase !== 'flying' && !pageOpen && reportDueAt === null) {
+    const over = flight.phase !== 'flying' && flight.phase !== 'pad';
+    if (over && !pageOpen && reportDueAt === null) {
       reportDueAt = flight.tick + (flight.phase === 'landed' ? 75 : 20);
       if (flight.phase === 'crashed') sfx.crash(); else if (flight.phase === 'landed') sfx.touchdown();
+      setWarp(0);
     }
     if (reportDueAt !== null && !pageOpen && flight.tick >= reportDueAt) {
       reportDueAt = null;
@@ -258,8 +362,8 @@ function frame(nowMs) {
     }
   }
   const scene = render(alpha, frameDt);
-  const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : true;
-  sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / scene.src.cfg.maxThrust : 0);
+  const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : warp === 0;
+  sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / activeStage(scene.view, scene.src.cfg).maxThrust : 0);
   const metSeconds = Math.floor(scene.view.time);
   if (metSeconds !== lastMetShown) {
     lastMetShown = metSeconds;
@@ -271,7 +375,9 @@ requestAnimationFrame(frame);
 openPage('start', startPage());
 loop.pause();
 // Relabel the card with the keys as printed on this keyboard, once known.
-keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX']).then((keys) => {
+let knownKeys = {};
+keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX', 'Comma', 'Period']).then((keys) => {
+  knownKeys = keys;
   if (pageOpen === 'start') openPage('start', startPage({ ...keys, ...input.observedLabels }));
   transport.setKeyLabels({ ...keys, ...input.observedLabels });
 });
@@ -286,4 +392,12 @@ document.addEventListener('visibilitychange', () => {
 surface.onResize(() => { layout(); render(0, 0); });
 
 // Read-only hook for automated playtests (tools/check.js and friends).
-window.__karman = { get flight() { return flight; }, get phase() { return flight.phase; }, get replay() { return replay; } };
+window.__karman = {
+  get flight() { return flight; },
+  get phase() { return flight.phase; },
+  get replay() { return replay; },
+  get scenario() { return scenarioId; },
+  get camera() { return camera; },
+  get warp() { return WARPS[warp]; },
+  scenarios: Object.keys(SCENARIOS),
+};

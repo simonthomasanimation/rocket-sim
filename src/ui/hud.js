@@ -1,15 +1,45 @@
 // Instrument strip along the bottom of the blueprint: altitude and velocity
-// dials, vertical/horizontal speed readouts, fuel and throttle tapes, and the
-// CAPCOM line. Two-tone ink; accent only when an alert says so.
+// dials that change range as the numbers grow, vertical/horizontal speed and
+// tilt readouts, orbit readouts (Ap, Pe, period), fuel and throttle tapes,
+// a compass-rose attitude indicator, stage figures and the CAPCOM line.
+// Two-tone ink; accent only when an alert says so.
 
-import { BLUEPRINT, STROKE, MONO } from '../render/blueprint.js';
+import { BLUEPRINT, STROKE, MONO, formatDistance, formatTime } from '../render/blueprint.js';
 
-export const HUD_HEIGHT = 112;
 const G = 8; // grid
+
+// The strip is one row on wide sheets and two on narrow ones (phones).
+export function hudHeight(narrow) {
+  return narrow ? 200 : 112;
+}
+
+// Dial ranges: the dial steps up when the needle would pin and back down
+// once the value has fallen well inside the next range below.
+const ALT_RANGES = [
+  { max: 200, ticks: [0, 50, 100, 150, 200], unit: 'M' },
+  { max: 2000, ticks: [0, 0.5, 1, 1.5, 2], unit: 'KM' },
+  { max: 20000, ticks: [0, 5, 10, 15, 20], unit: 'KM' },
+  { max: 200000, ticks: [0, 50, 100, 150, 200], unit: 'KM' },
+  { max: 600000, ticks: [0, 200, 400, 600], unit: 'KM' },
+];
+const VEL_RANGES = [
+  { max: 30, ticks: [0, 10, 20, 30], unit: 'M/S' },
+  { max: 300, ticks: [0, 100, 200, 300], unit: 'M/S' },
+  { max: 1000, ticks: [0, 250, 500, 750, 1000], unit: 'M/S' },
+];
+
+function chooseRange(ranges, current, value) {
+  let i = current;
+  while (i < ranges.length - 1 && value > ranges[i].max) i += 1;
+  while (i > 0 && value < ranges[i - 1].max * 0.35) i -= 1;
+  return i;
+}
 
 export function createHud() {
   // Needles sweep and settle: displayed values ease to the real ones.
-  const shown = { alt: 0, vel: 0, fuel: 1, thr: 0 };
+  const shown = { alt: 0, vel: 0, fuel: 1, thr: 0, pitch: 0 };
+  let altRange = 0;
+  let velRange = 0;
   let capcomShownKey = null;
   let capcomRevealed = 0;
 
@@ -20,16 +50,20 @@ export function createHud() {
 
   // view: interpolated state; alerts from computeAlerts; capcom log entry.
   function update(view, alerts, capcomLine, dt) {
+    altRange = chooseRange(ALT_RANGES, altRange, alerts.altitude);
+    velRange = chooseRange(VEL_RANGES, velRange, alerts.speed);
     ease('alt', alerts.altitude, dt);
-    ease('vel', Math.hypot(view.vx, view.vy), dt);
+    ease('vel', alerts.speed, dt);
     ease('fuel', alerts.fuelFrac, dt);
     ease('thr', view.throttle, dt);
     if (capcomLine && capcomLine.key !== capcomShownKey) { capcomShownKey = capcomLine.key; capcomRevealed = 0; }
     capcomRevealed += dt * 40; // characters per second, a teletype pace
   }
 
-  function draw(ctx, { width, height, titleBlockWidth, narrow, timeSeconds }, view, alerts, capcomLine) {
-    const top = height - HUD_HEIGHT;
+  // info: { stageText, dv, twr, hold, pitch, prograde (relative to local up, or null) }
+  function draw(ctx, { width, height, titleBlockWidth, narrow, timeSeconds }, view, alerts, capcomLine, info) {
+    const H = hudHeight(narrow);
+    const top = height - H;
     const blink1 = Math.floor(timeSeconds * 2) % 2 === 0;   // 1 Hz
     const blink2 = Math.floor(timeSeconds * 4) % 2 === 0;   // 2 Hz
     const tone = (level) => (level === 'critical' ? (blink2 ? 'critical' : 'none') : level === 'caution' ? (blink1 ? 'caution' : 'none') : 'none');
@@ -42,23 +76,37 @@ export function createHud() {
     ctx.lineTo(width, top + 0.5);
     ctx.stroke();
 
-    const ALT_MAX = 200;
-    const VEL_MAX = 30;
-    // Two layouts on the 8px grid: roomy, and compact for phones.
+    const ar = ALT_RANGES[altRange];
+    const vr = VEL_RANGES[velRange];
+    const altVal = Math.max(0, alerts.altitude);
+    const altText = ar.unit === 'M' ? `${altVal.toFixed(0)} M` : `${(altVal / 1000).toFixed(altVal < 100000 ? 1 : 0)} KM`;
+    // Two layouts on the 8px grid: one row, or two rows for phones.
     const L = narrow
-      ? { r: 4.5 * G, d1: 6 * G, d2: 16 * G, rx: 22 * G, rw: 12 * G, t1: 37 * G, t2: 43 * G, cap: 48 * G }
-      : { r: 5 * G, d1: 7 * G, d2: 19 * G, rx: 26 * G, rw: 13 * G, t1: 40 * G, t2: 46 * G, cap: 52 * G };
-    dial(ctx, L.d1, top + 7 * G, L.r, Math.min(ALT_MAX, Math.max(0, shown.alt)) / ALT_MAX, 'ALT', `${Math.max(0, alerts.altitude).toFixed(0)} M`, [0, 50, 100, 150, 200], tone(alerts.descent));
-    dial(ctx, L.d2, top + 7 * G, L.r, Math.min(VEL_MAX, shown.vel) / VEL_MAX, 'VEL', `${Math.hypot(view.vx, view.vy).toFixed(1)} M/S`, [0, 10, 20, 30], 'none');
+      ? { r: 4.5 * G, d1: 6 * G, d2: 16 * G, rx: 22 * G, rw: 12 * G, t1: 37 * G, t2: 43 * G, row2: 11 * G, rose: 6 * G, ox: 12 * G, ow: 12 * G, sx: 26 * G, sw: 12 * G, cap: 999 * G }
+      : { r: 5 * G, d1: 7 * G, d2: 19 * G, rx: 26 * G, rw: 13 * G, t1: 56 * G, t2: 62 * G, row2: 0, rose: 71 * G, ox: 41 * G, ow: 13 * G, sx: 79 * G, sw: 12 * G, cap: 93 * G };
+    dial(ctx, L.d1, top + 7 * G, L.r, Math.min(ar.max, Math.max(0, shown.alt)) / ar.max, `ALT ${ar.unit}`, altText, ar.ticks, tone(alerts.descent));
+    dial(ctx, L.d2, top + 7 * G, L.r, Math.min(vr.max, shown.vel) / vr.max, `VEL ${vr.unit}`, `${alerts.speed.toFixed(alerts.speed < 100 ? 1 : 0)} M/S`, vr.ticks, 'none');
 
     // Readouts: vertical speed positive upward, horizontal positive to the right.
-    readout(ctx, L.rx, top + 3 * G, L.rw, 'V-SPD', signed(view.vy) + ' M/S', tone(alerts.descent));
-    readout(ctx, L.rx, top + 6 * G, L.rw, 'H-SPD', signed(view.vx) + ' M/S', tone(alerts.drift));
-    readout(ctx, L.rx, top + 9 * G, L.rw, 'TILT', signed((view.angle * 180) / Math.PI, 0) + ' DEG', tone(alerts.tilt));
+    readout(ctx, L.rx, top + 3 * G, L.rw, 'V-SPD', signed(-alerts.vSpeed) + ' M/S', tone(alerts.descent));
+    readout(ctx, L.rx, top + 6 * G, L.rw, 'H-SPD', signed(alerts.hSpeed * Math.sign(info.hDirection || 1)) + ' M/S', tone(alerts.drift));
+    readout(ctx, L.rx, top + 9 * G, L.rw, 'TILT', signed((alerts.tiltAngle * 180) / Math.PI, 0) + ' DEG', tone(alerts.tilt));
+
+    // Orbit readouts; the periapsis goes accent while it lies underground.
+    const oy = top + L.row2;
+    readout(ctx, L.ox, oy + 3 * G, L.ow, 'AP', formatDistance(alerts.apAlt), 'none');
+    readout(ctx, L.ox, oy + 6 * G, L.ow, 'PE', formatDistance(alerts.peAlt), alerts.peBelow ? 'marker' : 'none');
+    readout(ctx, L.ox, oy + 9 * G, L.ow, 'T', Number.isFinite(alerts.period) ? formatTime(alerts.period) : '---', 'none');
 
     // Tapes.
     tape(ctx, L.t1, top + 2 * G, 2 * G, 9 * G, Math.max(0, Math.min(1, shown.fuel)), 'FUEL', `${Math.round(alerts.fuelFrac * 100)}%`, tone(alerts.fuel));
     tape(ctx, L.t2, top + 2 * G, 2 * G, 9 * G, Math.max(0, Math.min(1, shown.thr)), 'THR', `${Math.round(view.throttle * 100)}%`, 'none');
+
+    // Attitude rose and the stage figures.
+    rose(ctx, L.rose, oy + 7 * G, L.r, info, alerts.tiltAngle);
+    readout(ctx, L.sx, oy + 3 * G, L.sw, 'STAGE', info.stageText, 'none');
+    readout(ctx, L.sx, oy + 6 * G, L.sw, 'DV', `${Math.round(info.dv)} M/S`, 'none');
+    readout(ctx, L.sx, oy + 9 * G, L.sw, 'TWR', info.twr.toFixed(1), 'none');
 
     // CAPCOM line: in the strip when there is room, else top left of the
     // sheet beside the title block, wrapped onto two lines.
@@ -71,7 +119,7 @@ export function createHud() {
     ctx.restore();
   }
 
-  return { update, draw };
+  return { update, draw, height: hudHeight };
 }
 
 function signed(v, digits = 1) {
@@ -82,6 +130,7 @@ function signed(v, digits = 1) {
 function colours(level) {
   if (level === 'critical') return { stroke: BLUEPRINT.accent, fill: BLUEPRINT.accent, text: BLUEPRINT.paper };
   if (level === 'caution') return { stroke: BLUEPRINT.accent, fill: null, text: BLUEPRINT.ink };
+  if (level === 'marker') return { stroke: BLUEPRINT.ink, fill: null, text: BLUEPRINT.accent };
   return { stroke: BLUEPRINT.ink, fill: null, text: BLUEPRINT.ink };
 }
 
@@ -141,10 +190,60 @@ function dial(ctx, cx, cy, r, frac, name, value, ticks, level) {
   text(ctx, value, cx, cy + r - 9, { size: 10, align: 'center', colour: c.fill ? BLUEPRINT.paper : BLUEPRINT.ink });
 }
 
+// Compass rose: local vertical at the top, ticks every 30 degrees, the
+// craft's axis as a needle, prograde and retrograde marked on the ring and
+// labelled, the active hold named beneath.
+function rose(ctx, cx, cy, r, info, pitch) {
+  ctx.lineWidth = STROKE.structure;
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = STROKE.annotation;
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.beginPath();
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+    const len = i % 3 === 0 ? 6 : 3;
+    ctx.moveTo(cx + Math.cos(a) * (r - 1), cy + Math.sin(a) * (r - 1));
+    ctx.lineTo(cx + Math.cos(a) * (r - len), cy + Math.sin(a) * (r - len));
+  }
+  ctx.stroke();
+  text(ctx, 'UP', cx, cy - r + 11, { size: 8, weight: 400, align: 'center', colour: BLUEPRINT.inkPale });
+  // Prograde / retrograde on the ring.
+  if (info.prograde !== null && info.prograde !== undefined) {
+    for (const [off, name] of [[0, 'PRO'], [Math.PI, 'RET']]) {
+      const a = info.prograde + off - Math.PI / 2;
+      const mx = cx + Math.cos(a) * (r - 9); const my = cy + Math.sin(a) * (r - 9);
+      const active = (info.hold === 1 && off === 0) || (info.hold === 2 && off !== 0);
+      ctx.strokeStyle = BLUEPRINT.ink;
+      ctx.lineWidth = active ? STROKE.structure : STROKE.annotation;
+      ctx.beginPath();
+      ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
+      ctx.stroke();
+      if (off !== 0) { ctx.beginPath(); ctx.moveTo(mx - 2.5, my - 2.5); ctx.lineTo(mx + 2.5, my + 2.5); ctx.moveTo(mx + 2.5, my - 2.5); ctx.lineTo(mx - 2.5, my + 2.5); ctx.stroke(); }
+      text(ctx, name, mx + Math.cos(a) * -9, my + Math.sin(a) * -9, { size: 7, weight: 400, align: 'center', colour: BLUEPRINT.inkPale });
+    }
+  }
+  // Needle: the craft's axis.
+  const a = pitch - Math.PI / 2;
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.structure;
+  ctx.beginPath();
+  ctx.moveTo(cx - Math.cos(a) * 5, cy - Math.sin(a) * 5);
+  ctx.lineTo(cx + Math.cos(a) * (r - 4), cy + Math.sin(a) * (r - 4));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+  ctx.stroke();
+  const holdText = info.hold === 1 ? 'HOLD PRO' : info.hold === 2 ? 'HOLD RET' : 'ATT';
+  text(ctx, holdText, cx, cy + r + 9, { size: 9, weight: info.hold ? 500 : 400, align: 'center', colour: info.hold ? BLUEPRINT.ink : BLUEPRINT.inkPale });
+}
+
 // Label left, value right-aligned in the field, boxed only when alerting.
 function readout(ctx, x, y, w, name, value, level) {
   const c = colours(level);
-  if (level !== 'none') {
+  if (level === 'caution' || level === 'critical') {
     ctx.lineWidth = STROKE.annotation;
     ctx.strokeStyle = c.stroke;
     if (c.fill) { ctx.fillStyle = c.fill; ctx.fillRect(x - 4, y - 9, w + 8, 18); }

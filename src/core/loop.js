@@ -16,7 +16,9 @@ export function createFixedLoop({ hz = 60, maxStepsPerFrame = 8, step }) {
   let tick = 0;
   let paused = false;
 
-  function advance(nowSeconds) {
+  // `rate` is the time warp: simulated seconds per wall-clock second. The
+  // step stays 1/60 s whatever the rate, so a warped flight replays exactly.
+  function advance(nowSeconds, rate = 1) {
     if (last === null) last = nowSeconds;
     let frame = nowSeconds - last;
     last = nowSeconds;
@@ -26,7 +28,7 @@ export function createFixedLoop({ hz = 60, maxStepsPerFrame = 8, step }) {
     // seconds of simulation at once: drop the surplus and keep the game smooth.
     const cap = maxStepsPerFrame * dt;
     if (frame > cap) frame = cap;
-    accumulator += frame;
+    accumulator += frame * rate;
     let steps = 0;
     while (accumulator >= dt) {
       step(dt, tick);

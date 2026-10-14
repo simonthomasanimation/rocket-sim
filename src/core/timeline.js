@@ -1,52 +1,62 @@
-// Timeline: a recording run to its end with every tick kept, so a replay can
-// be scrubbed, stepped and played backwards without re-simulating. Each
-// frame carries the lander state, the phase, the alerts and the CAPCOM line
-// current at that tick. A two-minute flight is about 7,000 small frames.
+// Timeline: a recording run to its end with its ticks kept, so a replay can
+// be scrubbed and played backwards without re-simulating. Each frame
+// carries the craft state, the debris, the phase, the alerts and the CAPCOM
+// line current at that tick. Short flights keep every tick; a long one
+// (an orbit at time warp) keeps every nth so the tape stays a few tens of
+// thousands of frames.
 
 import { createPlayback } from './playback.js';
-import { predictDescent } from './predict.js';
+import { predictCoast } from './predict.js';
 import { computeAlerts } from './alerts.js';
 import { createCapcom } from './capcom.js';
+import { normalizeAngle } from './body.js';
 
-export function buildTimeline(recording, { maxTicks = 60 * 60 * 10, dt = 1 / 60 } = {}) {
+export function buildTimeline(recording, { maxTicks = 60 * 60 * 90, maxFrames = 24000, dt = 1 / 60 } = {}) {
   const playback = createPlayback(recording);
   const flight = playback.flight;
   const capcom = createCapcom();
   const frames = [];
+  const limit = Math.min(maxTicks, recording.ticks || maxTicks);
+  const stride = Math.max(1, Math.ceil(limit / maxFrames));
 
-  // The engine-off prediction is the costly part; refreshing it every third
-  // tick (50 ms) is plenty for the alert rules. The drawing predicts live
-  // from the sampled state, so frames do not keep one.
+  // The alert rules only look ten seconds ahead, so the prediction here is
+  // short; refreshing it every few ticks is plenty. The drawing predicts
+  // live from the sampled state, so frames do not keep one.
   let prediction = null;
-  function capture() {
-    if (flight.phase !== 'flying') prediction = null;
-    else if (frames.length % 3 === 0 || !prediction) prediction = predictDescent(flight.state, flight.terrain, flight.body.gravity);
+  let sinceLast = 99;
+  function capture(force = false) {
+    const live = flight.phase === 'flying';
+    if (!live) prediction = null;
+    else if (sinceLast >= 3 || !prediction) { prediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400 }); sinceLast = 0; }
     const alerts = computeAlerts(flight, prediction);
     capcom.update(flight, alerts);
-    frames.push({ tick: flight.tick, state: { ...flight.state }, phase: flight.phase, alerts, capcom: capcom.latest });
+    if (force || flight.tick % stride === 0) {
+      frames.push({ tick: flight.tick, state: { ...flight.state }, debris: flight.debris.map((d) => ({ ...d })), phase: flight.phase, alerts, capcom: capcom.latest });
+    }
   }
 
-  const limit = Math.min(maxTicks, recording.ticks || maxTicks);
-  capture();
+  capture(true);
   let n = 0;
-  while (n < limit && playback.step(dt)) { capture(); n += 1; }
-  if (flight.phase !== 'flying') {
-    capture(); // the touchdown frame itself
+  let running = true;
+  while (n < limit && running) { running = playback.step(dt); sinceLast += 1; capture(); n += 1; }
+  if (frames[frames.length - 1].tick !== flight.tick) capture(true);
+  if (flight.phase !== 'flying' && flight.phase !== 'pad') {
     // A short tail so the result can be seen before the end of the tape.
-    for (let i = 0; i < 45; i++) { flight.step(undefined, dt); capture(); }
+    for (let i = 0; i < 45; i++) { for (let k = 0; k < stride; k++) flight.step(undefined, dt); sinceLast += stride; capture(true); }
   }
 
   return {
     flight,
     frames,
-    dt,
+    dt: dt * stride,
+    stride,
     get length() { return frames.length; },
-    get duration() { return (frames.length - 1) * dt; },
+    get duration() { return (frames.length - 1) * dt * stride; },
     at(index) { return frames[Math.max(0, Math.min(frames.length - 1, index))]; },
   };
 }
 
-// The frame as seen `cursor` ticks into the tape, interpolating between
+// The frame as seen `cursor` frames into the tape, interpolating between
 // neighbouring frames so slow and fast play stay smooth.
 export function sampleTimeline(timeline, cursor) {
   const i = Math.floor(cursor);
@@ -57,7 +67,7 @@ export function sampleTimeline(timeline, cursor) {
     ...a.state,
     x: a.state.x + (b.state.x - a.state.x) * t,
     y: a.state.y + (b.state.y - a.state.y) * t,
-    angle: a.state.angle + (b.state.angle - a.state.angle) * t,
+    angle: a.state.angle + normalizeAngle(b.state.angle - a.state.angle) * t,
   };
   return { ...a, state };
 }

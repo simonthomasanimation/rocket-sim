@@ -3,23 +3,29 @@
 // decides how to print it.
 
 export const LINES = {
-  go: 'Go for descent. Watch your rate.',
+  goDescent: 'Go for descent. Watch your rate.',
+  goLaunch: 'Pad is clear. You are go for launch.',
+  goOrbit: 'We have you in a stable orbit. Plan your burn.',
+  liftoff: 'Liftoff. Clear of the tower.',
+  staged: 'Staging confirmed. Good separation.',
+  stageDry: 'First stage is dry. Stage when ready.',
+  orbit: 'Orbit confirmed. Periapsis is above the ground.',
   fuelLow: 'Fuel at fifteen percent. Commit or abort.',
   fuelOut: 'We show zero fuel. Ride it down.',
   rate: 'Descent rate is too high. Throttle up.',
   drift: 'You are drifting sideways. Level off.',
   landed: 'Contact light. Engine stop. Welcome to the Moon.',
   crashed: 'We have lost your signal.',
-  aborted: 'You are leaving the training area. Flight terminated.',
+  escaped: 'You have left lunar space. Flight terminated.',
 };
 
 export function createCapcom() {
   const said = new Set();
   const log = [];
-  function say(key, tick, critical = false) {
+  function say(key, tick, critical = false, text = LINES[key]) {
     if (said.has(key)) return;
     said.add(key);
-    log.push({ key, text: LINES[key], tick, critical });
+    log.push({ key, text, tick, critical });
   }
   return {
     log,
@@ -27,11 +33,18 @@ export function createCapcom() {
     // Call once per tick with the flight and its current alerts.
     update(flight, alerts) {
       const t = flight.tick;
-      if (t >= 60) say('go', t);
+      const scn = flight.scenario.id;
+      if (t >= 60) say(scn === 'launch' ? 'goLaunch' : scn === 'orbit' ? 'goOrbit' : 'goDescent', t);
+      for (const ev of flight.events) {
+        if (ev.type === 'liftoff') say('liftoff', t);
+        else if (ev.type === 'staged') say('staged', t);
+        else if (ev.type === 'orbit' && flight.stats.orbit) say('orbit', t, false, `Orbit confirmed. Periapsis ${(flight.stats.orbit.pe / 1000).toFixed(1)} km.`);
+      }
       if (flight.phase === 'landed') { say('landed', t); return; }
       if (flight.phase === 'crashed') { say('crashed', t, true); return; }
-      if (flight.phase === 'aborted') { say('aborted', t, true); return; }
+      if (flight.phase === 'escaped') { say('escaped', t, true); return; }
       if (alerts.fuel === 'critical') say('fuelOut', t, true);
+      else if (alerts.fuel === 'caution' && flight.state.fuel <= 0) say('stageDry', t);
       else if (alerts.fuel === 'caution') say('fuelLow', t);
       if (alerts.descent === 'critical') say('rate', t, true);
       if (alerts.drift === 'caution') say('drift', t);

@@ -74,6 +74,7 @@ export function createSfx(mixer) {
     setEngine,
     touchdown() { burst({ seconds: 0.25, cutoff: 300, level: 0.6 }); },
     crash() { burst({ seconds: 0.9, cutoff: 900, level: 0.9 }); },
+    stage() { burst({ seconds: 0.18, cutoff: 500, level: 0.5 }); },
     stop() { setEngine(0); },
   };
 }
