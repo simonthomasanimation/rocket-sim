@@ -9,7 +9,7 @@
 
 import { rk4Step } from './craft.js';
 import { elementsOf } from './orbit.js';
-import { BODIES, ESCAPE_RADIUS, bodyState, childrenOf } from './body.js';
+import { BODIES, ESCAPE_RADIUS, bodyState, childrenOf, frameOffset } from './body.js';
 
 // options: maxTime (s) stops early, used by the alert rules which only care
 // about the next few seconds; maxSteps bounds the work per call; drag is the
@@ -23,8 +23,8 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
   const s = { x: state.x, y: state.y, vx: state.vx, vy: state.vy };
   let dt = stepFor(s, cur, el);
 
-  // Offset of the current frame's origin from the starting frame's.
-  let frame = { x: 0, y: 0 };
+  // Each segment carries the offset that places its frame on the starting
+  // one, taken at the moment the segment begins.
   const segments = [{ body: cur.id, from: 0, offset: { x: 0, y: 0 }, t: 0 }];
   const points = [{ x: s.x, y: s.y, t: 0 }];
   let t = 0;
@@ -81,7 +81,6 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
         const parent = BODIES[cur.parent];
         const b = bodyState(cur, T);
         s.x += b.x; s.y += b.y; s.vx += b.vx; s.vy += b.vy;
-        frame = { x: frame.x - b.x, y: frame.y - b.y };
         if (!exit) exit = { x: px, y: py, t, body: cur.id, seg: segments.length - 1 };
         cur = parent;
         changed = true;
@@ -91,7 +90,6 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
           const dx = s.x - c.x; const dy = s.y - c.y;
           if (Math.hypot(dx, dy) < child.soi) {
             s.x = dx; s.y = dy; s.vx -= c.vx; s.vy -= c.vy;
-            frame = { x: frame.x + c.x, y: frame.y + c.y };
             if (!encounter) encounter = { t, body: child.id, seg: segments.length, x: s.x, y: s.y };
             cur = child;
             changed = true;
@@ -106,7 +104,7 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
       curTerrain = terrainOf ? terrainOf(cur) : null;
       atmTop = cur.atmosphere ? R + cur.atmosphere.height : 0;
       wasAbove = Math.hypot(s.x, s.y) > atmTop;
-      segments.push({ body: cur.id, from: points.length, offset: { ...frame }, t });
+      segments.push({ body: cur.id, from: points.length, offset: frameOffset(body, cur, clock + t), t });
       points.push({ x: s.x, y: s.y, t });
       swept = 0;
       prevAngle = Math.atan2(s.x, s.y);

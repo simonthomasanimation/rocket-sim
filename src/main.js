@@ -15,7 +15,8 @@ import { BODIES, bodyState, childrenOf } from './core/body.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene, drawDetail } from './render/blueprint.js';
-import { mountTitleBlock, updateTitleBlock, stampTitleBlock, mountPage, unmountPage, reportPage, orbitPage, startPage } from './ui/screens.js';
+import { createMapCamera, drawCrtPaper, drawCrt } from './render/crt.js';
+import { mountTitleBlock, updateTitleBlock, stampTitleBlock, mountPage, unmountPage, reportPage, orbitPage, startPage, formatMet } from './ui/screens.js';
 import { createInput, keyLabels } from './ui/input.js';
 import { createHud, hudHeight } from './ui/hud.js';
 import { createTransport } from './ui/transport.js';
@@ -26,7 +27,12 @@ const surface = createSurface(document.getElementById('stage'));
 const titleBlock = document.getElementById('title-block');
 const pageRoot = document.getElementById('page');
 const camera = createCamera();
+const mapCamera = createMapCamera();
 const hud = createHud();
+// Which document is on the sheet, and the page turn between them.
+let doc = 'blueprint';      // 'blueprint' | 'crt'
+let turning = null;         // { snapshot, startedAt }
+const turnCanvas = document.createElement('canvas');
 let capcom = createCapcom();
 const input = createInput({ touchRoot: document.getElementById('touch-controls'), zoomTarget: surface.canvas });
 window.addEventListener('touchstart', () => layout(), { passive: true, once: true });
@@ -173,7 +179,7 @@ function setPaused(value) {
   userPaused = value;
   if (userPaused) loop.pause(); else loop.resume();
   setWarp(0);
-  updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : 'BLUEPRINT' });
+  updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : doc === 'crt' ? 'CRT MAP' : 'BLUEPRINT' });
   const cell = titleBlock.querySelector('[data-field="document"]');
   if (cell) cell.classList.toggle('is-active', userPaused);
 }
@@ -277,13 +283,31 @@ function onTransport(action, value) {
     case 'exit': exitReplay(true); break;
     case 'restart': closePage(); restart(); break;
     case 'mute': updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' }); break;
-    case 'zoomIn': camera.zoom(0.5); break;
-    case 'zoomOut': camera.zoom(-0.5); break;
-    case 'zoomReset': camera.resetZoom(); break;
-    case 'zoom': camera.zoom(value); break;
+    case 'zoomIn': zoomBy(0.5); break;
+    case 'zoomOut': zoomBy(-0.5); break;
+    case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
+    case 'zoom': zoomBy(value); break;
+    case 'map': turnPage(); break;
     default: break;
   }
 }
+
+function zoomBy(steps) { (doc === 'crt' ? mapCamera : camera).zoom(steps); }
+
+// Page turn: the old sheet is kept as a picture and wiped off over 200 ms
+// while the new document draws beneath (the grid stays put).
+function turnPage() {
+  try {
+    turnCanvas.width = surface.canvas.width; turnCanvas.height = surface.canvas.height;
+    turnCanvas.getContext('2d').drawImage(surface.canvas, 0, 0);
+    turning = { startedAt: performance.now() };
+  } catch { turning = null; }
+  doc = doc === 'crt' ? 'blueprint' : 'crt';
+  document.body.classList.toggle('doc-crt', doc === 'crt');
+  updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : doc === 'crt' ? 'CRT MAP' : 'BLUEPRINT' });
+  if (doc === 'crt') { mapCamera.width = surface.width; mapCamera.height = surface.height; mapSnap = true; }
+}
+let mapSnap = false;
 
 // Move the replay cursor on by one screen frame.
 function advanceReplay(frameDt) {
@@ -373,6 +397,20 @@ function render(alpha, frameDt) {
   const extent = extentOf(view, prediction);
   lastExtent = extent;
   camera.follow(view, frameDt, extent);
+  const a0 = scene.alerts || alerts || computeAlerts(src, prediction);
+  if (doc === 'crt') {
+    mapCamera.width = surface.width; mapCamera.height = surface.height;
+    drawCrtPaper(surface.ctx, surface.width, surface.height, surface.dpr);
+    drawCrt(surface.ctx, mapCamera, { state: view, body, clock: scene.clock, prediction, phase, cfg: src.cfg }, {
+      met: formatMet(view.time), warp: titleBlock.querySelector('[data-field="warp"]') ? titleBlock.querySelector('[data-field="warp"]').textContent : '×1',
+      paused: !replay && userPaused && !pageOpen, soi: body.name, apAlt: a0.apAlt, peAlt: a0.peAlt, dv: deltaV(view, src.cfg),
+      stageText: `STAGE ${view.stage + 1}/${src.cfg.stages.length}  FUEL ${Math.round(a0.fuelFrac * 100)}%`,
+      log: replay ? (scene.capcom ? [scene.capcom.text] : []) : capcom.log.map((l) => l.text),
+    }, frameDt, mapSnap);
+    mapSnap = false;
+    finishTurn();
+    return scene;
+  }
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
   drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body, terrain, prediction, debris: scene.debris, others: otherBodies(src, body, scene.clock) });
   // Detail inset: the vehicle full-frame whenever the main view draws it small.
@@ -404,7 +442,24 @@ function render(alpha, frameDt) {
     timeSeconds: performance.now() / 1000,
     camera,
   }, view, a, scene.capcom, info);
+  finishTurn();
   return scene;
+}
+
+// Draw the old sheet sliding off to the right over the freshly drawn new one.
+function finishTurn() {
+  if (!turning) return;
+  const p = Math.min(1, (performance.now() - turning.startedAt) / 200);
+  const ctx = surface.ctx;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const W = surface.canvas.width; const H = surface.canvas.height;
+  const edge = Math.round(W * p);
+  ctx.beginPath(); ctx.rect(edge, 0, W - edge, H); ctx.clip();
+  ctx.drawImage(turnCanvas, 0, 0);
+  ctx.restore();
+  ctx.setTransform(surface.dpr, 0, 0, surface.dpr, 0, 0);
+  if (p >= 1) turning = null;
 }
 
 mountTitleBlock(titleBlock, {
@@ -461,10 +516,11 @@ function frame(nowMs) {
       case 'warpUp': warpUp(); break;
       case 'warpDown': warpDown(); break;
       case 'warpTo': if (warpTo) { warpTo = null; setWarp(0); } else startWarpTo(); break;
-      case 'zoomIn': camera.zoom(0.5); break;
-      case 'zoomOut': camera.zoom(-0.5); break;
-      case 'zoomReset': camera.resetZoom(); break;
-      case 'zoom': camera.zoom(value); break;
+      case 'zoomIn': zoomBy(0.5); break;
+      case 'zoomOut': zoomBy(-0.5); break;
+      case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
+      case 'zoom': zoomBy(value); break;
+      case 'map': turnPage(); break;
       default: break;
     }
   }
@@ -535,5 +591,7 @@ window.__karman = {
   get camera() { return camera; },
   get warp() { return WARPS[warp]; },
   get extent() { return lastExtent; },
+  get mapCamera() { return mapCamera; },
+  get prediction() { return lastPrediction; },
   scenarios: Object.keys(SCENARIOS),
 };

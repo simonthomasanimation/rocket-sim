@@ -665,16 +665,17 @@ function drawPrediction(ctx, cam, prediction, body) {
   // Each segment is in its own body's frame; its offset places it on the
   // starting frame (where that body sits at the time the segment begins).
   const segs = segments || [{ body: body.id, from: 0, offset: { x: 0, y: 0 } }];
-  const segOf = (i) => { let k = 0; while (k + 1 < segs.length && segs[k + 1].from <= i) k += 1; return segs[k]; };
-  const at = (i) => { const o = segOf(i).offset; return cam.toScreen(points[i].x + o.x, points[i].y + o.y); };
   ctx.strokeStyle = critical ? BLUEPRINT.accent : BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
-  let last = null;
+  let last = null; let k = 0;
   for (let i = 0; i < points.length; i++) {
-    const p = at(i);
-    if (i === 0) ctx.moveTo(p.x, p.y);
+    let broke = i === 0;
+    while (k + 1 < segs.length && segs[k + 1].from <= i) { k += 1; broke = true; }
+    const o = segs[k].offset;
+    const p = cam.toScreen(points[i].x + o.x, points[i].y + o.y);
+    if (broke) ctx.moveTo(p.x, p.y);
     else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1.5) ctx.lineTo(p.x, p.y);
     else continue;
     last = p;

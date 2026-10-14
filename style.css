@@ -84,6 +84,15 @@ html, body {
   font-weight: 400;
 }
 
+/* The CRT document: the title block goes phosphor green on black */
+body.doc-crt .title-block { background: #050806; color: #5CFF8A; border-color: #5CFF8A; }
+body.doc-crt .title-block th, body.doc-crt .title-block td { border-color: rgba(92, 255, 138, 0.45); }
+body.doc-crt .title-block .label { color: rgba(92, 255, 138, 0.6); }
+body.doc-crt .title-block td.is-active { background: #5CFF8A; color: #050806; }
+body.doc-crt .title-stamp { color: #FFB347; border-color: #FFB347; background: #050806; }
+body.doc-crt .stamp-button { background: #050806; color: #5CFF8A; border-color: #5CFF8A; }
+body.doc-crt .stamp-button.is-down { background: #5CFF8A; color: #050806; }
+
 /* Time running faster than real: the WARP cell inverts */
 .title-block td.is-active {
   background: var(--bp-ink);

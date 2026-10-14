@@ -74,6 +74,23 @@ export function bodyState(body, clock) {
   return { x: a * Math.cos(th), y: a * Math.sin(th), vx: a * n * Math.sin(th), vy: -a * n * Math.cos(th) };
 }
 
+// Position of a body's centre relative to the root body at a clock time.
+export function positionFromRoot(body, clock) {
+  let x = 0; let y = 0;
+  let b = body;
+  while (b && b.parent) { const p = bodyState(b, clock); x += p.x; y += p.y; b = BODIES[b.parent]; }
+  return { x, y };
+}
+
+// Where body `to`'s centre sits relative to body `from`'s centre at a clock
+// time: the offset that places a path drawn in `to`'s frame on `from`'s.
+export function frameOffset(from, to, clock) {
+  if (from.id === to.id) return { x: 0, y: 0 };
+  const a = positionFromRoot(from, clock);
+  const b = positionFromRoot(to, clock);
+  return { x: b.x - a.x, y: b.y - a.y };
+}
+
 // Children of a body (bodies that orbit it).
 export function childrenOf(body) {
   return Object.values(BODIES).filter((b) => b.parent === body.id);
