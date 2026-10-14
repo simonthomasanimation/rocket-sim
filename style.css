@@ -450,3 +450,203 @@ body.doc-crt .stamp-button.is-down { background: #5CFF8A; color: #050806; }
   .transport-centre .transport-button { flex: 1; justify-content: center; }
   .transport-button { height: 44px; padding: 0 8px; font-size: 12px; }
 }
+
+/* --- Vellum document: the builder's chrome over the drafting sheet ---------- */
+:root {
+  --vl-paper: #F3EBD8;
+  --vl-ink: #1E1C1A;
+  --vl-ink-pale: rgba(30, 28, 26, 0.45);
+  --vl-pencil: #C8382B;
+}
+
+body.doc-vellum { background: var(--vl-paper); }
+body.doc-vellum .title-block { background: var(--vl-paper); color: var(--vl-ink); border-color: var(--vl-ink); }
+body.doc-vellum .title-block th, body.doc-vellum .title-block td { border-color: var(--vl-ink-pale); }
+body.doc-vellum .title-block .label { color: var(--vl-ink-pale); }
+body.doc-vellum .title-block td.is-active { background: var(--vl-ink); color: var(--vl-paper); }
+body.doc-vellum .title-stamp { color: var(--vl-pencil); border-color: var(--vl-pencil); background: var(--vl-paper); }
+body.doc-vellum .stamp-button { background: var(--vl-paper); color: var(--vl-ink); border-color: var(--vl-ink); }
+body.doc-vellum .stamp-button.is-down { background: var(--vl-ink); color: var(--vl-paper); }
+
+#vellum {
+  position: fixed;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  color: var(--vl-ink);
+  font: 400 13px/18px var(--font-text);
+}
+#vellum.is-open { display: block; }
+
+.vellum-catalog, .vellum-panel {
+  position: absolute;
+  top: calc(var(--grid) * 2 + env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: var(--stroke-structure) solid var(--vl-ink);
+  border-radius: 2px;
+  background: var(--vl-paper);
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+.vellum-catalog {
+  left: calc(var(--grid) * 2 + env(safe-area-inset-left, 0px));
+  bottom: calc(var(--grid) * 2 + env(safe-area-inset-bottom, 0px));
+  width: 232px;
+  padding: var(--grid) var(--grid) calc(var(--grid) * 2);
+}
+.vellum-panel {
+  right: calc(var(--grid) * 2 + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--grid) * 2 + 208px + env(safe-area-inset-bottom, 0px));
+  width: 272px;
+  padding: var(--grid) calc(var(--grid) * 2) calc(var(--grid) * 2);
+}
+.vellum-toggle { display: none; }
+
+.vellum-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--grid);
+  padding: 0 0 var(--grid);
+  border-bottom: var(--stroke-annotation) solid var(--vl-ink);
+  font: 400 10px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.vellum-title {
+  margin: var(--grid) 0;
+  font: 700 18px/24px var(--font-head);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.vellum-group { margin: var(--grid) 0 0; }
+.vellum-group-title {
+  margin: calc(var(--grid) * 2) 0 4px;
+  font: 700 11px/16px var(--font-head);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-bottom: var(--stroke-annotation) solid var(--vl-ink-pale);
+}
+
+.vellum-part {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--grid);
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 4px;
+  border: var(--stroke-annotation) solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--vl-ink);
+  text-align: left;
+  font: inherit;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+}
+.vellum-part:hover, .vellum-part:focus-visible { border-color: var(--vl-ink); outline: none; }
+.vellum-part:active { cursor: grabbing; }
+.vellum-part-fig {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: var(--stroke-annotation) solid var(--vl-ink-pale);
+}
+.vellum-part-fig img { display: block; pointer-events: none; }
+.vellum-part-text { display: flex; flex-direction: column; min-width: 0; }
+.vellum-part-text b { font: 500 12px/16px var(--font-mono); letter-spacing: 0.04em; }
+.vellum-part-text i { font: 400 10px/14px var(--font-mono); font-style: normal; color: var(--vl-ink-pale); letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vellum-part.is-locked b { text-decoration: line-through; text-decoration-color: var(--vl-pencil); }
+
+.vellum-table {
+  width: 100%;
+  margin: var(--grid) 0;
+  border-collapse: collapse;
+  font: 400 12px/16px var(--font-mono);
+}
+.vellum-table th, .vellum-table td { padding: 3px 0; border-bottom: var(--stroke-annotation) solid var(--vl-ink-pale); text-align: left; vertical-align: top; }
+.vellum-table th { width: 46%; font-weight: 400; letter-spacing: 0.06em; opacity: 0.75; }
+.vellum-table td { text-align: right; font-weight: 500; }
+.vellum-table td.tone-pencil, .vellum-pencil { color: var(--vl-pencil); }
+
+.vellum-stages { margin: 0; padding: 0; list-style: none; }
+.vellum-stage { padding: 6px 0; border-bottom: var(--stroke-annotation) solid var(--vl-ink-pale); }
+.vellum-stage.is-empty { font: 400 11px/16px var(--font-mono); color: var(--vl-ink-pale); }
+.vellum-stage-top { display: flex; justify-content: space-between; gap: var(--grid); font: 500 12px/16px var(--font-mono); letter-spacing: 0.04em; }
+.vellum-stage i { display: block; font: 400 11px/14px var(--font-mono); font-style: normal; color: var(--vl-ink-pale); }
+.vellum-stage.kind-boosters .vellum-stage-top b { color: var(--vl-pencil); }
+.vellum-stage-ctl { margin-top: 4px; }
+
+.vellum-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--grid) 0; }
+.vellum-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 10px;
+  border: var(--stroke-structure) solid var(--vl-ink);
+  border-radius: 2px;
+  background: var(--vl-paper);
+  color: var(--vl-ink);
+  font: 700 11px/16px var(--font-head);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.vellum-button:hover, .vellum-button:focus-visible { background: var(--vl-ink); color: var(--vl-paper); outline: none; }
+.vellum-button kbd { padding: 0 4px; border: var(--stroke-annotation) solid currentColor; border-radius: 2px; font: 400 9px/14px var(--font-mono); }
+
+.vellum-note {
+  min-height: 18px;
+  margin: 0;
+  font: 500 11px/18px var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--vl-pencil);
+  text-transform: uppercase;
+}
+.vellum-text { margin: 4px 0; font: 400 13px/18px var(--font-text); }
+.vellum-caption { margin: var(--grid) 0 0; font: 400 11px/15px var(--font-text); color: var(--vl-ink-pale); }
+
+.vellum-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: none;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.vellum-ghost.is-on { display: block; }
+
+@media (max-width: 720px) {
+  /* Phones: the catalog is a strip along the foot, the panel hides behind LIST. */
+  .vellum-catalog {
+    top: auto;
+    right: calc(var(--grid) * 2 + env(safe-area-inset-right, 0px));
+    height: 128px;
+    width: auto;
+    display: flex;
+    gap: var(--grid);
+    overflow-x: auto;
+    overflow-y: hidden;
+    touch-action: pan-x;
+    padding: var(--grid);
+  }
+  .vellum-catalog .vellum-head { display: none; }
+  .vellum-group { display: flex; gap: 4px; margin: 0; }
+  .vellum-group-title { display: none; }
+  .vellum-part { flex-direction: column; width: 76px; margin: 0; padding: 2px; touch-action: pan-x; }
+  .vellum-part-text { align-items: center; text-align: center; }
+  .vellum-part-text b { font-size: 9px; line-height: 12px; }
+  .vellum-part-text i { display: none; }
+  .vellum-panel { display: none; left: calc(var(--grid) * 2 + env(safe-area-inset-left, 0px)); right: auto; width: min(272px, calc(100% - 32px)); top: calc(var(--grid) * 9 + env(safe-area-inset-top, 0px)); bottom: 160px; }
+  #vellum.show-panel .vellum-panel { display: block; }
+  .vellum-toggle { display: block; position: absolute; left: calc(var(--grid) * 2 + env(safe-area-inset-left, 0px)); top: calc(var(--grid) * 2 + env(safe-area-inset-top, 0px)); width: 64px; height: 40px; pointer-events: auto; }
+}

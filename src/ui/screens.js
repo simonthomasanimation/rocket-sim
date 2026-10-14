@@ -311,5 +311,6 @@ export function startPage(keys = {}) {
     ],
     figure: 'FIG. 1',
     caption: 'The dashed line is where you coast if the engine stays off; AP and PE mark its highest and lowest points.',
+    buttons: [{ label: 'BUILDER', key: 'B', action: 'build' }],
   };
 }

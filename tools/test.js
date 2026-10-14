@@ -17,7 +17,7 @@ import { createTerrain } from '../src/core/terrain.js';
 import { WARP_LADDER, PHYSICS_LADDER, maxPhysicsWarp, maxWarpIndex, railsAllowed, railsBlocker, warpLimitReason, RAILS, PHYSICS_LEVELS } from '../src/core/warp.js';
 import { propagate } from '../src/core/kepler.js';
 import { flyMission } from './mission.js';
-import { PARTS, SIZES, CATEGORIES, partById, createDesign, addPart, addRadial, stackRefusal, radialRefusal, compileDesign, designStats, designMass } from '../src/core/parts.js';
+import { PARTS, SIZES, CATEGORIES, partById, createDesign, cloneDesign, addPart, addRadial, insertPart, movePart, setBoosterDrop, stagingList, stackRefusal, radialRefusal, compileDesign, designStats, designMass } from '../src/core/parts.js';
 import { KP3_DESIGN } from '../src/core/designs.js';
 
 const tests = [];
@@ -163,6 +163,32 @@ test('every part has a drawing in art/parts that keeps the brief\'s rules', asyn
       assert.equal(has('left') && has('right'), p.nodes.radial === 'host', `${file}: radial nodes`);
     }
   }
+});
+
+test('the stack can be edited in the middle, and boosters can be kept on until their stage drops', () => {
+  const d = cloneDesign(KP3_DESIGN);
+  assert.equal(insertPart(d, 2, 'engine-l-main'), null, 'an engine can go under the decoupler');
+  assert.equal(compileDesign(d).warnings.some((w) => w.code === 'buried-engine'), true);
+  assert.equal(movePart(d, 2, 1), null, 'and be moved under the tank');
+  assert.equal(d.stack[1].id, 'engine-l-main');
+  assert.equal(insertPart(d, 0, 'parachute'), 'NOTHING STACKS ON A PARACHUTE', 'a parachute has no top node');
+  assert.equal(movePart(d, d.stack.length - 1, 0), 'NOTHING STACKS ON A PARACHUTE');
+  assert.equal(d.stack[d.stack.length - 1].id, 'parachute', 'a refused move leaves the stack as it was');
+  const b = createDesign('BOOSTED', ['engine-m-lift', { id: 'tank-m-long', radials: [{ id: 'booster-m', count: 2 }] }, 'decoupler-m', 'engine-s-vac', 'tank-s-short', 'probe-core', 'nose-s']);
+  let rows = stagingList(b);
+  assert.deepEqual(rows.map((r) => r.kind), ['boosters', 'stack', 'stack']);
+  assert.ok(rows[0].canLater && !rows[1].canEarlier);
+  const early = designStats(b);
+  setBoosterDrop(b, 1, 'with');
+  rows = stagingList(b);
+  assert.deepEqual(rows.map((r) => r.kind), ['stack', 'stack']);
+  assert.ok(rows[0].canEarlier, 'merged boosters can be split out again');
+  const merged = designStats(b);
+  assert.ok(merged.stages[0].thrust === early.stages[0].thrust && merged.stages[0].fuelMass === early.stages[0].fuelMass + early.stages[1].fuelMass, 'one pool, same thrust');
+  assert.ok(merged.deltaV < early.deltaV, 'carrying the empty casings costs delta-v');
+  assert.equal(Math.round(merged.mass), Math.round(early.mass));
+  const c = createDesign('CAPSULE', ['engine-s-vac', 'tank-s-short', 'decoupler-s', 'shield-s', 'capsule-s', 'parachute']);
+  assert.equal(stagingList(c).at(-1).kind, 'chute');
 });
 
 test('fixed loop steps in whole ticks and caps catch-up', () => {

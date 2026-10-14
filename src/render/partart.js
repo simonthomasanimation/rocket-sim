@@ -85,6 +85,20 @@ export function partImage(id, color, pxPerUnit, showNodes = false) {
   return img.complete && img.naturalWidth > 0 ? img : null;
 }
 
+// A data URL of the part drawn to fit a `box` px square in `color`, for an
+// <img> in the catalog; the image is made at that exact size so the
+// strokes keep their weight. Null until the text has loaded.
+export function partIconSrc(id, color, box) {
+  const text = texts.get(id);
+  if (!text) { loadPartText(id).catch(() => {}); return null; }
+  const { viewBox } = parsed.get(id);
+  const k = Math.min(box / viewBox[2], box / viewBox[3]);
+  const w = Math.max(1, Math.round(viewBox[2] * k)); const h = Math.max(1, Math.round(viewBox[3] * k));
+  let svg = text.replace('<svg ', `<svg width="${w}" height="${h}" `).split('currentColor').join(color);
+  svg = svg.replace(/<g id="nodes"[\s\S]*?<\/g>/, '');
+  return { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, w, h };
+}
+
 // Draw a part with its top node at (x, y) on the canvas at `pxPerUnit`,
 // mirrored when `flip` (the left-hand one of a radial pair). Returns true
 // when something was drawn.

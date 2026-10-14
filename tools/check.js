@@ -66,6 +66,31 @@ async function openAndWatch(browser, url, label) {
     return out;
   }, PARTS.map((p) => p.id));
   for (const b of bad) problems.push(`${label}: part art ${b}`);
+  // The builder: open it, add parts as taps on the catalog would, check the
+  // stack and the staging list follow, and come back to the flight plan.
+  const built = await page.evaluate(async () => {
+    const k = window.__karman;
+    if (!k || !k.openBuilder) return 'no builder hook';
+    k.openBuilder();
+    await new Promise((r) => setTimeout(r, 300));
+    if (k.doc !== 'vellum' || !k.builder.isOpen) return `builder did not open (${k.doc})`;
+    const b = k.builder;
+    const n = b.design.stack.length;
+    b.load({ name: 'CHECK', stack: [] });
+    b.add('engine-s-lift'); b.add('tank-s-long'); b.add('booster-s'); b.add('decoupler-s'); b.add('shield-s'); b.add('capsule-s'); b.add('parachute');
+    if (b.design.stack.length !== 6 || b.design.stack[1].radials.length !== 1) return `stack is ${JSON.stringify(b.design.stack)}`;
+    b.add('tank-s-short');
+    if (b.design.stack.length !== 6) return 'a part stacked on a parachute';
+    const s = b.stats;
+    if (!(s.stages.length === 3 && s.mass > 0 && s.deltaV > 0)) return `stats ${JSON.stringify(s)}`;
+    if (!document.querySelector('.vellum-part img')) return 'catalog without icons';
+    if (document.querySelectorAll('.vellum-stage').length !== 4) return `${document.querySelectorAll('.vellum-stage').length} staging rows`;
+    k.closeBuilder();
+    await new Promise((r) => setTimeout(r, 300));
+    if (k.doc !== 'blueprint') return `builder did not close (${k.doc})`;
+    return n >= 0 ? null : 'bad';
+  });
+  if (built) problems.push(`${label}: builder: ${built}`);
   if (shotDir) {
     fs.mkdirSync(shotDir, { recursive: true });
     await page.screenshot({ path: path.join(shotDir, `${label}.png`) });

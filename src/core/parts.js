@@ -142,11 +142,18 @@ export function partRadius(p) {
 }
 
 // A design: a name and a stack of parts, bottom first. Each entry is
-// { id, radials: [{ id, count }] }; radials are pairs, count 2 or 4, and
-// only sit on a host part. A design is plain JSON so it can be saved and
-// exported as it is.
+// { id, radials: [{ id, count, drop }] }; radials are pairs, count 2 or 4,
+// and only sit on a host part. `drop` is for boosters: 'early' (the
+// default) drops them as a stage of their own the moment they run dry,
+// 'with' keeps them on until the stage they hang on is dropped. A design
+// is plain JSON so it can be saved and exported as it is.
 export function createDesign(name = 'UNTITLED', stack = []) {
-  return { name, stack: stack.map((e) => (typeof e === 'string' ? { id: e, radials: [] } : { id: e.id, radials: (e.radials || []).map((r) => ({ id: r.id, count: r.count || 2 })) })) };
+  return { name, stack: stack.map((e) => (typeof e === 'string' ? { id: e, radials: [] } : { id: e.id, radials: (e.radials || []).map((r) => ({ id: r.id, count: r.count || 2, drop: r.drop === 'with' ? 'with' : 'early' })) })) };
+}
+
+// A copy that shares nothing with the original.
+export function cloneDesign(design) {
+  return createDesign(design.name, design.stack);
 }
 
 // Can `partId` go on top of the stack as it stands? Returns null when it
@@ -183,12 +190,54 @@ export function addPart(design, partId) {
 export function addRadial(design, index, partId, count = 2) {
   const why = radialRefusal(design, index, partId);
   if (why) return why;
-  design.stack[index].radials.push({ id: partId, count: count === 4 ? 4 : 2 });
+  design.stack[index].radials.push({ id: partId, count: count === 4 ? 4 : 2, drop: 'early' });
+  return null;
+}
+
+// Can `partId` go into the stack at `index` (0 = the bottom), between the
+// parts there now? Null when it can, else the reason.
+export function insertRefusal(design, index, partId) {
+  const p = partById(partId);
+  if (p.nodes.radial === 'attach') return 'RADIAL PART: HANGS ON A TANK';
+  const below = index > 0 ? partById(design.stack[index - 1].id) : null;
+  const above = index < design.stack.length ? partById(design.stack[index].id) : null;
+  if (below && !p.nodes.bottom) return 'NO NODE BELOW';
+  if (below && !below.nodes.top) return `NOTHING STACKS ON A ${below.name}`;
+  if (above && !p.nodes.top) return `NOTHING STACKS ON A ${p.name}`;
+  if (above && !above.nodes.bottom) return `A ${above.name} HAS NO NODE BELOW`;
+  return null;
+}
+
+export function insertPart(design, index, partId) {
+  const i = Math.max(0, Math.min(design.stack.length, index));
+  const why = insertRefusal(design, i, partId);
+  if (why) return why;
+  design.stack.splice(i, 0, { id: partId, radials: [] });
+  return null;
+}
+
+// Move the stack entry at `from` so that it sits at `to` (an index into
+// the stack as it is now), radials and all. Null, or the reason it cannot.
+export function movePart(design, from, to) {
+  if (from === to || from < 0 || from >= design.stack.length) return null;
+  const [entry] = design.stack.splice(from, 1);
+  const i = Math.max(0, Math.min(design.stack.length, to > from ? to - 1 : to));
+  const why = insertRefusal(design, i, entry.id);
+  if (why) { design.stack.splice(from, 0, entry); return why; }
+  design.stack.splice(i, 0, entry);
   return null;
 }
 
 export function removePart(design, index) {
   design.stack.splice(index, 1);
+}
+
+// Boosters on the entry at `index`: drop them 'early' (as they run dry) or
+// 'with' the stage they hang on.
+export function setBoosterDrop(design, index, drop) {
+  const on = design.stack[index];
+  if (!on) return;
+  for (const r of on.radials) if (partById(r.id).category === 'booster') r.drop = drop === 'with' ? 'with' : 'early';
 }
 
 export function removeRadial(design, index, partId) {
@@ -220,7 +269,7 @@ export function compileDesign(design, { gravity = 9.80665 } = {}) {
   design.stack.forEach((e, i) => {
     const p = partById(e.id);
     cur.parts.push({ ...p, index: i });
-    for (const r of e.radials) cur.radials.push({ ...partById(r.id), count: r.count, on: i });
+    for (const r of e.radials) cur.radials.push({ ...partById(r.id), count: r.count, drop: r.drop, on: i });
     if (p.category === 'decoupler' && i < design.stack.length - 1) open();
   });
 
@@ -255,7 +304,18 @@ export function compileDesign(design, { gravity = 9.80665 } = {}) {
     st.footHalfWidth = st.radius * 1.1;
     const boosters = [];
     for (const r of g.radials) {
-      if (r.category === 'booster') { boosters.push(r); continue; }
+      if (r.category === 'booster' && r.drop !== 'with') { boosters.push(r); continue; }
+      if (r.category === 'booster') {
+        // Kept on until the stage drops: one pool with the stage's engines,
+        // the empty casings carried as dead mass.
+        const total = st.maxThrust + r.count * r.thrust;
+        st.isp = total / ((st.maxThrust > 0 ? st.maxThrust / st.isp : 0) + r.count * r.thrust / r.isp);
+        st.maxThrust = total;
+        st.fuelMass += r.count * r.fuel;
+        st.dryMass += r.count * r.mass;
+        st.footHalfWidth = Math.max(st.footHalfWidth, partRadius(partById(design.stack[r.on].id)) + 2 * r.radius);
+        continue;
+      }
       st.dryMass += r.count * r.mass;
       if (r.span) st.footHalfWidth = Math.max(st.footHalfWidth, partRadius(partById(design.stack[r.on].id)) + r.span);
       if (r.legs) st.legs = true;
@@ -314,6 +374,29 @@ export function compileDesign(design, { gravity = 9.80665 } = {}) {
     rotAccel: Math.PI / 2,
     warnings,
   };
+}
+
+// The staging list as the builder prints it: one row per step in firing
+// order, with what each step fires or drops and whether a BOOSTERS row can
+// be moved later (to drop with its stage) or a merged one earlier.
+export function stagingList(design) {
+  const cfg = compileDesign(design);
+  const rows = [];
+  cfg.stages.forEach((st, i) => {
+    const names = [];
+    for (const idx of st.parts) names.push(partById(design.stack[idx].id).name);
+    for (const r of st.radials) names.push(`${r.count}× ${partById(r.id).name}`);
+    const on = st.radials.length ? st.radials[0].on : null;
+    const hasMerged = st.kind === 'stack' && st.radials.some((r) => partById(r.id).category === 'booster' && design.stack[r.on].radials.some((q) => q.id === r.id && q.drop === 'with'));
+    rows.push({
+      index: i, kind: st.kind, name: st.name, parts: names,
+      fires: st.maxThrust > 0 ? `${Math.round(st.maxThrust / 1000)} KN` : st.capsule ? 'CAPSULE' : '—',
+      stackIndex: st.kind === 'boosters' ? on : st.parts[0],
+      canLater: st.kind === 'boosters', canEarlier: hasMerged,
+    });
+  });
+  if (cfg.stages.some((st) => st.chute)) rows.push({ index: rows.length, kind: 'chute', name: 'PARACHUTE', parts: ['DROGUE, THEN MAIN'], fires: 'ENTER', stackIndex: null, canLater: false, canEarlier: false });
+  return rows;
 }
 
 // The slide-rule figures: mass on the pad, launch TWR, and the ideal

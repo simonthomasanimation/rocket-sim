@@ -16,6 +16,8 @@ import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene, drawDetail } from './render/blueprint.js';
 import { createMapCamera, drawCrtPaper, drawCrt } from './render/crt.js';
+import { drawVellumPaper } from './render/vellum.js';
+import { createBuilder } from './ui/builder.js';
 import { mountTitleBlock, updateTitleBlock, stampTitleBlock, mountPage, unmountPage, reportPage, orbitPage, startPage, formatMet } from './ui/screens.js';
 import { createInput, keyLabels } from './ui/input.js';
 import { createHud, hudHeight } from './ui/hud.js';
@@ -30,7 +32,7 @@ const camera = createCamera();
 const mapCamera = createMapCamera();
 const hud = createHud();
 // Which document is on the sheet, and the page turn between them.
-let doc = 'blueprint';      // 'blueprint' | 'crt'
+let doc = 'blueprint';      // 'blueprint' | 'crt' | 'vellum'
 let turning = null;         // { snapshot, startedAt }
 const turnCanvas = document.createElement('canvas');
 let capcom = createCapcom();
@@ -39,6 +41,9 @@ window.addEventListener('touchstart', () => layout(), { passive: true, once: tru
 const mixer = createMixer();
 const sfx = createSfx(mixer);
 input.onFirstGesture(() => mixer.start());
+
+// The builder (vellum document): its chrome lives in #vellum, its drafting on the canvas.
+const builder = createBuilder({ canvas: surface.canvas, root: document.getElementById('vellum'), onAction: (a) => { if (a === 'newStart') closeBuilder(); } });
 
 let scenarioId = 'descent';
 let flight = createFlight({ seed: 1, scenario: scenarioId });
@@ -179,6 +184,29 @@ function handleAction(action) {
   if (action === 'restart') { closePage(); restart(); return; }
   if (action === 'newStart') { showPlan(); return; }
   if (action === 'replay') { closePage(); startReplay(); return; }
+  if (action === 'build') { openBuilder(); return; }
+}
+
+// --- Builder ----------------------------------------------------------------
+// The vellum sheet: the flight waits, paused, while the rocket is drafted.
+function openBuilder() {
+  if (doc === 'vellum') return;
+  if (replay) exitReplay(false);
+  if (pageOpen) { pageOpen = null; unmountPage(pageRoot); }
+  loop.pause();
+  turnTo('vellum');
+  builder.open();
+  input.setMode('builder');
+  input.setButtonsVisible(false);
+  updateTitleBlock(titleBlock, { document: 'VELLUM', sheet: 'DESIGN' });
+}
+function closeBuilder() {
+  if (doc !== 'vellum') return;
+  builder.close();
+  input.setMode('flight');
+  turnTo('blueprint');
+  updateTitleBlock(titleBlock, { sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}` });
+  showPlan();
 }
 
 function showPlan() {
@@ -327,14 +355,20 @@ function zoomBy(steps) { (doc === 'crt' ? mapCamera : camera).zoom(steps); }
 // Page turn: the old sheet is kept as a picture and wiped off over 200 ms
 // while the new document draws beneath (the grid stays put).
 function turnPage() {
+  if (doc === 'vellum') return;
+  turnTo(doc === 'crt' ? 'blueprint' : 'crt');
+}
+function turnTo(next) {
+  if (next === doc) return;
   try {
     turnCanvas.width = surface.canvas.width; turnCanvas.height = surface.canvas.height;
     turnCanvas.getContext('2d').drawImage(surface.canvas, 0, 0);
     turning = { startedAt: performance.now() };
   } catch { turning = null; }
-  doc = doc === 'crt' ? 'blueprint' : 'crt';
+  doc = next;
   document.body.classList.toggle('doc-crt', doc === 'crt');
-  updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : doc === 'crt' ? 'CRT MAP' : 'BLUEPRINT' });
+  document.body.classList.toggle('doc-vellum', doc === 'vellum');
+  updateTitleBlock(titleBlock, { document: doc === 'vellum' ? 'VELLUM' : userPaused ? 'PAUSED' : doc === 'crt' ? 'CRT MAP' : 'BLUEPRINT' });
   if (doc === 'crt') { mapCamera.width = surface.width; mapCamera.height = surface.height; mapSnap = true; }
 }
 let mapSnap = false;
@@ -426,6 +460,12 @@ function aimCamera(body, terrain, state) {
 
 function render(alpha, frameDt) {
   const scene = currentScene(alpha);
+  if (doc === 'vellum') {
+    drawVellumPaper(surface.ctx, surface.width, surface.height, surface.dpr);
+    builder.draw(surface.ctx, surface.width, surface.height);
+    finishTurn();
+    return scene;
+  }
   const { view, phase, src, body, terrain } = scene;
   aimCamera(body, terrain, view);
   const prediction = phase === 'flying' ? predictCoast(view, body, terrain, { drag: dragFactor(view, src.cfg), clock: scene.clock, terrainOf: src.terrainOf }) : null;
@@ -533,11 +573,17 @@ function frame(nowMs) {
   for (const raw of input.takeActions()) {
     const action = typeof raw === 'string' ? raw : raw.type;
     const value = typeof raw === 'string' ? undefined : raw.value;
+    if (doc === 'vellum') {
+      if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
+      else builder.handleAction(action);
+      continue;
+    }
     if (replay) { onTransport(action, value); continue; }
     if (pageOpen === 'start') {
       const pick = /^pick(\d)$/.exec(action);
       if (pick) handleAction(action);
       else if (action === 'confirm' || action === 'pause' || action === 'back') closePage();
+      else if (action === 'build') openBuilder();
       continue;
     }
     if (pageOpen === 'orbit') {
@@ -553,10 +599,12 @@ function frame(nowMs) {
       else if (action === 'back' || action === 'newStart') showPlan();
       else if (action === 'restart') { closePage(); restart(); }
       else if (action === 'replay') { closePage(); startReplay(); }
+      else if (action === 'build') openBuilder();
       else if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
       continue;
     }
     switch (action) {
+      case 'build': openBuilder(); break;
       case 'restart': restart(); break;
       case 'newStart': case 'back': showPlan(); break;
       case 'replay': startReplay(); break;
@@ -650,5 +698,8 @@ window.__karman = {
   get paused() { return loop.paused; },
   get hold() { return input.hold; },
   get engineLevel() { return sfx.engineLevel; },
+  get doc() { return doc; },
+  get builder() { return builder; },
+  openBuilder, closeBuilder,
   scenarios: Object.keys(SCENARIOS),
 };

@@ -29,13 +29,16 @@ const KEYS = {
   KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
-const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', p: 'chute', c: 'centre', l: 'lock', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7' };
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', b: 'build', e: 'warpTo', p: 'chute', c: 'centre', l: 'lock', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7' };
 const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut', Tab: 'map' };
 const REPLAY_BY_KEY = { r: 'restart', m: 'mute', c: 'centre', l: 'lock', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
   ArrowLeft: 'rev', ArrowRight: 'fwd', Tab: 'map',
   Space: 'toggle', Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut',
 };
+// The builder: letters for the pages, Delete for the selected part.
+const BUILDER_BY_KEY = { m: 'mute', n: 'newStart', b: 'build' };
+const BUILDER_BY_CODE = { Escape: 'back', Delete: 'remove', Backspace: 'remove', Enter: 'confirm' };
 
 function actionFor(e, byKey, byCode) {
   const typed = typeof e.key === 'string' && e.key.length === 1 ? e.key.toLowerCase() : null;
@@ -95,7 +98,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     gestureListeners.forEach((fn) => fn());
   }
 
-  let mode = 'flight'; // 'flight' | 'replay'
+  let mode = 'flight'; // 'flight' | 'replay' | 'builder'
   const observed = {};  // code -> character printed on the key, as seen typed
   const labelListeners = new Set();
 
@@ -112,6 +115,18 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     if (typeof e.key === 'string' && e.key.length === 1 && /^Key[A-Z]$/.test(e.code) && observed[e.code] !== e.key.toUpperCase()) {
       observed[e.code] = e.key.toUpperCase();
       labelListeners.forEach((fn) => fn({ ...observed }));
+    }
+    if (mode === 'builder') {
+      // Typing into a field on the sheet is not a command.
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      const action = actionFor(e, BUILDER_BY_KEY, BUILDER_BY_CODE);
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat) return;
+      gesture();
+      actions.push(action);
+      return;
     }
     if (mode === 'replay') {
       const action = actionFor(e, REPLAY_BY_KEY, REPLAY_BY_CODE);
@@ -266,7 +281,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     setHold(value) { hold = value; updateButtons(); },
     setRails(level) { railsLevel = level; },
     onFirstGesture(fn) { if (gestured) fn(); else gestureListeners.add(fn); },
-    // Switch the keyboard between flying and the replay transport.
+    // Switch the keyboard between flying, the replay transport and the builder.
     setMode(next) { mode = next; held.clear(); pointers.clear(); pulses.clear(); stagePending = false; chutePending = false; updateButtons(); },
     // Key labels learned from what the player actually typed (code -> letter).
     get observedLabels() { return { ...observed }; },
