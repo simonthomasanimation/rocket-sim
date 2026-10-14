@@ -151,15 +151,21 @@ test('the Earth-Moon system is on the shared scale', () => {
   assert.ok(Math.abs((c.x - a.x) - a.vx) < 0.01 && Math.abs((c.y - a.y) - a.vy) < 0.01);
 });
 
-test('the Earth has a flat pad on land and seas between continents', () => {
+test('the Earth has a flat pad on a coast, seas between continents and mountains', () => {
   const t = createTerrain(5, EARTH);
   assert.ok(t.continents.length >= 4, `${t.continents.length} continents`);
   const pad = t.height(0);
   for (let x = t.site.from; x <= t.site.to; x += 5) assert.equal(t.height(x), pad);
   assert.ok(pad > 0, 'the pad is on land');
+  assert.ok(t.isWater(80000) && t.isWater(120000), 'the sea begins east of the pad, under the first stage');
+  assert.ok(!t.isWater(-50000), 'land inland of the pad');
   let water = 0; let land = 0;
-  for (let s = -t.circumference / 2; s < t.circumference / 2; s += 20000) { if (t.isWater(s)) water += 1; else land += 1; }
-  assert.ok(water > 20 && land > 20, `${water} water samples, ${land} land samples`);
+  for (let s = -t.circumference / 2; s < t.circumference / 2; s += 2000) { if (t.isWater(s)) water += 1; else land += 1; }
+  const share = land / (land + water);
+  assert.ok(share > 0.25 && share < 0.45, `land covers ${(share * 100).toFixed(0)} % of the globe`);
+  assert.ok(t.peaks.length >= 3 && t.peaks.every((p) => p.h >= 2000 && p.h <= 4500), `peaks ${t.peaks.map((p) => p.h.toFixed(0)).join(', ')} m`);
+  assert.ok(t.maxHeight <= 4500, `tallest ground ${t.maxHeight.toFixed(0)} m`);
+  for (const s of [123.4, 5000, -70000, t.circumference / 2 - 3]) assert.ok(Math.abs(t.height(s) - t.height(s + t.circumference)) < 1e-6, `wraps at ${s}`);
   const f = createFlight({ seed: 1, scenario: 'earthLaunch' });
   assert.equal(f.body.id, 'earth');
   assert.equal(f.phase, 'pad');

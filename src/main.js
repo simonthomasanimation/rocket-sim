@@ -129,7 +129,7 @@ function stepGame(dt) {
     if (ev.type === 'staged') sfx.stage();
     else if (ev.type === 'splashdown') stampTitleBlock(titleBlock, 'RECOVERED');
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
-    else if (ev.type === 'soi') { camera.bodyRadius = flight.body.radius; camera.snap(flight.state); flashSoi(); }
+    else if (ev.type === 'soi') { aimCamera(flight.body, flight.terrain, flight.state); camera.snap(flight.state); flashSoi(); }
   }
   // Coming down into a slower band, or up to an event, drops the warp to the cap.
   if (warp > maxWarpIndex(flight, eventIn())) setWarp(warp);
@@ -214,6 +214,7 @@ function restart() {
   loop.reset();
   if (!pageOpen) loop.resume();
   camera.resetZoom();
+  aimCamera(flight.body, flight.terrain, flight.state);
   camera.snap(flight.state);
   lastMetShown = -1;
   stampTitleBlock(titleBlock, null);
@@ -394,10 +395,16 @@ function otherBodies(src, body, clock) {
   return out;
 }
 
+// Tell the camera which body it frames and how high the ground is under the craft.
+function aimCamera(body, terrain, state) {
+  camera.bodyRadius = body.radius;
+  camera.groundRadius = terrain.groundRadiusAt(state.x, state.y);
+}
+
 function render(alpha, frameDt) {
   const scene = currentScene(alpha);
   const { view, phase, src, body, terrain } = scene;
-  camera.bodyRadius = body.radius;
+  aimCamera(body, terrain, view);
   const prediction = phase === 'flying' ? predictCoast(view, body, terrain, { drag: dragFactor(view, src.cfg), clock: scene.clock, terrainOf: src.terrainOf }) : null;
   if (!replay) lastPrediction = prediction;
   const extent = extentOf(view, prediction);

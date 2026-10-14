@@ -19,6 +19,7 @@ export function createCamera() {
     groundClearance: 96, // px kept between the surface and the bottom of the flight area, room for the strata
     zoomBias: 0,         // log2 of the player's zoom multiplier; 0 = automatic
     bodyRadius: 1,
+    groundRadius: null,  // radius of the ground under the craft (terrain), or null for the body's
   };
 
   // Where the camera wants to be for the given craft position. `extent` is
@@ -28,7 +29,9 @@ export function createCamera() {
     const R = cam.bodyRadius;
     const r = Math.hypot(state.x, state.y);
     const rot = Math.atan2(state.x, state.y);
-    const alt = Math.max(0, r - R);
+    // Height above the ground under the craft, so a mountain top or a
+    // crater floor frames like the flat pad does.
+    const alt = Math.max(0, r - (cam.groundRadius || R));
     const H = cam.height; const W = cam.width;
     const c = cam.groundClearance; const pad = 24;
     // Near the ground the view is the M1 lander's: never under 3 px/m.

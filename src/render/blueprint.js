@@ -336,7 +336,14 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 
   // Stipple inside the disc when the view is wide enough to read it as a
   // disc; fades out as the hatch band takes over close in.
-  if (s < 0.5) drawStipple(ctx, cam, R, Math.min(1, (0.5 - s) / 0.25));
+  const earth = body.texture === 'earth';
+  if (s < 0.5 && !earth) drawStipple(ctx, cam, R, Math.min(1, (0.5 - s) / 0.25));
+
+  // Heights along the drawn arc, sampled once for the surface line, the
+  // contours and the water line.
+  const hs = new Float64Array(n + 1);
+  for (let k = 0; k <= n; k++) hs[k] = terrain.height((theta0 + k * dTheta) * R);
+  const pointAt = (theta, r) => cam.toScreen(Math.sin(theta) * r, Math.cos(theta) * r);
 
   // Surface polyline.
   ctx.strokeStyle = BLUEPRINT.ink;
@@ -344,7 +351,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
   ctx.lineJoin = 'round';
   ctx.beginPath();
   for (let k = 0; k <= n; k++) {
-    const p = surfaceAt(theta0 + k * dTheta);
+    const p = pointAt(theta0 + k * dTheta, R + hs[k]);
     if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
   }
   if (full) ctx.closePath();
@@ -376,48 +383,13 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
     }
   }
 
-  // Earth: contour lines across the continents at round heights, and a
-  // dashed line under the sea.
-  if (body.texture === 'earth') {
-    const levels = [100, 200, 400, 800];
-    ctx.lineWidth = STROKE.annotation;
-    for (const level of levels) {
-      if (level * s < 5) continue;
-      ctx.strokeStyle = BLUEPRINT.inkPale;
-      ctx.globalAlpha = Math.min(1, (level * s - 5) / 10);
-      ctx.beginPath();
-      let pen = false;
-      for (let k = 0; k <= n; k++) {
-        const th = theta0 + k * dTheta;
-        const h = terrain.height(th * R);
-        if (h >= level) {
-          const r = R + level;
-          const p = cam.toScreen(Math.sin(th) * r, Math.cos(th) * r);
-          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
-          pen = true;
-        } else pen = false;
-      }
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    if (s >= 0.02) {
-      ctx.strokeStyle = BLUEPRINT.inkPale;
-      ctx.setLineDash([6, 6]);
-      ctx.beginPath();
-      let pen = false;
-      const off = Math.min(6, Math.max(3, 2 * s)) / s;
-      for (let k = 0; k <= n; k++) {
-        const th = theta0 + k * dTheta;
-        if (terrain.isWater(th * R)) {
-          const p = cam.toScreen(Math.sin(th) * (R - off), Math.cos(th) * (R - off));
-          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
-          pen = true;
-        } else pen = false;
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-  }
+  // Earth: contour lines across the land at round heights, the step picked
+  // so neighbouring lines sit at least 7 px apart (a finer set fades in
+  // between them as the view closes in); two dashed lines under the sea;
+  // from orbit, where the relief is under a pixel, a band of coast-following
+  // contours inside each landmass so land and sea still read; the highest
+  // peak of each range and each sea labelled when there is room.
+  if (earth) drawEarthFurniture(ctx, cam, body, terrain, hs, { n, theta0, dTheta, full, half, thetaC });
 
   // Hatch band under the surface: 45-degree strokes between "down" and
   // "along", anchored to arc positions so they scroll with the ground.
@@ -475,7 +447,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 
   // Surface ticks: distance along the ground from the pad, at a round step,
   // so sideways motion and horizontal scale read at every zoom.
-  if (!far) {
+  if (!far && R * s >= 120) {
     const step = niceStep(s, 90, 220);
     const arc0 = Math.floor(((thetaC - half) * R) / step) * step;
     const arc1 = (thetaC + half) * R;
@@ -630,6 +602,158 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 
 // Stipple across the disc: one dot per cell of a world-anchored grid, placed
 // by a hash so it never twinkles, only inside the body and the view.
+// Earth's ground furniture (see drawBody). `hs` holds the height at each of
+// the n+1 samples from theta0, dTheta apart.
+function drawEarthFurniture(ctx, cam, body, terrain, hs, { n, theta0, dTheta, full, half, thetaC }) {
+  const R = body.radius;
+  const s = cam.scale;
+  const W = cam.width; const H = cam.height;
+  const pointAt = (theta, r) => cam.toScreen(Math.sin(theta) * r, Math.cos(theta) * r);
+  const onSheet = (p) => p.x > -40 && p.x < W + 40 && p.y > cam.top - 40 && p.y < cam.top + H + 40;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+
+  // Contours: a level step from the ladder so that step * s >= 7 px, drawn
+  // where the land is above the level, with the ends interpolated between
+  // samples. The next finer step fades in as it reaches 3.5 px.
+  const ladder = [5, 10, 20, 50, 100, 200, 500, 1000, 2000];
+  let hmin = Infinity; let hmax = 0;
+  for (let k = 0; k <= n; k++) { if (hs[k] < hmin) hmin = hs[k]; if (hs[k] > hmax) hmax = hs[k]; }
+  const contourAt = (level, alpha) => {
+    if (alpha <= 0 || level > hmax) return;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    let pen = false;
+    for (let k = 0; k <= n; k++) {
+      const above = hs[k] >= level;
+      if (above && !pen) {
+        // Rising edge: start where the ground crosses the level.
+        let th = theta0 + k * dTheta;
+        if (k > 0) { const t = (level - hs[k - 1]) / (hs[k] - hs[k - 1]); th = theta0 + (k - 1 + t) * dTheta; }
+        const p = pointAt(th, R + level); ctx.moveTo(p.x, p.y); pen = true;
+      } else if (!above && pen) {
+        const t = (hs[k - 1] - level) / (hs[k - 1] - hs[k]);
+        const p = pointAt(theta0 + (k - 1 + t) * dTheta, R + level); ctx.lineTo(p.x, p.y); pen = false;
+      }
+      if (above && pen && k > 0) { const p = pointAt(theta0 + k * dTheta, R + level); ctx.lineTo(p.x, p.y); }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  };
+  let major = ladder.find((st) => st * s >= 7) || null;
+  if (major) {
+    const minor = ladder[ladder.indexOf(major) - 1];
+    const lo = Math.max(major, Math.floor(hmin / major) * major);
+    for (let level = lo; level <= hmax; level += major) contourAt(level, Math.min(1, (major * s - 7) / 5));
+    if (minor && minor * s >= 3.5) {
+      const alpha = Math.min(1, (minor * s - 3.5) / 3.5) * 0.7;
+      const lo2 = Math.max(minor, Math.floor(hmin / minor) * minor);
+      for (let level = lo2; level <= hmax; level += minor) if (level % major !== 0) contourAt(level, alpha);
+    }
+  }
+
+  // Water: two dashed lines just under the sea surface, the draughtsman's
+  // ripple, as soon as the sea is wide enough to hold a dash.
+  if (s >= 0.004) {
+    const off = Math.min(6, Math.max(3, 2 * s)) / s;
+    ctx.setLineDash([6, 6]);
+    for (const [depth, dashShift] of [[off, 0], [off * 2.2, 6]]) {
+      ctx.lineDashOffset = dashShift;
+      ctx.beginPath();
+      let pen = false;
+      for (let k = 0; k <= n; k++) {
+        if (hs[k] <= 0.01) {
+          const p = pointAt(theta0 + k * dTheta, R - depth);
+          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+          pen = true;
+        } else pen = false;
+      }
+      ctx.stroke();
+    }
+    ctx.lineDashOffset = 0;
+    ctx.setLineDash([]);
+  }
+
+  // Coast band from orbit: for each run of land, nested arcs 6 px apart
+  // inside the surface, each one drawn back 7 px from the ends of the one
+  // outside it, so a landmass reads like an island on a chart.
+  const bandAlpha = Math.max(0, Math.min(1, (0.004 - s) / 0.002));
+  if (bandAlpha > 0) {
+    ctx.globalAlpha = bandAlpha;
+    const runs = [];
+    let start = -1;
+    for (let k = 0; k <= n; k++) {
+      const land = hs[k] > 0.01;
+      if (land && start < 0) start = k;
+      if ((!land || k === n) && start >= 0) { runs.push([start, land ? k : k - 1]); start = -1; }
+    }
+    // On a full disc a run may wrap across the seam: join the first and last.
+    if (full && runs.length > 1 && runs[0][0] === 0 && runs[runs.length - 1][1] === n) {
+      const last = runs.pop(); runs[0] = [last[0] - n, runs[0][1]];
+    }
+    const pxPerSample = dTheta * R * s;
+    ctx.beginPath();
+    for (const [a, b] of runs) {
+      const widthPx = (b - a) * pxPerSample;
+      if (widthPx < 4) continue;
+      const lines = Math.min(4, Math.floor(widthPx / 14));
+      for (let i = 1; i <= lines; i++) {
+        const inset = (7 * i) / pxPerSample;
+        const ka = a + inset; const kb = b - inset;
+        if (kb <= ka) break;
+        const r = R - (6 * i) / s;
+        const steps = Math.max(2, Math.ceil(kb - ka));
+        for (let j = 0; j <= steps; j++) {
+          const k = ka + (kb - ka) * (j / steps);
+          const p = pointAt(theta0 + k * dTheta, r);
+          if (j === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+        }
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Labels: the peak of each range (with a tick down from it) once the
+  // range is tall on the sheet, and each sea once it is wide enough.
+  const visible = (arc) => full || Math.abs(terrain.wrap(arc - thetaC * R)) < half * R;
+  for (const peak of terrain.peaks || []) {
+    if (!visible(peak.x)) continue;
+    const alpha = labelAlpha(peak.h * s * 2);
+    if (alpha <= 0) continue;
+    const theta = peak.x / R;
+    const p = pointAt(theta, R + peak.h);
+    if (!onSheet(p)) continue;
+    const f = cam.frameAt(theta);
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(p.x + f.up.x * 4, p.y + f.up.y * 4);
+    ctx.lineTo(p.x + f.up.x * 16, p.y + f.up.y * 16);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    label(ctx, `PEAK ${(peak.h / 1000).toFixed(1)} KM`, p.x + f.up.x * 22, p.y + f.up.y * 22 + 5, 'center', BLUEPRINT.inkPale, alpha);
+  }
+  // A sea is labelled at its middle, or at the nearest point of it that is
+  // on the sheet when the middle is not (a coast seen from the land).
+  for (const sea of terrain.seas || []) {
+    const alpha = labelAlpha(sea.w * s / 6);
+    if (alpha <= 0) continue;
+    const margin = Math.min(sea.w * 0.4, 60 / s);
+    const window = full ? Math.PI * R : half * R * 0.85;
+    let arc = terrain.wrap(sea.x - thetaC * R); // relative to the craft
+    if (!full) {
+      if (arc - sea.w / 2 + margin > window || arc + sea.w / 2 - margin < -window) continue;
+      arc = Math.max(-window, Math.min(window, arc));
+      arc = Math.max(terrain.wrap(sea.x - thetaC * R) - sea.w / 2 + margin, Math.min(terrain.wrap(sea.x - thetaC * R) + sea.w / 2 - margin, arc));
+    }
+    const theta = thetaC + arc / R;
+    const inset = Math.min(28 / s, R / 4);
+    const p = pointAt(theta, R - inset);
+    if (!onSheet(p)) continue;
+    label(ctx, 'SEA', p.x, p.y + 5, 'center', BLUEPRINT.inkPale, alpha * 0.8);
+  }
+}
+
 function drawStipple(ctx, cam, R, alpha) {
   const s = cam.scale;
   let cell = 1;

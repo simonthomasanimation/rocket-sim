@@ -8,7 +8,7 @@
 import { createFlight } from '../src/core/flight.js';
 import { predictCoast } from '../src/core/predict.js';
 import { railsAllowed, RAILS } from '../src/core/warp.js';
-import { MOON, EARTH } from '../src/core/body.js';
+import { MOON, EARTH, bodyState } from '../src/core/body.js';
 import { propagate } from '../src/core/kepler.js';
 
 const NONE = { thr: 0, rot: 0, full: 0, cut: 0, stage: 0, hold: 0, warp: 0, chute: 0 };
@@ -96,29 +96,42 @@ export function flyMission({ seed = 1, log = () => {}, stopAt = null } = {}) {
 
   // ---- B: translunar injection ------------------------------------------
   // Wait on the rails until an instant prograde burn would pass the Moon
-  // between 20 and 300 km, then burn for real until the live path does.
+  // between 60 and 250 km (well inside the 15 to 400 km the real burn
+  // accepts, since a finite burn lands a little off the instant one), then
+  // burn for real until the live path does.
   let found = null;
   coast(() => {
-    for (let dv = 900; dv <= 1100; dv += 40) {
+    for (let dv = 900; dv <= 1100; dv += 20) {
       const { state: s, clock } = halfBurn(dv); const v = Math.hypot(s.vx, s.vy);
       const st = { ...s, vx: s.vx * (v + dv) / v, vy: s.vy * (v + dv) / v };
       const p = predictCoast(st, f.body, f.terrain, { clock, terrainOf: f.terrainOf, maxSteps: 2500 });
-      if (p.encounter) { const pe = closestTo(p, 'moon', MOON.radius); if (pe > 20000 && pe < 300000) { found = { dv, pe }; return true; } }
+      if (p.encounter) { const pe = closestTo(p, 'moon', MOON.radius); if (pe > 60000 && pe < 250000) { found = { dv, pe }; return true; } }
     }
     return false;
   }, 60 * 60 * 3, 1, 20);
   if (!found) fail('no translunar window found');
   log(`B  window: ${found.dv} m/s would pass the Moon at ${(found.pe / 1e3).toFixed(0)} km, T+${(f.state.time / 3600).toFixed(2)} h`);
   if (stopAt === 'B') return { flight: f, report };
-  n = 0; let good = false;
+  // The real burn: prograde until the path reaches the Moon's orbit (its
+  // apoapsis touches the Moon's sphere), then trim the approach with short
+  // pulses along or against the velocity until the first pass misses the
+  // Moon by 40 to 160 km. The pass distance is far too sensitive to the
+  // burn's last metres per second to be hit by the burn itself.
+  n = 0;
+  const reach = MOON.orbitRadius - MOON.soi * 0.5;
   while (alive() && n < 60 * 600) {
     burn({ hold: 1 }); n += 1;
-    if (n % 5 === 0) { const p = predict(); if (p.encounter) { const pe = closestTo(p, 'moon', MOON.radius); if (pe > 15000 && pe < 400000) { good = true; break; } } }
+    const e = el();
+    if (e.e >= 1 || e.apAlt + EARTH.radius >= reach) break;
   }
   step({ cut: 1 });
-  if (!good) fail('translunar burn missed');
-  report.tli = { fuel: f.state.fuel, pe: closestTo(predict(), 'moon', MOON.radius) };
-  log(`   burned; Moon periapsis ${(report.tli.pe / 1e3).toFixed(0)} km, ${fuel()}`);
+  if (el().e >= 1) fail('translunar burn ran to escape');
+  log(`   burned to apoapsis ${(el().apAlt / 1e3).toFixed(0)} km, ${fuel()}`);
+  const miss = () => missDistance(predict(), f.clock);
+  correctBy(f, step, alive, log, miss, 40000, 160000, 3, 'Moon pass', true);
+  if (miss() > 400000) fail('translunar trim did not reach the Moon');
+  report.tli = { fuel: f.state.fuel, pe: miss() };
+  log(`   trimmed; Moon pass at ${(report.tli.pe / 1e3).toFixed(0)} km, ${fuel()}`);
 
   // ---- C: to the Moon, capture, descent, landing ------------------------
   coast(() => f.body.id === 'moon', 60 * 60 * 6, 2);
@@ -187,7 +200,7 @@ export function flyMission({ seed = 1, log = () => {}, stopAt = null } = {}) {
   if (!found) fail('no way home found');
   log(`E  home window: ${found.dv} m/s for an Earth periapsis of ${(found.pe / 1e3).toFixed(0)} km, T+${(f.state.time / 3600).toFixed(1)} h`);
   if (stopAt === 'E2') return { flight: f, report };
-  n = 0; good = false;
+  n = 0; let good = false;
   while (alive() && n < 60 * 600) {
     burn({ hold: 1 }); n += 1;
     if (n % 5 === 0) { const p = predict(); if (p.exit && closestTo(p, 'earth', EARTH.radius) < 75000) { good = true; break; } }
@@ -222,6 +235,46 @@ export function flyMission({ seed = 1, log = () => {}, stopAt = null } = {}) {
 // Mid-course correction: aim 90 degrees off prograde, pulse, keep the side
 // that helps, until the periapsis sits between lo and hi. The pulse length
 // adapts to how much the last one moved it.
+// How close the predicted path comes to the Moon on its first pass (metres
+// above the Moon's surface): inside the Moon's sphere the path is already
+// Moon-relative; outside it, the Moon's position at the same moment is used.
+// Later revolutions (more than four days out) do not count.
+function missDistance(p, clock) {
+  let best = Infinity;
+  const segs = p.segments;
+  for (let k = 0; k < segs.length; k++) {
+    const end = k + 1 < segs.length ? segs[k + 1].from : p.points.length;
+    for (let i = segs[k].from; i < end; i++) {
+      const pt = p.points[i];
+      if (pt.t > 4 * 86400) return best;
+      if (segs[k].body === 'moon') best = Math.min(best, Math.hypot(pt.x, pt.y) - MOON.radius);
+      else if (segs[k].body === 'earth') { const m = bodyState(MOON, clock + pt.t); best = Math.min(best, Math.hypot(pt.x - m.x, pt.y - m.y) - MOON.radius); }
+    }
+  }
+  return best;
+}
+
+// Pulse the engine along (or, when `along` is false, across) the velocity
+// until `measure()` is between lo and hi: the first pulse finds which way
+// helps and how much, the rest are sized from that.
+function correctBy(f, step, alive, log, measure, lo, hi, ticks, what, along) {
+  let side = 1; let pulses = 0; let gain = 0;
+  const mid = (lo + hi) / 2;
+  let before = measure();
+  while (alive() && (before < lo || before > hi) && pulses < 60) {
+    if (gain > 0) ticks = Math.max(2, Math.min(20, Math.round(Math.abs(mid - before) / gain)));
+    aim(f, step, () => Math.atan2(f.state.vx, f.state.vy) + (along ? (side > 0 ? 0 : Math.PI) : side * Math.PI / 2));
+    for (let i = 0; i < ticks; i++) step({ full: 1 });
+    step({ cut: 1 });
+    const after = measure();
+    gain = Math.abs(after - before) / ticks;
+    if ((after > before) !== (before < lo)) side = -side;
+    before = after;
+    pulses += 1;
+  }
+  log(`   corrected: ${what} ${(before / 1e3).toFixed(0)} km after ${pulses} pulses, ${f.state.fuel.toFixed(0)} kg left`);
+}
+
 function correct(f, step, el, alive, log, lo, hi, ticks) {
   let side = 1; let pulses = 0; let gain = 0;
   const mid = (lo + hi) / 2;
