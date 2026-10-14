@@ -10,7 +10,7 @@
 const BUTTONS = [
   { action: 'exit', label: 'EXIT', key: 'ESC' },
   { action: 'rev', label: 'REV', key: 'J' },
-  { action: 'stepBack', label: 'STEP −', key: ',', code: 'Comma', repeat: true },
+  { action: 'stepBack', label: 'STEP −', key: ',', repeat: true },
   { action: 'toggle', label: 'PLAY', key: 'SPACE', id: 'toggle' },
   { action: 'stepFwd', label: 'STEP +', key: '.', code: 'Period', repeat: true },
   { action: 'fwd', label: 'FWD', key: 'L' },
