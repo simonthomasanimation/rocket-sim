@@ -72,11 +72,72 @@ export function drawScene(ctx, cam, scene) {
   ctx.rect(0, cam.top, cam.width, cam.height);
   ctx.clip();
   drawBody(ctx, cam, body, terrain, state);
+  drawAltitudeRuler(ctx, cam, body, terrain, state);
   if (phase === 'flying' && prediction) drawPrediction(ctx, cam, prediction, body);
   for (const d of debris || []) drawDebris(ctx, cam, d, cfg);
   drawCraft(ctx, cam, state, cfg, phase);
   if (phase === 'landed' || phase === 'crashed') drawOutcomeLabel(ctx, cam, state, cfg, phase);
   ctx.restore();
+}
+
+// A round number of metres that spans between 48 and 120 px at this zoom.
+function niceStep(scale, minPx = 48, maxPx = 120) {
+  let step = 1;
+  const steps = [1, 2, 5];
+  for (let mag = 1; mag <= 1e7; mag *= 10) {
+    for (const f of steps) { step = f * mag; if (step * scale >= minPx) return step; }
+  }
+  return step;
+}
+
+// Scale bar, top left of the sheet: its label changes as the view zooms, so
+// a change of zoom is never silent.
+export function drawScaleBar(ctx, cam, x, y) {
+  const step = niceStep(cam.scale, 48, 160);
+  const px = step * cam.scale;
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, y - 4); ctx.lineTo(x + 0.5, y + 4);
+  ctx.moveTo(x, y + 0.5); ctx.lineTo(x + px, y + 0.5);
+  ctx.moveTo(x + px + 0.5, y - 4); ctx.lineTo(x + px + 0.5, y + 4);
+  ctx.moveTo(x + px / 2 + 0.5, y); ctx.lineTo(x + px / 2 + 0.5, y + 3);
+  ctx.stroke();
+  label(ctx, `SCALE ${formatDistance(step)}`, x, y - 4, 'left', BLUEPRINT.inkPale);
+}
+
+// Altitude ruler down the left edge: ticks in metres above the ground
+// under the craft, scrolling as it climbs or sinks, spaced wider as the
+// view zooms in. The ground tick is the heavy one.
+function drawAltitudeRuler(ctx, cam, body, terrain, state) {
+  const s = cam.scale;
+  const r = Math.hypot(state.x, state.y);
+  const alt = r - terrain.groundRadiusAt(state.x, state.y);
+  if (alt > 60000 || alt * s > cam.height * 40) return;
+  const craft = cam.toScreen(state.x, state.y);
+  const groundY = craft.y + alt * s;           // the view is turned so up is up
+  const x = 3 * 8;
+  const top = cam.top + 13 * 8;
+  const bottom = cam.top + cam.height - 8;
+  if (groundY < top) return;
+  const step = niceStep(s, 40, 100);
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, top); ctx.lineTo(x + 0.5, Math.min(bottom, groundY));
+  ctx.stroke();
+  for (let h = 0; ; h += step) {
+    const y = groundY - h * s;
+    if (y < top) break;
+    if (y > bottom) continue;
+    const major = h === 0;
+    ctx.strokeStyle = major ? BLUEPRINT.ink : BLUEPRINT.inkPale;
+    ctx.lineWidth = major ? STROKE.structure : STROKE.annotation;
+    ctx.beginPath();
+    ctx.moveTo(x - (major ? 8 : 4), Math.round(y) + 0.5); ctx.lineTo(x + (major ? 8 : 4), Math.round(y) + 0.5);
+    ctx.stroke();
+    label(ctx, major ? 'GROUND' : formatDistance(h), x + 10, y + 5, 'left', major ? BLUEPRINT.ink : BLUEPRINT.inkPale);
+  }
 }
 
 // Detail inset: the vehicle full-frame in a boxed callout (an engineering
@@ -85,10 +146,10 @@ export function drawScene(ctx, cam, scene) {
 export function drawDetail(ctx, cam, { state, cfg, phase }, box) {
   const h = craftHeight(state, cfg);
   if (h * cam.scale >= 48) return;
-  const k = (box.h * 0.66) / h;
+  const k = (box.h * 0.72) / h;
   const tilt = state.angle - Math.atan2(state.x, state.y);
   const cx = box.x + box.w / 2;
-  const cy = box.y + box.h * 0.56;
+  const cy = box.y + box.h * 0.54;
   // Place the base so the body sits centred whatever the tilt.
   const base = { x: cx - Math.sin(tilt) * (h * k) / 2, y: cy + Math.cos(tilt) * (h * k) / 2 };
   const mini = { scale: k, rot: Math.atan2(state.x, state.y), toScreen: () => base };

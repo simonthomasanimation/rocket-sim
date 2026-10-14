@@ -4,7 +4,7 @@
 // a compass-rose attitude indicator, stage figures and the CAPCOM line.
 // Two-tone ink; accent only when an alert says so.
 
-import { BLUEPRINT, STROKE, MONO, formatDistance, formatTime } from '../render/blueprint.js';
+import { BLUEPRINT, STROKE, MONO, formatDistance, formatTime, drawScaleBar } from '../render/blueprint.js';
 
 const G = 8; // grid
 
@@ -61,7 +61,7 @@ export function createHud() {
   }
 
   // info: { stageText, dv, twr, hold, pitch, prograde (relative to local up, or null) }
-  function draw(ctx, { width, height, titleBlockWidth, narrow, timeSeconds }, view, alerts, capcomLine, info) {
+  function draw(ctx, { width, height, titleBlockWidth, narrow, timeSeconds, camera }, view, alerts, capcomLine, info) {
     const H = hudHeight(narrow);
     const top = height - H;
     const blink1 = Math.floor(timeSeconds * 2) % 2 === 0;   // 1 Hz
@@ -117,6 +117,8 @@ export function createHud() {
     const cy = inStrip ? top + 7 * G : 3 * G;
     const maxW = inStrip ? capRight - L.cap : width - 5 * G - titleBlockWidth;
     capcom(ctx, cx, cy, maxW, capcomLine, capcomRevealed, capcomLine && capcomLine.critical ? (blink2 ? 'critical' : 'none') : 'none', inStrip ? 1 : 2);
+    if (camera) drawScaleBar(ctx, camera, 3 * G, 10 * G);
+    if (info.paused) banner(ctx, width / 2, narrow ? 22 * G : 4 * G, 'PAUSED   SPACE TO RESUME');
     ctx.restore();
   }
 
@@ -272,6 +274,15 @@ function stack(ctx, x, bottom, stages) {
     text(ctx, `S${i + 1}`, x - 4, y + h / 2, { size: 8, weight: 400, align: 'right', colour: live ? BLUEPRINT.ink : BLUEPRINT.inkPale });
   });
   text(ctx, 'STACK', x + w / 2, bottom - stages.length * (h + gap) - 7, { size: 9, weight: 400, align: 'center', colour: BLUEPRINT.inkPale });
+}
+
+// A boxed line of type in the sheet, inverted so it cannot be missed.
+function banner(ctx, cx, y, str) {
+  ctx.font = `500 12px ${MONO}`;
+  const w = ctx.measureText(str).width + 24;
+  ctx.fillStyle = BLUEPRINT.ink;
+  ctx.fillRect(Math.round(cx - w / 2), y, Math.round(w), 24);
+  text(ctx, str, cx, y + 12, { size: 12, align: 'center', colour: BLUEPRINT.paper });
 }
 
 // Label left, value right-aligned in the field, boxed only when alerting.

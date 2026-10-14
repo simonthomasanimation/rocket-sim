@@ -122,6 +122,8 @@ function setPaused(value) {
   if (userPaused) loop.pause(); else loop.resume();
   setWarp(0);
   updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : 'BLUEPRINT' });
+  const cell = titleBlock.querySelector('[data-field="document"]');
+  if (cell) cell.classList.toggle('is-active', userPaused);
 }
 function togglePause() { setPaused(!userPaused); }
 // Right arrow: a notch faster, or play again from pause. Left arrow: a
@@ -291,8 +293,8 @@ function render(alpha, frameDt) {
   // Detail inset: the vehicle full-frame whenever the main view draws it small.
   const isNarrow = narrow();
   const box = isNarrow
-    ? { x: surface.width - 16 - 112, y: 16 + (titleBlock.offsetHeight || 170) + 8, w: 112, h: 136 }
-    : { x: surface.width - 16 - 176, y: 16, w: 176, h: 208 };
+    ? { x: surface.width - 16 - 136, y: 16 + (titleBlock.offsetHeight || 170) + 8, w: 136, h: 168 }
+    : { x: surface.width - 16 - 240, y: 16, w: 240, h: 272 };
   drawDetail(surface.ctx, camera, { state: view, cfg: src.cfg, phase }, box);
   const a = scene.alerts || alerts || computeAlerts(src, prediction);
   hud.update(view, a, scene.capcom, frameDt);
@@ -304,6 +306,7 @@ function render(alpha, frameDt) {
     dv: deltaV(view, src.cfg),
     twr: twr(view, src.cfg, src.body),
     hold: scene.hold,
+    paused: !replay && userPaused && !pageOpen,
     prograde: speed > 0.5 ? progradeAngle(view) - up : null,
     hDirection: view.vx * Math.cos(up) - view.vy * Math.sin(up),
   };
@@ -313,6 +316,7 @@ function render(alpha, frameDt) {
     titleBlockWidth: titleBlock.offsetWidth || 240,
     narrow: isNarrow,
     timeSeconds: performance.now() / 1000,
+    camera,
   }, view, a, scene.capcom, info);
   return scene;
 }

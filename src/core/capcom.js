@@ -17,7 +17,15 @@ export const LINES = {
   landed: 'Contact light. Engine stop. Welcome to the Moon.',
   crashed: 'We have lost your signal.',
   escaped: 'You have left lunar space. Flight terminated.',
+  alt500: 'Five hundred metres.',
+  alt200: 'Two hundred metres.',
+  alt100: 'One hundred metres.',
+  alt50: 'Fifty metres.',
+  alt20: 'Twenty metres.',
 };
+
+// Altitude callouts on the way down, read once each as the craft sinks past them.
+const CALLOUTS = [[500, 'alt500'], [200, 'alt200'], [100, 'alt100'], [50, 'alt50'], [20, 'alt20']];
 
 export function createCapcom() {
   const said = new Set();
@@ -48,6 +56,9 @@ export function createCapcom() {
       else if (alerts.fuel === 'caution') say('fuelLow', t);
       if (alerts.descent === 'critical') say('rate', t, true);
       if (alerts.drift === 'caution') say('drift', t);
+      if (alerts.vSpeed > 0.5) {
+        for (const [h, key] of CALLOUTS) if (alerts.altitude < h && alerts.altitude > h * 0.6) say(key, t);
+      }
     },
   };
 }

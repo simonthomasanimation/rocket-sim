@@ -1506,7 +1506,15 @@ const LINES = {
   landed: 'Contact light. Engine stop. Welcome to the Moon.',
   crashed: 'We have lost your signal.',
   escaped: 'You have left lunar space. Flight terminated.',
+  alt500: 'Five hundred metres.',
+  alt200: 'Two hundred metres.',
+  alt100: 'One hundred metres.',
+  alt50: 'Fifty metres.',
+  alt20: 'Twenty metres.',
 };
+
+// Altitude callouts on the way down, read once each as the craft sinks past them.
+const CALLOUTS = [[500, 'alt500'], [200, 'alt200'], [100, 'alt100'], [50, 'alt50'], [20, 'alt20']];
 
 function createCapcom() {
   const said = new Set();
@@ -1537,6 +1545,9 @@ function createCapcom() {
       else if (alerts.fuel === 'caution') say('fuelLow', t);
       if (alerts.descent === 'critical') say('rate', t, true);
       if (alerts.drift === 'caution') say('drift', t);
+      if (alerts.vSpeed > 0.5) {
+        for (const [h, key] of CALLOUTS) if (alerts.altitude < h && alerts.altitude > h * 0.6) say(key, t);
+      }
     },
   };
 }
@@ -1943,11 +1954,72 @@ function drawScene(ctx, cam, scene) {
   ctx.rect(0, cam.top, cam.width, cam.height);
   ctx.clip();
   drawBody(ctx, cam, body, terrain, state);
+  drawAltitudeRuler(ctx, cam, body, terrain, state);
   if (phase === 'flying' && prediction) drawPrediction(ctx, cam, prediction, body);
   for (const d of debris || []) drawDebris(ctx, cam, d, cfg);
   drawCraft(ctx, cam, state, cfg, phase);
   if (phase === 'landed' || phase === 'crashed') drawOutcomeLabel(ctx, cam, state, cfg, phase);
   ctx.restore();
+}
+
+// A round number of metres that spans between 48 and 120 px at this zoom.
+function niceStep(scale, minPx = 48, maxPx = 120) {
+  let step = 1;
+  const steps = [1, 2, 5];
+  for (let mag = 1; mag <= 1e7; mag *= 10) {
+    for (const f of steps) { step = f * mag; if (step * scale >= minPx) return step; }
+  }
+  return step;
+}
+
+// Scale bar, top left of the sheet: its label changes as the view zooms, so
+// a change of zoom is never silent.
+function drawScaleBar(ctx, cam, x, y) {
+  const step = niceStep(cam.scale, 48, 160);
+  const px = step * cam.scale;
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, y - 4); ctx.lineTo(x + 0.5, y + 4);
+  ctx.moveTo(x, y + 0.5); ctx.lineTo(x + px, y + 0.5);
+  ctx.moveTo(x + px + 0.5, y - 4); ctx.lineTo(x + px + 0.5, y + 4);
+  ctx.moveTo(x + px / 2 + 0.5, y); ctx.lineTo(x + px / 2 + 0.5, y + 3);
+  ctx.stroke();
+  label(ctx, `SCALE ${formatDistance(step)}`, x, y - 4, 'left', BLUEPRINT.inkPale);
+}
+
+// Altitude ruler down the left edge: ticks in metres above the ground
+// under the craft, scrolling as it climbs or sinks, spaced wider as the
+// view zooms in. The ground tick is the heavy one.
+function drawAltitudeRuler(ctx, cam, body, terrain, state) {
+  const s = cam.scale;
+  const r = Math.hypot(state.x, state.y);
+  const alt = r - terrain.groundRadiusAt(state.x, state.y);
+  if (alt > 60000 || alt * s > cam.height * 40) return;
+  const craft = cam.toScreen(state.x, state.y);
+  const groundY = craft.y + alt * s;           // the view is turned so up is up
+  const x = 3 * 8;
+  const top = cam.top + 13 * 8;
+  const bottom = cam.top + cam.height - 8;
+  if (groundY < top) return;
+  const step = niceStep(s, 40, 100);
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, top); ctx.lineTo(x + 0.5, Math.min(bottom, groundY));
+  ctx.stroke();
+  for (let h = 0; ; h += step) {
+    const y = groundY - h * s;
+    if (y < top) break;
+    if (y > bottom) continue;
+    const major = h === 0;
+    ctx.strokeStyle = major ? BLUEPRINT.ink : BLUEPRINT.inkPale;
+    ctx.lineWidth = major ? STROKE.structure : STROKE.annotation;
+    ctx.beginPath();
+    ctx.moveTo(x - (major ? 8 : 4), Math.round(y) + 0.5); ctx.lineTo(x + (major ? 8 : 4), Math.round(y) + 0.5);
+    ctx.stroke();
+    label(ctx, major ? 'GROUND' : formatDistance(h), x + 10, y + 5, 'left', major ? BLUEPRINT.ink : BLUEPRINT.inkPale);
+  }
 }
 
 // Detail inset: the vehicle full-frame in a boxed callout (an engineering
@@ -1956,10 +2028,10 @@ function drawScene(ctx, cam, scene) {
 function drawDetail(ctx, cam, { state, cfg, phase }, box) {
   const h = craftHeight(state, cfg);
   if (h * cam.scale >= 48) return;
-  const k = (box.h * 0.66) / h;
+  const k = (box.h * 0.72) / h;
   const tilt = state.angle - Math.atan2(state.x, state.y);
   const cx = box.x + box.w / 2;
-  const cy = box.y + box.h * 0.56;
+  const cy = box.y + box.h * 0.54;
   // Place the base so the body sits centred whatever the tilt.
   const base = { x: cx - Math.sin(tilt) * (h * k) / 2, y: cy + Math.cos(tilt) * (h * k) / 2 };
   const mini = { scale: k, rot: Math.atan2(state.x, state.y), toScreen: () => base };
@@ -2553,6 +2625,7 @@ __exports.drawPaper = drawPaper;
 __exports.STROKE = STROKE;
 __exports.MONO = MONO;
 __exports.drawScene = drawScene;
+__exports.drawScaleBar = drawScaleBar;
 __exports.drawDetail = drawDetail;
 __exports.formatDistance = formatDistance;
 __exports.formatTime = formatTime;
@@ -3148,7 +3221,7 @@ const __exports = {};
 // a compass-rose attitude indicator, stage figures and the CAPCOM line.
 // Two-tone ink; accent only when an alert says so.
 
-const { BLUEPRINT, STROKE, MONO, formatDistance, formatTime } = __m("src/render/blueprint.js");
+const { BLUEPRINT, STROKE, MONO, formatDistance, formatTime, drawScaleBar } = __m("src/render/blueprint.js");
 
 const G = 8; // grid
 
@@ -3205,7 +3278,7 @@ function createHud() {
   }
 
   // info: { stageText, dv, twr, hold, pitch, prograde (relative to local up, or null) }
-  function draw(ctx, { width, height, titleBlockWidth, narrow, timeSeconds }, view, alerts, capcomLine, info) {
+  function draw(ctx, { width, height, titleBlockWidth, narrow, timeSeconds, camera }, view, alerts, capcomLine, info) {
     const H = hudHeight(narrow);
     const top = height - H;
     const blink1 = Math.floor(timeSeconds * 2) % 2 === 0;   // 1 Hz
@@ -3261,6 +3334,8 @@ function createHud() {
     const cy = inStrip ? top + 7 * G : 3 * G;
     const maxW = inStrip ? capRight - L.cap : width - 5 * G - titleBlockWidth;
     capcom(ctx, cx, cy, maxW, capcomLine, capcomRevealed, capcomLine && capcomLine.critical ? (blink2 ? 'critical' : 'none') : 'none', inStrip ? 1 : 2);
+    if (camera) drawScaleBar(ctx, camera, 3 * G, 10 * G);
+    if (info.paused) banner(ctx, width / 2, narrow ? 22 * G : 4 * G, 'PAUSED   SPACE TO RESUME');
     ctx.restore();
   }
 
@@ -3416,6 +3491,15 @@ function stack(ctx, x, bottom, stages) {
     text(ctx, `S${i + 1}`, x - 4, y + h / 2, { size: 8, weight: 400, align: 'right', colour: live ? BLUEPRINT.ink : BLUEPRINT.inkPale });
   });
   text(ctx, 'STACK', x + w / 2, bottom - stages.length * (h + gap) - 7, { size: 9, weight: 400, align: 'center', colour: BLUEPRINT.inkPale });
+}
+
+// A boxed line of type in the sheet, inverted so it cannot be missed.
+function banner(ctx, cx, y, str) {
+  ctx.font = `500 12px ${MONO}`;
+  const w = ctx.measureText(str).width + 24;
+  ctx.fillStyle = BLUEPRINT.ink;
+  ctx.fillRect(Math.round(cx - w / 2), y, Math.round(w), 24);
+  text(ctx, str, cx, y + 12, { size: 12, align: 'center', colour: BLUEPRINT.paper });
 }
 
 // Label left, value right-aligned in the field, boxed only when alerting.
@@ -3917,6 +4001,8 @@ function setPaused(value) {
   if (userPaused) loop.pause(); else loop.resume();
   setWarp(0);
   updateTitleBlock(titleBlock, { document: userPaused ? 'PAUSED' : 'BLUEPRINT' });
+  const cell = titleBlock.querySelector('[data-field="document"]');
+  if (cell) cell.classList.toggle('is-active', userPaused);
 }
 function togglePause() { setPaused(!userPaused); }
 // Right arrow: a notch faster, or play again from pause. Left arrow: a
@@ -4086,8 +4172,8 @@ function render(alpha, frameDt) {
   // Detail inset: the vehicle full-frame whenever the main view draws it small.
   const isNarrow = narrow();
   const box = isNarrow
-    ? { x: surface.width - 16 - 112, y: 16 + (titleBlock.offsetHeight || 170) + 8, w: 112, h: 136 }
-    : { x: surface.width - 16 - 176, y: 16, w: 176, h: 208 };
+    ? { x: surface.width - 16 - 136, y: 16 + (titleBlock.offsetHeight || 170) + 8, w: 136, h: 168 }
+    : { x: surface.width - 16 - 240, y: 16, w: 240, h: 272 };
   drawDetail(surface.ctx, camera, { state: view, cfg: src.cfg, phase }, box);
   const a = scene.alerts || alerts || computeAlerts(src, prediction);
   hud.update(view, a, scene.capcom, frameDt);
@@ -4099,6 +4185,7 @@ function render(alpha, frameDt) {
     dv: deltaV(view, src.cfg),
     twr: twr(view, src.cfg, src.body),
     hold: scene.hold,
+    paused: !replay && userPaused && !pageOpen,
     prograde: speed > 0.5 ? progradeAngle(view) - up : null,
     hDirection: view.vx * Math.cos(up) - view.vy * Math.sin(up),
   };
@@ -4108,6 +4195,7 @@ function render(alpha, frameDt) {
     titleBlockWidth: titleBlock.offsetWidth || 240,
     narrow: isNarrow,
     timeSeconds: performance.now() / 1000,
+    camera,
   }, view, a, scene.capcom, info);
   return scene;
 }
