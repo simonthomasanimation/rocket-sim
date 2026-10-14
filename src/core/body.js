@@ -39,7 +39,10 @@ export const MOON = Object.freeze({
   mu: MOON_MU,
   parent: 'earth',
   orbitRadius: MOON_ORBIT,
-  phase0: Math.PI / 3,       // where the Moon is at clock 0, radians counter-clockwise from +x
+  // Where the Moon is at clock 0 (radians from +x, the usual way round):
+  // about 115 degrees ahead of the pad, the lead a transfer needs, so a
+  // burn from the orbit starts reaches it.
+  phase0: -0.436,
   // Sphere of influence: a (m/M)^(2/5), about 38 Moon radii.
   soi: MOON_ORBIT * Math.pow(MOON_MU / EARTH_MU, 0.4),
   atmosphere: null,
@@ -61,13 +64,14 @@ export function orbitalPeriod(body) {
 }
 
 // Position and velocity of a body relative to its parent at a clock time
-// (seconds). Circular orbit, counter-clockwise.
+// (seconds). Circular orbit, clockwise on the sheet: the way a rocket goes
+// when it tips right off the pad, so launches are prograde with the Moon.
 export function bodyState(body, clock) {
   if (!body.parent) return { x: 0, y: 0, vx: 0, vy: 0 };
   const n = meanMotion(body);
   const a = body.orbitRadius;
-  const th = body.phase0 + n * clock;
-  return { x: a * Math.cos(th), y: a * Math.sin(th), vx: -a * n * Math.sin(th), vy: a * n * Math.cos(th) };
+  const th = body.phase0 - n * clock;
+  return { x: a * Math.cos(th), y: a * Math.sin(th), vx: a * n * Math.sin(th), vy: -a * n * Math.cos(th) };
 }
 
 // Children of a body (bodies that orbit it).

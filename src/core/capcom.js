@@ -17,6 +17,8 @@ export const LINES = {
   landed: 'Contact light. Engine stop. Welcome to the Moon.',
   crashed: 'We have lost your signal.',
   escaped: 'You have left lunar space. Flight terminated.',
+  soiMoon: 'Entering the Moon\'s sphere of influence. Lunar gravity has you now.',
+  soiEarth: 'Back in Earth\'s sphere of influence.',
   alt500: 'Five hundred metres.',
   alt200: 'Two hundred metres.',
   alt100: 'One hundred metres.',
@@ -46,6 +48,7 @@ export function createCapcom() {
         if (ev.type === 'liftoff') say('liftoff', t);
         else if (ev.type === 'staged') say('staged', t);
         else if (ev.type === 'orbit' && flight.stats.orbit) say('orbit', t, false, `Orbit confirmed. Periapsis ${(flight.stats.orbit.pe / 1000).toFixed(1)} km.`);
+        else if (ev.type === 'soi') say(`soi${ev.tick}`, t, false, LINES[ev.to === 'moon' ? 'soiMoon' : 'soiEarth']);
       }
       if (flight.phase === 'landed') { say('landed', t); return; }
       if (flight.phase === 'crashed') { say('crashed', t, true); return; }

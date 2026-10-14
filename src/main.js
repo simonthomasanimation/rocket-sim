@@ -65,7 +65,7 @@ function stepGame(dt) {
   // The alert rules look ten seconds ahead; a short prediction every third
   // tick is plenty. The drawing predicts the whole path from the view.
   if (flight.phase !== 'flying') shortPrediction = null;
-  else if (sinceShort >= 3) { shortPrediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400, drag: flight.drag() }); sinceShort = 0; }
+  else if (sinceShort >= 3) { shortPrediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400, drag: flight.drag(), clock: flight.clock }); sinceShort = 0; }
   sinceShort += 1;
   alerts = computeAlerts(flight, shortPrediction);
   capcom.update(flight, alerts);
@@ -74,11 +74,20 @@ function stepGame(dt) {
     const ev = flight.events[seenEvents];
     if (ev.type === 'staged') sfx.stage();
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
+    else if (ev.type === 'soi') { camera.bodyRadius = flight.body.radius; camera.snap(flight.state); flashSoi(); }
   }
   // Coming down into a slower band drops the warp to that band's cap.
   if (warp > maxWarpIndex(flight)) setWarp(warp);
 }
 const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: stepGame });
+
+// A sphere-of-influence change flashes the SOI cell for a moment.
+let soiFlashUntil = 0;
+function flashSoi() {
+  soiFlashUntil = performance.now() + 1500;
+  const cell = titleBlock.querySelector('[data-field="soi"]');
+  if (cell) { cell.classList.add('is-active'); setTimeout(() => { if (performance.now() >= soiFlashUntil - 10) cell.classList.remove('is-active'); }, 1500); }
+}
 
 let pageOpen = null;        // 'start' | 'report' | null
 let reportDueAt = null;     // flight tick at which the report page opens
@@ -264,10 +273,11 @@ function currentScene(alpha) {
   if (replay) {
     const sample = sampleTimeline(replay.timeline, replay.cursor);
     const src = replay.timeline.flight;
-    return { view: sample.state, phase: sample.phase, alerts: sample.alerts, capcom: sample.capcom, src, debris: sample.debris, hold: 0, clock: sample.clock };
+    const body = BODIES[sample.body] || src.body;
+    return { view: sample.state, phase: sample.phase, alerts: sample.alerts, capcom: sample.capcom, src, debris: sample.debris, hold: 0, clock: sample.clock, body, terrain: src.terrainOf(body) };
   }
   const view = interpolated(flight, alpha);
-  return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight, debris: flight.debris, hold: input.hold, clock: flight.clock };
+  return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight, debris: flight.debris, hold: input.hold, clock: flight.clock, body: flight.body, terrain: flight.terrain };
 }
 
 // How far the predicted path reaches from the craft (up, down, sideways in
@@ -278,9 +288,13 @@ function extentOf(view, prediction) {
   const ux = view.x / r; const uy = view.y / r;
   let up = 0; let down = 0; let side = 0;
   const pts = prediction.points;
+  const segs = prediction.segments || [{ from: 0, offset: { x: 0, y: 0 } }];
   const stride = Math.max(1, Math.floor(pts.length / 400));
+  let k = 0;
   for (let i = 0; i < pts.length; i += stride) {
-    const dx = pts[i].x - view.x; const dy = pts[i].y - view.y;
+    while (k + 1 < segs.length && segs[k + 1].from <= i) k += 1;
+    const o = segs[k].offset;
+    const dx = pts[i].x + o.x - view.x; const dy = pts[i].y + o.y - view.y;
     const radial = dx * ux + dy * uy;
     const along = Math.abs(dx * uy - dy * ux);
     if (radial > up) up = radial;
@@ -292,27 +306,29 @@ function extentOf(view, prediction) {
 
 // The other bodies as seen from the current one: its children and its
 // parent, at their places on the clock.
-function otherBodies(src, clock) {
+function otherBodies(src, body, clock) {
   const out = [];
-  for (const child of childrenOf(src.body)) {
+  for (const child of childrenOf(body)) {
     const p = bodyState(child, clock);
     out.push({ body: child, terrain: src.terrainOf(child), offset: { x: p.x, y: p.y } });
   }
-  if (src.body.parent) {
-    const p = bodyState(src.body, clock);
-    out.push({ body: BODIES[src.body.parent], terrain: src.terrainOf(BODIES[src.body.parent]), offset: { x: -p.x, y: -p.y } });
+  if (body.parent) {
+    const p = bodyState(body, clock);
+    out.push({ body: BODIES[body.parent], terrain: src.terrainOf(BODIES[body.parent]), offset: { x: -p.x, y: -p.y } });
   }
   return out;
 }
 
 function render(alpha, frameDt) {
   const scene = currentScene(alpha);
-  const { view, phase, src } = scene;
-  camera.bodyRadius = src.body.radius;
-  const prediction = phase === 'flying' ? predictCoast(view, src.body, src.terrain, { drag: dragFactor(view, src.cfg) }) : null;
-  camera.follow(view, frameDt, extentOf(view, prediction));
+  const { view, phase, src, body, terrain } = scene;
+  camera.bodyRadius = body.radius;
+  const prediction = phase === 'flying' ? predictCoast(view, body, terrain, { drag: dragFactor(view, src.cfg), clock: scene.clock, terrainOf: src.terrainOf }) : null;
+  const extent = extentOf(view, prediction);
+  lastExtent = extent;
+  camera.follow(view, frameDt, extent);
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
-  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body: src.body, terrain: src.terrain, prediction, debris: scene.debris, others: otherBodies(src, scene.clock) });
+  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body, terrain, prediction, debris: scene.debris, others: otherBodies(src, body, scene.clock) });
   // Detail inset: the vehicle full-frame whenever the main view draws it small.
   const isNarrow = narrow();
   const box = isNarrow
@@ -324,10 +340,11 @@ function render(alpha, frameDt) {
   const up = Math.atan2(view.x, view.y);
   const speed = Math.hypot(view.vx, view.vy);
   const info = {
+    bodyName: body.name,
     stageText: `${view.stage + 1}/${src.cfg.stages.length}`,
     stages: src.cfg.stages.map((st, i) => ({ name: st.name, frac: i === view.stage ? view.fuel / st.fuelMass : i > view.stage ? 1 : 0, state: i < view.stage ? 'dropped' : i === view.stage ? 'live' : 'full' })),
     dv: deltaV(view, src.cfg),
-    twr: twr(view, src.cfg, src.body),
+    twr: twr(view, src.cfg, body),
     hold: scene.hold,
     paused: !replay && userPaused && !pageOpen,
     prograde: speed > 0.5 ? progradeAngle(view) - up : null,
@@ -358,6 +375,7 @@ mountTitleBlock(titleBlock, {
 
 let lastMetShown = -1;
 let lastFrameMs = null;
+let lastExtent = null;
 function frame(nowMs) {
   const frameDt = lastFrameMs === null ? 0 : Math.min(0.1, (nowMs - lastFrameMs) / 1000);
   lastFrameMs = nowMs;
@@ -433,7 +451,7 @@ function frame(nowMs) {
   const metSeconds = Math.floor(scene.view.time);
   if (metSeconds !== lastMetShown) {
     lastMetShown = metSeconds;
-    updateTitleBlock(titleBlock, { met: metSeconds, soi: scene.src.body.name });
+    updateTitleBlock(titleBlock, { met: metSeconds, soi: scene.body.name });
   }
   requestAnimationFrame(frame);
 }
@@ -465,5 +483,6 @@ window.__karman = {
   get scenario() { return scenarioId; },
   get camera() { return camera; },
   get warp() { return WARPS[warp]; },
+  get extent() { return lastExtent; },
   scenarios: Object.keys(SCENARIOS),
 };

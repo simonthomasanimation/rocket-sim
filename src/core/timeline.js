@@ -27,11 +27,11 @@ export function buildTimeline(recording, { maxTicks = 60 * 60 * 90, maxFrames = 
   function capture(force = false) {
     const live = flight.phase === 'flying';
     if (!live) prediction = null;
-    else if (sinceLast >= 3 || !prediction) { prediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400, drag: flight.drag() }); sinceLast = 0; }
+    else if (sinceLast >= 3 || !prediction) { prediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400, drag: flight.drag(), clock: flight.clock }); sinceLast = 0; }
     const alerts = computeAlerts(flight, prediction);
     capcom.update(flight, alerts);
     if (force || flight.tick % stride === 0) {
-      frames.push({ tick: flight.tick, clock: flight.clock, state: { ...flight.state }, debris: flight.debris.map((d) => ({ ...d })), phase: flight.phase, alerts, capcom: capcom.latest });
+      frames.push({ tick: flight.tick, clock: flight.clock, body: flight.body.id, state: { ...flight.state }, debris: flight.debris.map((d) => ({ ...d })), phase: flight.phase, alerts, capcom: capcom.latest });
     }
   }
 
@@ -61,7 +61,8 @@ export function buildTimeline(recording, { maxTicks = 60 * 60 * 90, maxFrames = 
 export function sampleTimeline(timeline, cursor) {
   const i = Math.floor(cursor);
   const a = timeline.at(i);
-  const b = timeline.at(i + 1);
+  let b = timeline.at(i + 1);
+  if (b.body !== a.body) b = a; // frames in different spheres of influence do not mix
   const t = Math.max(0, Math.min(1, cursor - i));
   const state = {
     ...a.state,

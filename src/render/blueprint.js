@@ -3,6 +3,7 @@
 
 import { labelAlpha } from './camera.js';
 import { craftHeight, footHalfWidth, activeStage } from '../core/craft.js';
+import { BODIES } from '../core/body.js';
 
 export const BLUEPRINT = {
   paper: '#1B3A6B',
@@ -296,6 +297,15 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
   }
   const half = far ? Math.PI : Math.min(Math.PI, (diag / s) / R + 0.002);
   const full = half >= Math.PI;
+  // Sphere of influence as a dotted ring, once it is small enough to see whole.
+  if (Number.isFinite(body.soi) && body.soi * s < 0.8 * Math.max(W, H)) {
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    ctx.setLineDash([2, 8]);
+    ctx.beginPath(); ctx.arc(centre.x, centre.y, body.soi * s, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    label(ctx, `${body.name} SOI`, centre.x, centre.y - body.soi * s - 6, 'center', BLUEPRINT.inkPale, labelAlpha(body.soi * s / 4));
+  }
   let n = Math.ceil((2 * half) / (2 / (s * R)));
   n = Math.max(32, Math.min(3000, n));
   const dTheta = (2 * half) / n;
@@ -649,16 +659,21 @@ function lowerBound(craters, arc) {
 // timed, apoapsis and periapsis as small circled markers with typewriter
 // labels. Accent only when impact is under ten seconds.
 function drawPrediction(ctx, cam, prediction, body) {
-  const { points, impact, elements: el, closed } = prediction;
+  const { points, segments, impact, elements: el, closed } = prediction;
   if (points.length < 2) return;
   const critical = impact && impact.t < 10;
+  // Each segment is in its own body's frame; its offset places it on the
+  // starting frame (where that body sits at the time the segment begins).
+  const segs = segments || [{ body: body.id, from: 0, offset: { x: 0, y: 0 } }];
+  const segOf = (i) => { let k = 0; while (k + 1 < segs.length && segs[k + 1].from <= i) k += 1; return segs[k]; };
+  const at = (i) => { const o = segOf(i).offset; return cam.toScreen(points[i].x + o.x, points[i].y + o.y); };
   ctx.strokeStyle = critical ? BLUEPRINT.accent : BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
   let last = null;
   for (let i = 0; i < points.length; i++) {
-    const p = cam.toScreen(points[i].x, points[i].y);
+    const p = at(i);
     if (i === 0) ctx.moveTo(p.x, p.y);
     else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1.5) ctx.lineTo(p.x, p.y);
     else continue;
@@ -666,8 +681,43 @@ function drawPrediction(ctx, cam, prediction, body) {
   }
   ctx.stroke();
   ctx.setLineDash([]);
+  // Ghosts of the other bodies where the path meets them, and the
+  // encounter and exit markers (accent dot: a marker, per the brief).
+  for (let k = 1; k < segs.length; k++) {
+    const sg = segs[k];
+    const b = BODIES[sg.body];
+    if (!b || sg.body === body.id) continue;
+    const c = cam.toScreen(sg.offset.x, sg.offset.y);
+    const rp = b.radius * cam.scale;
+    if (rp >= 1.5 && rp < 4000) {
+      ctx.strokeStyle = BLUEPRINT.inkPale;
+      ctx.lineWidth = STROKE.annotation;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
+      if (Number.isFinite(b.soi)) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, b.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.setLineDash([]);
+      label(ctx, `${b.name} AT T-${formatTime(sg.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale, labelAlpha(rp));
+    }
+  }
+  if (prediction.encounter) {
+    const e = prediction.encounter;
+    const sg = segs[e.seg] || segs[segs.length - 1];
+    const p = cam.toScreen(e.x + sg.offset.x, e.y + sg.offset.y);
+    ctx.fillStyle = BLUEPRINT.accent;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+    label(ctx, `${BODIES[e.body].name} SOI T-${formatTime(e.t)}`, p.x + 8, p.y - 4, 'left', BLUEPRINT.ink);
+  }
+  if (prediction.exit) {
+    const e = prediction.exit;
+    const sg = segs[e.seg] || segs[0];
+    const p = cam.toScreen(e.x + sg.offset.x, e.y + sg.offset.y);
+    ctx.fillStyle = BLUEPRINT.accent;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+    label(ctx, `LEAVING ${BODIES[e.body].name} SOI T-${formatTime(e.t)}`, p.x + 8, p.y - 4, 'left', BLUEPRINT.ink);
+  }
   if (impact) {
-    const p = cam.toScreen(impact.x, impact.y);
+    const so = (segs[impact.seg] || segs[0]).offset;
+    const p = cam.toScreen(impact.x + so.x, impact.y + so.y);
     const colour = critical ? BLUEPRINT.accent : BLUEPRINT.inkPale;
     ctx.strokeStyle = colour;
     ctx.beginPath();
@@ -681,7 +731,8 @@ function drawPrediction(ctx, cam, prediction, body) {
   }
   if (prediction.entry) {
     const e = prediction.entry;
-    const p = cam.toScreen(e.x, e.y);
+    const eo = (segs[e.seg] || segs[0]).offset;
+    const p = cam.toScreen(e.x + eo.x, e.y + eo.y);
     ctx.strokeStyle = BLUEPRINT.inkPale;
     ctx.lineWidth = STROKE.annotation;
     ctx.beginPath();
@@ -714,9 +765,19 @@ function drawMarker(ctx, cam, at, text, colour) {
 
 export function formatTime(t) {
   if (t < 100) return `${t.toFixed(0)} S`;
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t - m * 60);
-  return `${m}:${String(s).padStart(2, '0')}`;
+  if (t < 3600) {
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t - m * 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+  if (t < 48 * 3600) {
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t - h * 3600) / 60);
+    return `${h}H ${String(m).padStart(2, '0')}M`;
+  }
+  const d = Math.floor(t / 86400);
+  const h = Math.floor((t - d * 86400) / 3600);
+  return `${d}D ${String(h).padStart(2, '0')}H`;
 }
 
 // Typewriter label beside the craft once it is down. Accent only for a crash.

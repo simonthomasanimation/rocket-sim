@@ -47,14 +47,17 @@ export function createCamera() {
       // (A path ending on the ground reaches about `alt` down, a few hundred
       // metres more over a basin; only one that goes round the body reaches
       // a good fraction of a radius further.)
-      if (extent.down > alt + R / 4) scale = Math.min(scale, (H - c - pad) / (r + R + extent.up));
+      if (extent.down > alt + R / 4) scale = Math.min(scale, (H - c - pad) / (Math.max(r + R, extent.down) + extent.up));
       if (extent.side > 0) scale = Math.min(scale, (W / 2 - pad) / extent.side);
     }
     scale = clamp(scale * Math.pow(2, cam.zoomBias), cam.minScale, cam.maxScale);
     // Ground as a line: pin it near the bottom. Moon as a disc: show it all.
     // Blend by how much of the disc fits in the view.
     const asLine = Math.min(alt * scale + c, H * 0.62);
-    const asDisc = Math.min((r + R) * scale + c, H * 0.62);
+    // The lowest thing to keep above the clearance: the far side of the disc,
+    // or the far end of a path that goes beyond it (a transfer).
+    const low = extent && extent.down > alt + R / 4 ? Math.max(r + R, extent.down) : r + R;
+    const asDisc = Math.min(low * scale + c, H - 48);
     const t = clamp(1 - (R * scale - H / 3) / (H - H / 3), 0, 1);
     const lift = asLine + (asDisc - asLine) * t;
     return { x: state.x, y: state.y, rot, scale, lift };

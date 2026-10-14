@@ -4,7 +4,7 @@
 // results card. No DOM.
 
 import { CRAFTS, createCraftState, stepCraft, runEngine, commandedThrottle, lowestPointAltitude, footHalfWidth, totalMass, rk4Step, dragFactor, NO_COMMAND } from './craft.js';
-import { BODIES, ESCAPE_RADIUS, upAngle, normalizeAngle } from './body.js';
+import { BODIES, ESCAPE_RADIUS, bodyState, childrenOf, upAngle, normalizeAngle } from './body.js';
 import { SCENARIOS } from './scenario.js';
 import { elementsOf } from './orbit.js';
 import { createRng } from './rng.js';
@@ -93,6 +93,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
         s.throttle = 0;
         flight.events.push({ tick: flight.tick, type: 'fuelOut', stage: s.stage });
       }
+      handoff(flight);
       const speed = Math.hypot(s.vx, s.vy);
       if (speed > flight.stats.maxSpeed) flight.stats.maxSpeed = speed;
       const alt = flight.altitude();
@@ -133,6 +134,32 @@ function liftoff(flight, cmd, dt) {
   runEngine(s, cmd, dt, cfg);
   if (hadFuel && s.fuel <= 0) { s.throttle = 0; flight.events.push({ tick: flight.tick, type: 'fuelOut', stage: s.stage }); }
   return false;
+}
+
+// Patched conics: leaving the body's sphere of influence hands the craft
+// to the parent's frame; entering a child's hands it to the child's. The
+// craft, its previous tick and the debris all move to the new frame
+// together, so nothing jumps on screen.
+function handoff(flight) {
+  const s = flight.state;
+  const cur = flight.body;
+  const r = Math.hypot(s.x, s.y);
+  const T = flight.clock;
+  let next = null; let dx = 0; let dy = 0; let dvx = 0; let dvy = 0;
+  if (cur.parent && r > cur.soi) {
+    const b = bodyState(cur, T);
+    next = BODIES[cur.parent]; dx = b.x; dy = b.y; dvx = b.vx; dvy = b.vy;
+  } else {
+    for (const child of childrenOf(cur)) {
+      const c = bodyState(child, T);
+      if (Math.hypot(s.x - c.x, s.y - c.y) < child.soi) { next = child; dx = -c.x; dy = -c.y; dvx = -c.vx; dvy = -c.vy; break; }
+    }
+  }
+  if (!next) return;
+  for (const o of [s, flight.prev, ...flight.debris]) { if (!o) continue; o.x += dx; o.y += dy; o.vx += dvx; o.vy += dvy; }
+  flight.body = next;
+  flight.terrain = flight.terrainOf(next);
+  flight.events.push({ tick: flight.tick, type: 'soi', from: cur.id, to: next.id });
 }
 
 // Dropped stages coast under gravity until they hit the ground or drift off.

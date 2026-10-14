@@ -297,6 +297,40 @@ test('an orbit dipping into the atmosphere is predicted to come down', () => {
   assert.ok(p.impact || p.points.length === 4000 || !p.closed, 'the path does not simply close');
 });
 
+test('leaving the Moon hands the craft to Earth and the inertial position is unchanged', () => {
+  const f = createFlight({ seed: 1, scenario: 'orbit' });
+  // Put the craft just inside the edge of the Moon's SOI, moving out.
+  f.state.x = 0; f.state.y = MOON.soi - 10; f.state.vx = 0; f.state.vy = 100;
+  const before = bodyState(MOON, f.clock);
+  const inertial = { x: f.state.x + before.x, y: f.state.y + before.y };
+  let n = 0;
+  while (f.body.id === 'moon' && n < 600) { f.step(NONE); n += 1; }
+  assert.equal(f.body.id, 'earth');
+  assert.ok(f.events.some((e) => e.type === 'soi' && e.to === 'earth'));
+  const after = { x: f.state.x, y: f.state.y };
+  const moved = n / 60 * 100; // metres travelled, roughly
+  assert.ok(Math.hypot(after.x - inertial.x, after.y - inertial.y) < moved + 2000, 'position carried over');
+  assert.ok(Math.hypot(f.state.vx, f.state.vy) > 150, 'the Moon\'s own orbital speed is added');
+});
+
+test('a burn from Earth orbit reaches the Moon in the prediction', () => {
+  const f = createFlight({ seed: 1, scenario: 'earthOrbit' });
+  let found = null;
+  for (let dv = 900; dv <= 1100 && !found; dv += 10) {
+    const v = Math.hypot(f.state.vx, f.state.vy);
+    const st = { ...f.state, vx: f.state.vx * (v + dv) / v, vy: f.state.vy * (v + dv) / v };
+    const p = predictCoast(st, f.body, f.terrain, { clock: f.clock, terrainOf: f.terrainOf, maxSteps: 4000 });
+    if (p.encounter) found = { dv, p };
+  }
+  assert.ok(found, 'no burn between 900 and 1100 m/s meets the Moon');
+  const { p } = found;
+  assert.equal(p.encounter.body, 'moon');
+  assert.ok(p.encounter.t > 20 * 3600 && p.encounter.t < 60 * 3600, `encounter at ${(p.encounter.t / 3600).toFixed(1)} h`);
+  assert.ok(p.segments.length >= 2 && p.segments[1].body === 'moon');
+  // The craft then flies on in the Moon's frame: either round it or out again.
+  assert.ok(p.impact || p.exit || p.closed || p.points.length >= 4000);
+});
+
 let failed = 0;
 for (const { name, fn } of tests) {
   const t0 = Date.now();
