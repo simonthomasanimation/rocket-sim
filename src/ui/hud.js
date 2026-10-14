@@ -85,7 +85,8 @@ export function createHud() {
     const ar = ALT_RANGES[altRange];
     const vr = VEL_RANGES[velRange];
     const altVal = Math.max(0, alerts.altitude);
-    const altText = ar.unit === 'M' ? `${altVal.toFixed(0)} M` : altVal < 1e6 ? `${(altVal / 1000).toFixed(altVal < 100000 ? 1 : 0)} KM` : `${(altVal / 1e6).toFixed(2)} MM`;
+    // The readout keeps the dial's unit, so a dial marked in km never says MM.
+    const altText = ar.unit === 'M' ? `${altVal.toFixed(0)} M` : ar.unit === 'KM' ? `${(altVal / 1000).toFixed(altVal < 100000 ? 1 : 0)} KM` : `${(altVal / 1e6).toFixed(2)} MM`;
     // Two layouts on the 8px grid: one row, or two rows for phones.
     const L = narrow
       ? { r: 4.5 * G, d1: 6 * G, d2: 16 * G, rx: 22 * G, rw: 12 * G, t1: 37 * G, t2: 43 * G, row2: 11 * G, rose: 6 * G, ox: 12 * G, ow: 12 * G, sx: 26 * G, sw: 12 * G, stack: 41 * G, cap: 999 * G }

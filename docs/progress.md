@@ -60,6 +60,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Warp on the way to the Moon (owner report, 2026-10-14): a tank run dry with the throttle still open no longer blocks the rails (the ladder sat at ×64); a refused warp press is explained by CAPCOM (engine, canopy, air, floor, event); the physics warp holds at ×8 while the engine burns so a tank cannot vanish in seconds; CAPCOM calls the Moon landing on the path during a burn (cut now) and an encounter lost to a burn gone long
 - [x] Lock the view on the rocket (owner request, 2026-10-14): L (and a LOCK stamp) pins the craft to the middle of the sheet at any zoom, automatic or held, on the sheet and on the map; L again unlocks. The ghost of the Moon where the path meets it always gets a disc and a name (MOON WILL BE HERE AT T-…), so the loop round it does not read as a knot
 - [x] Reading a path with several loops (owner question, 2026-10-14): each segment of the predicted path after a change of sphere is drawn fainter on both documents, so the order of overlapping loops (before the flyby, round the Moon, after) is visible at a glance
+- [x] Altitude readout in the dial's unit (owner question, 2026-10-14): between 1,000 and 6,000 km the dial is marked in km but the number said MM (1.56 MM over the Moon); it now says 1560 KM, and MM only once the dial itself is in MM
 
 ## M4 Builder
 - [ ] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class)
