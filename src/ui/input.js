@@ -75,6 +75,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
   let gestured = false;
   let hold = 0;                // 0 none, 1 prograde, 2 retrograde
   let stagePending = false;    // one tick of 'stage' queued
+  const pulses = new Set();    // full / cut taps too quick for a tick still count once
 
   function gesture() {
     if (gestured) return;
@@ -114,6 +115,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     const control = KEYS[e.code];
     if (control) {
       held.add(control);
+      if (control === 'full' || control === 'cut') pulses.add(control);
       if (control === 'rotLeft' || control === 'rotRight') { hold = 0; updateButtons(); }
       e.preventDefault();
       return;
@@ -179,6 +181,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
         if (b.tap) { tap(b.id); return; }
         el.setPointerCapture?.(e.pointerId);
         pointers.set(e.pointerId, b.id);
+        if (b.id === 'full' || b.id === 'cut') pulses.add(b.id);
         if (b.id === 'rotLeft' || b.id === 'rotRight') hold = 0;
         updateButtons();
       });
@@ -216,11 +219,14 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     const right = isHeld('rotRight');
     const stage = stagePending ? 1 : 0;
     stagePending = false;
+    const full = isHeld('full') || pulses.has('full') ? 1 : 0;
+    const cut = isHeld('cut') || pulses.has('cut') ? 1 : 0;
+    pulses.clear();
     return {
       thr: up === down ? 0 : up ? 1 : -1,
       rot: left === right ? 0 : right ? 1 : -1,
-      full: isHeld('full') ? 1 : 0,
-      cut: isHeld('cut') ? 1 : 0,
+      full,
+      cut,
       stage,
       hold,
     };
@@ -236,7 +242,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     setHold(value) { hold = value; updateButtons(); },
     onFirstGesture(fn) { if (gestured) fn(); else gestureListeners.add(fn); },
     // Switch the keyboard between flying and the replay transport.
-    setMode(next) { mode = next; held.clear(); pointers.clear(); stagePending = false; updateButtons(); },
+    setMode(next) { mode = next; held.clear(); pointers.clear(); pulses.clear(); stagePending = false; updateButtons(); },
     // Key labels learned from what the player actually typed (code -> letter).
     get observedLabels() { return { ...observed }; },
     onLabels(fn) { labelListeners.add(fn); },

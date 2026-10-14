@@ -154,11 +154,16 @@ function drawBody(ctx, cam, body, terrain, state) {
   }
 
   // Basins: circled, with hatch ticks round the rim, labelled when readable.
+  // Only from far enough out that the Moon reads as a disc; close in they
+  // are dips in the surface line instead.
+  const basinAlpha = Math.max(0, Math.min(1, (0.003 - s) / 0.001));
   for (const b of terrain.basins) {
+    if (basinAlpha <= 0) break;
     const dArc = terrain.wrap(b.x - thetaC * R);
     if (!full && Math.abs(dArc) > half * R + b.r * 1.3) continue;
     const rp = b.r * s;
-    if (rp < 3 || rp > 0.7 * Math.max(W, H)) continue;
+    if (rp < 3) continue;
+    ctx.globalAlpha = basinAlpha;
     const theta = b.x / R;
     const p = surfaceAt(theta);
     ctx.strokeStyle = BLUEPRINT.inkPale;
@@ -175,8 +180,9 @@ function drawBody(ctx, cam, body, terrain, state) {
       ctx.lineTo(p.x + Math.cos(a) * (rp - len), p.y + Math.sin(a) * (rp - len));
     }
     ctx.stroke();
-    const alpha = labelAlpha(rp);
+    const alpha = labelAlpha(rp) * basinAlpha;
     if (alpha > 0) label(ctx, `CRATER R ${(b.r / 1000).toFixed(0)} KM`, p.x, p.y + rp + 14, 'center', BLUEPRINT.inkPale, alpha);
+    ctx.globalAlpha = 1;
   }
 
   // Small crater rims: short radial ticks over the lip, a circled depth

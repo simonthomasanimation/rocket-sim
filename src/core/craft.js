@@ -32,7 +32,7 @@ export const ROCKET = Object.freeze({
   name: 'KP-2',
   drawing: 'rocket',
   stages: [
-    { name: 'STAGE 1', dryMass: 400, fuelMass: 400, maxThrust: 12000, isp: 250, height: 7.4, radius: 1.0, footHalfWidth: 1.7 },
+    { name: 'STAGE 1', dryMass: 400, fuelMass: 350, maxThrust: 12000, isp: 250, height: 7.4, radius: 1.0, footHalfWidth: 1.7 },
     { name: 'STAGE 2', dryMass: 700, fuelMass: 300, maxThrust: 5000, isp: 300, height: 6.2, radius: 0.8, footHalfWidth: 1.1 },
   ],
   throttleRate: 1.0,

@@ -23,8 +23,9 @@ export function computeAlerts(flight, prediction) {
   const fuel = !flying && flight.phase !== 'pad' ? 'none' : s.fuel <= 0 ? (moreStages ? 'caution' : 'critical') : fuelFrac < 0.15 ? 'caution' : 'none';
   // Falling fast with the ground close: critical when the engine-off impact
   // is under ten seconds and too hard; caution when the rate is over the
-  // limit within the last sixty metres.
-  const descent = !flying ? 'none'
+  // limit within the last sixty metres. Only while actually coming down: a
+  // rocket climbing off the pad would also hit hard with its engine off.
+  const descent = !flying || vSpeed <= 0 ? 'none'
     : impact && impact.t < 10 && -impact.vRadial >= limits.verticalSpeed * 2 ? 'critical'
     : alt < 60 && vSpeed >= limits.verticalSpeed ? 'caution'
     : 'none';
