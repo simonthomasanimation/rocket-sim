@@ -57,6 +57,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Planning the Moon (owner request, 2026-10-14): the Moon's path round Earth (and Earth's apparent path round the Moon) as a fine dotted ring on the sheet; once the predicted path reaches a quarter of the way out, a ghost of the Moon where it will be when the path passes nearest to it, tied to that point, with the miss distance; the same ghost on the CRT map
 - [x] Rings for the wide view only (owner request, 2026-10-14): the spheres of influence, Earth's edge of reach (now named EARTH SOI) and the bodies' paths appear once the view is wide enough for a ring to read as a ring (radius under one and a half sheet diagonals), never at planet level
 - [x] Centre on the rocket (owner request, 2026-10-14): C (and a CENTRE stamp on touch) puts the view back on the craft keeping the zoom you set; 0 still resets both
+- [x] Warp on the way to the Moon (owner report, 2026-10-14): a tank run dry with the throttle still open no longer blocks the rails (the ladder sat at ×64); a refused warp press is explained by CAPCOM (engine, canopy, air, floor, event); the physics warp holds at ×8 while the engine burns so a tank cannot vanish in seconds; CAPCOM calls the Moon landing on the path during a burn (cut now) and an encounter lost to a burn gone long
 
 ## M4 Builder
 - [ ] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class)

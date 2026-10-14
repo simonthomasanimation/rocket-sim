@@ -51,6 +51,13 @@ export function createCapcom() {
   return {
     log,
     get latest() { return log[log.length - 1] || null; },
+    // A line said on request (the game explaining a refused control, for
+    // instance); unlike the bank it may be said again later.
+    remark(text, tick) {
+      const last = log[log.length - 1];
+      if (last && last.text === text && tick - last.tick < 300) return;
+      log.push({ key: `remark${tick}`, text, tick, critical: false });
+    },
     // Call once per tick with the flight and its current alerts.
     update(flight, alerts) {
       const t = flight.tick;

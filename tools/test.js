@@ -14,7 +14,7 @@ import { createCraftState, rk4Step, ROCKET, deltaV } from '../src/core/craft.js'
 import { elementsOf } from '../src/core/orbit.js';
 import { predictCoast, closestApproach } from '../src/core/predict.js';
 import { createTerrain } from '../src/core/terrain.js';
-import { WARP_LADDER, PHYSICS_LADDER, maxPhysicsWarp, maxWarpIndex, railsAllowed, RAILS, PHYSICS_LEVELS } from '../src/core/warp.js';
+import { WARP_LADDER, PHYSICS_LADDER, maxPhysicsWarp, maxWarpIndex, railsAllowed, railsBlocker, warpLimitReason, RAILS, PHYSICS_LEVELS } from '../src/core/warp.js';
 import { propagate } from '../src/core/kepler.js';
 import { flyMission } from './mission.js';
 
@@ -307,6 +307,15 @@ test('time warp is capped by the distance to the ground, rails by floors and the
   assert.equal(WARP_LADDER[maxWarpIndex(high, 4)], 64, 'an event 4 s away keeps it off the rails');
   high.state.throttle = 0.5;
   assert.ok(!railsAllowed(high, 1), 'engine on: no rails');
+  assert.match(railsBlocker(high, 1), /Throttle is open/);
+  assert.equal(maxPhysicsWarp(high), 8, 'a burn runs at x8 at most');
+  assert.match(warpLimitReason(high), /Engine burning/);
+  high.state.fuel = 0; high.state.thrust = 0;
+  assert.ok(railsAllowed(high, 1), 'a dry tank with the throttle still open is a coast: rails allowed');
+  high.state.throttle = 0;
+  assert.match(warpLimitReason(high), /Too low for x10,000/);
+  assert.match(warpLimitReason(high, 4), /event is coming up/);
+  assert.equal(warpLimitReason(high, 4), warpLimitReason(high, 4));
   const leo = createFlight({ seed: 1, scenario: 'earthOrbit' });
   assert.ok(railsAllowed(leo, 2) && !railsAllowed(leo, 3), '60 km over the Earth: x1000 yes, x10,000 no');
   low.state.chute = 1;

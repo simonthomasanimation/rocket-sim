@@ -10,7 +10,7 @@ import { createCapcom } from './core/capcom.js';
 import { buildTimeline, sampleTimeline } from './core/timeline.js';
 import { deltaV, twr, activeStage, progradeAngle, dragFactor, MAIN_HEIGHT } from './core/craft.js';
 import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
-import { WARP_LADDER, maxWarpIndex, railsLevel } from './core/warp.js';
+import { WARP_LADDER, maxWarpIndex, railsLevel, warpLimitReason, burning } from './core/warp.js';
 import { BODIES, bodyState, childrenOf } from './core/body.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
@@ -52,7 +52,8 @@ let lastRecording = null;   // the most recent live flight, for replay
 const SPEEDS = WARP_LADDER.slice(0, 13); // the replay shuttle stops at x64
 const WARPS = WARP_LADDER;
 let warp = 0;
-let lastPrediction = null;  // the drawn (long) prediction: event times for the warp rules
+let lastPrediction = null;
+let hadEncounter = null;    // body id of the encounter on the last frame's path, for the burn calls  // the drawn (long) prediction: event times for the warp rules
 let warpTo = null;          // { at: clock, name } while warping to an event
 // Time to the next hard event on the predicted path, if one is known.
 function eventIn() {
@@ -201,7 +202,17 @@ function setPaused(value) {
 function togglePause() { setPaused(!userPaused); }
 // Right arrow: a notch faster, or play again from pause. Left arrow: a
 // notch slower, down to x1 (Space is the pause).
-function warpUp() { warpTo = null; if (userPaused) setPaused(false); else setWarp(warp + 1); }
+function warpUp() {
+  warpTo = null;
+  if (userPaused) { setPaused(false); return; }
+  const before = warp;
+  setWarp(warp + 1);
+  // A press that gets nowhere is answered: CAPCOM says what holds the warp.
+  if (warp === before && warp < WARPS.length - 1) {
+    const why = warpLimitReason(flight, eventIn());
+    if (why) capcom.remark(why, flight.tick);
+  }
+}
 function warpDown() { warpTo = null; if (!userPaused) setWarp(warp - 1); }
 
 function restart() {
@@ -417,7 +428,17 @@ function render(alpha, frameDt) {
   const { view, phase, src, body, terrain } = scene;
   aimCamera(body, terrain, view);
   const prediction = phase === 'flying' ? predictCoast(view, body, terrain, { drag: dragFactor(view, src.cfg), clock: scene.clock, terrainOf: src.terrainOf }) : null;
-  if (!replay) lastPrediction = prediction;
+  if (!replay) {
+    lastPrediction = prediction;
+    // An encounter gained or lost while the engine burns is called at once:
+    // the moment to cut is the moment the Moon lands on the path.
+    const enc = prediction && prediction.encounter ? prediction.encounter.body : null;
+    if (phase === 'flying' && burning(flight)) {
+      if (enc && !hadEncounter) capcom.remark(`${BODIES[enc].name} is on your path. Cut the engine now to keep it.`, flight.tick);
+      else if (!enc && hadEncounter) capcom.remark(`${BODIES[hadEncounter].name} encounter lost: the burn has gone long. Cut the engine and re-plan on the map.`, flight.tick);
+    }
+    hadEncounter = enc;
+  }
   const extent = extentOf(view, prediction);
   lastExtent = extent;
   camera.follow(view, frameDt, extent);
