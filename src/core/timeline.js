@@ -27,7 +27,7 @@ export function buildTimeline(recording, { maxTicks = 60 * 60 * 90, maxFrames = 
   function capture(force = false) {
     const live = flight.phase === 'flying';
     if (!live) prediction = null;
-    else if (sinceLast >= 3 || !prediction) { prediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400 }); sinceLast = 0; }
+    else if (sinceLast >= 3 || !prediction) { prediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400, drag: flight.drag() }); sinceLast = 0; }
     const alerts = computeAlerts(flight, prediction);
     capcom.update(flight, alerts);
     if (force || flight.tick % stride === 0) {

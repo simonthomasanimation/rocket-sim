@@ -8,7 +8,7 @@ import { predictCoast } from './core/predict.js';
 import { computeAlerts } from './core/alerts.js';
 import { createCapcom } from './core/capcom.js';
 import { buildTimeline, sampleTimeline } from './core/timeline.js';
-import { deltaV, twr, activeStage, progradeAngle } from './core/craft.js';
+import { deltaV, twr, activeStage, progradeAngle, dragFactor } from './core/craft.js';
 import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
 import { WARP_LADDER, maxWarpIndex } from './core/warp.js';
 import { BODIES, bodyState, childrenOf } from './core/body.js';
@@ -65,7 +65,7 @@ function stepGame(dt) {
   // The alert rules look ten seconds ahead; a short prediction every third
   // tick is plenty. The drawing predicts the whole path from the view.
   if (flight.phase !== 'flying') shortPrediction = null;
-  else if (sinceShort >= 3) { shortPrediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400 }); sinceShort = 0; }
+  else if (sinceShort >= 3) { shortPrediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400, drag: flight.drag() }); sinceShort = 0; }
   sinceShort += 1;
   alerts = computeAlerts(flight, shortPrediction);
   capcom.update(flight, alerts);
@@ -309,7 +309,7 @@ function render(alpha, frameDt) {
   const scene = currentScene(alpha);
   const { view, phase, src } = scene;
   camera.bodyRadius = src.body.radius;
-  const prediction = phase === 'flying' ? predictCoast(view, src.body, src.terrain) : null;
+  const prediction = phase === 'flying' ? predictCoast(view, src.body, src.terrain, { drag: dragFactor(view, src.cfg) }) : null;
   camera.follow(view, frameDt, extentOf(view, prediction));
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
   drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body: src.body, terrain: src.terrain, prediction, debris: scene.debris, others: otherBodies(src, scene.clock) });

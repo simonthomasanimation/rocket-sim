@@ -322,6 +322,32 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
   if (full) ctx.closePath();
   ctx.stroke();
 
+  // Atmosphere: a dashed ring at its top.
+  if (body.atmosphere) {
+    const ra = R + body.atmosphere.height;
+    if (body.atmosphere.height * s >= 3) {
+      ctx.strokeStyle = BLUEPRINT.inkPale;
+      ctx.lineWidth = STROKE.annotation;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      const m = Math.max(48, Math.min(1200, n));
+      const dT = (2 * half) / m;
+      for (let k = 0; k <= m; k++) {
+        const th = theta0 + k * dT;
+        const p = cam.toScreen(Math.sin(th) * ra, Math.cos(th) * ra);
+        if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+      }
+      if (full) ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (!far) {
+        const p = cam.toScreen(Math.sin(thetaC) * ra, Math.cos(thetaC) * ra);
+        const f = cam.frameAt(thetaC);
+        if (p.y > cam.top && p.y < cam.top + H) label(ctx, `ATMOSPHERE ${formatDistance(body.atmosphere.height)}`, p.x + f.along.x * 60 + 4, p.y + f.along.y * 60 - 4, 'left', BLUEPRINT.inkPale, labelAlpha(body.atmosphere.height * s));
+      }
+    }
+  }
+
   // Earth: contour lines across the continents at round heights, and a
   // dashed line under the sea.
   if (body.texture === 'earth') {
@@ -652,6 +678,17 @@ function drawPrediction(ctx, cam, prediction, body) {
     ctx.moveTo(p.x, p.y - 9); ctx.lineTo(p.x, p.y + 9);
     ctx.stroke();
     label(ctx, `T-${formatTime(impact.t)}  ${(-impact.vRadial).toFixed(0)} M/S`, p.x + 12, p.y - 6, 'left', colour);
+  }
+  if (prediction.entry) {
+    const e = prediction.entry;
+    const p = cam.toScreen(e.x, e.y);
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 5, p.y - 5); ctx.lineTo(p.x + 5, p.y + 5);
+    ctx.moveTo(p.x + 5, p.y - 5); ctx.lineTo(p.x - 5, p.y + 5);
+    ctx.stroke();
+    label(ctx, `ENTRY T-${formatTime(e.t)}`, p.x + 9, p.y - 4, 'left', BLUEPRINT.inkPale);
   }
   // Markers only where the path really passes.
   const apOnPath = el.apoapsis && (closed || (impact && el.timeToAp < impact.t) || (!impact && !closed && el.timeToAp !== null));

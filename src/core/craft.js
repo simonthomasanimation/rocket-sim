@@ -8,7 +8,7 @@
 // 0. Tilt is the heading minus the local vertical. The engine pushes along
 // the body axis, so leaning right drives the craft to the right.
 
-import { gravityAt, normalizeAngle } from './body.js';
+import { gravityAt, densityAt, normalizeAngle } from './body.js';
 
 export const G0 = 9.80665;
 
@@ -125,6 +125,7 @@ export function createCraftState(cfg, { x = 0, y = 0, vx = 0, vy = 0, angle = 0,
     stage,          // index of the live stage, 0 = bottom
     fuel: fuel === null ? cfg.stages[stage].fuelMass : fuel, // kg left in the live stage
     thrust: 0,      // N produced on the last step, for the drawing and HUD
+    chute: 0,       // 0 stowed, 1 out, 2 torn away
     time: 0,        // s since the flight began
   };
 }
@@ -191,40 +192,51 @@ export function stepCraft(s, cmd, dt, cfg, body) {
   s.angVel += Math.max(-maxDelta, Math.min(maxDelta, delta));
   s.angle = normalizeAngle(s.angle + s.angVel * dt);
 
-  // Translation under gravity and thrust along the body axis.
+  // Translation under gravity, thrust along the body axis and air drag.
   const m = totalMass(s, cfg);
   const tx = (thrust / m) * Math.sin(s.angle);
   const ty = (thrust / m) * Math.cos(s.angle);
-  integrate(s, dt, body, tx, ty);
+  rk4Step(s, dt, body, tx, ty, dragFactor(s, cfg));
   s.time += dt;
   return { staged };
 }
 
-// Semi-implicit (symplectic) Euler: velocity first, then position with the
-// new velocity. Gravity is evaluated at the start of the step.
-export function integrate(s, dt, body, tx = 0, ty = 0) {
-  const g = gravityAt(body, s.x, s.y);
-  s.vx += (g.ax + tx) * dt;
-  s.vy += (g.ay + ty) * dt;
-  s.x += s.vx * dt;
-  s.y += s.vy * dt;
+// Drag factor of a stack: Cd * A / (2 m), so that the deceleration is
+// factor * rho * v^2. A blunt stack: Cd 0.5 over the live stage's cross
+// section, plus the parachute's canopy when it is out.
+export function dragFactor(s, cfg) {
+  const st = activeStage(s, cfg);
+  const radius = st.radius || 2.4;
+  let cdA = 0.5 * Math.PI * radius * radius;
+  if (s.chute === 1 && st.capsule) cdA += CHUTE_CDA;
+  return cdA / (2 * totalMass(s, cfg));
 }
+export const CHUTE_CDA = 300; // m^2, the main canopy
 
 // Classical fourth-order Runge-Kutta over (x, y, vx, vy) with gravity from
-// the body plus a constant extra acceleration (tx, ty): the thrust for the
-// craft, nothing for coasting debris and predictions. Far more accurate per
-// step than Euler, which is what keeps an orbit closed for hours of play and
-// lets the predictor take big steps.
-export function rk4Step(s, dt, body, tx = 0, ty = 0) {
-  const ax = (x, y) => { const g = gravityAt(body, x, y); return [g.ax + tx, g.ay + ty]; };
-  const [a1x, a1y] = ax(s.x, s.y);
+// the body, a constant extra acceleration (tx, ty): the thrust for the
+// craft, nothing for coasting debris and predictions, and air drag when the
+// body has an atmosphere (`drag` is the factor above, 0 for none). Far more
+// accurate per step than Euler, which is what keeps an orbit closed for
+// hours of play and lets the predictor take big steps.
+export function rk4Step(s, dt, body, tx = 0, ty = 0, drag = 0) {
+  const ax = (x, y, vx, vy) => {
+    const g = gravityAt(body, x, y);
+    let dx = 0; let dy = 0;
+    if (drag > 0 && body.atmosphere) {
+      const rho = densityAt(body, Math.hypot(x, y));
+      if (rho > 0) { const v = Math.hypot(vx, vy); dx = -drag * rho * v * vx; dy = -drag * rho * v * vy; }
+    }
+    return [g.ax + tx + dx, g.ay + ty + dy];
+  };
+  const [a1x, a1y] = ax(s.x, s.y, s.vx, s.vy);
   const k1 = [s.vx, s.vy, a1x, a1y];
   const h2 = dt / 2;
-  const [a2x, a2y] = ax(s.x + k1[0] * h2, s.y + k1[1] * h2);
+  const [a2x, a2y] = ax(s.x + k1[0] * h2, s.y + k1[1] * h2, s.vx + k1[2] * h2, s.vy + k1[3] * h2);
   const k2 = [s.vx + k1[2] * h2, s.vy + k1[3] * h2, a2x, a2y];
-  const [a3x, a3y] = ax(s.x + k2[0] * h2, s.y + k2[1] * h2);
+  const [a3x, a3y] = ax(s.x + k2[0] * h2, s.y + k2[1] * h2, s.vx + k2[2] * h2, s.vy + k2[3] * h2);
   const k3 = [s.vx + k2[2] * h2, s.vy + k2[3] * h2, a3x, a3y];
-  const [a4x, a4y] = ax(s.x + k3[0] * dt, s.y + k3[1] * dt);
+  const [a4x, a4y] = ax(s.x + k3[0] * dt, s.y + k3[1] * dt, s.vx + k3[2] * dt, s.vy + k3[3] * dt);
   const k4 = [s.vx + k3[2] * dt, s.vy + k3[3] * dt, a4x, a4y];
   const w = dt / 6;
   s.x += w * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);

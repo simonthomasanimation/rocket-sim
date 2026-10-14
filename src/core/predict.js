@@ -8,8 +8,9 @@ import { elementsOf } from './orbit.js';
 import { ESCAPE_RADIUS } from './body.js';
 
 // options: maxTime (s) stops early, used by the alert rules which only care
-// about the next few seconds; maxSteps bounds the work per call.
-export function predictCoast(state, body, terrain, { maxTime = Infinity, maxSteps = 4000 } = {}) {
+// about the next few seconds; maxSteps bounds the work per call; drag is the
+// craft's drag factor so the path through an atmosphere decays as it will.
+export function predictCoast(state, body, terrain, { maxTime = Infinity, maxSteps = 4000, drag = 0 } = {}) {
   const el = elementsOf(state, body);
   const R = body.radius;
   const s = { x: state.x, y: state.y, vx: state.vx, vy: state.vy };
@@ -23,15 +24,25 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
   let impact = null;
   let escaped = false;
   let closed = false;
+  let entry = null;       // first point where the path enters the atmosphere from above
+  const atmTop = body.atmosphere ? R + body.atmosphere.height : 0;
+  let wasAbove = Math.hypot(s.x, s.y) > atmTop;
   let swept = 0;
   let prevAngle = Math.atan2(s.x, s.y);
   let prevR = Math.hypot(s.x, s.y);
   let prevGround = terrain.groundRadiusAt(s.x, s.y);
   for (let i = 0; i < maxSteps && t < maxTime; i++) {
     const px = s.x; const py = s.y; const pvx = s.vx; const pvy = s.vy;
-    rk4Step(s, dt, body);
-    t += dt;
+    // Inside the atmosphere drag changes quickly: keep the step short.
+    const inAir = atmTop > 0 && Math.hypot(s.x, s.y) < atmTop + 2000;
+    const step = inAir ? Math.min(dt, 1) : dt;
+    rk4Step(s, step, body, 0, 0, drag);
+    t += step;
     const r = Math.hypot(s.x, s.y);
+    if (atmTop > 0) {
+      if (wasAbove && r <= atmTop && !entry) entry = { x: s.x, y: s.y, t };
+      wasAbove = r > atmTop;
+    }
     const ground = terrain.groundRadiusAt(s.x, s.y);
     if (r <= ground) {
       // Linear interpolation to the ground within this step.
@@ -43,7 +54,7 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
       const ivy = pvy + (s.vy - pvy) * f;
       const ir = Math.hypot(ix, iy);
       const ux = ix / ir; const uy = iy / ir;
-      const it = t - dt + dt * f;
+      const it = t - step + step * f;
       impact = { x: ix, y: iy, t: it, vRadial: ivx * ux + ivy * uy, vTangential: ivx * uy - ivy * ux, speed: Math.hypot(ivx, ivy) };
       points.push({ x: ix, y: iy, t: it });
       break;
@@ -59,5 +70,5 @@ export function predictCoast(state, body, terrain, { maxTime = Infinity, maxStep
     prevGround = ground;
     if (Math.abs(swept) >= 2 * Math.PI) { closed = true; break; }
   }
-  return { points, impact, escaped, closed, elements: el, dt };
+  return { points, impact, escaped, closed, entry, elements: el, dt };
 }

@@ -26,7 +26,8 @@ export const EARTH = Object.freeze({
   parent: null,
   orbitRadius: 0,
   soi: Infinity,
-  atmosphere: null,          // filled in by the atmosphere task
+  // Thin atmosphere: 12 km to the top, density falling by e every 1.5 km.
+  atmosphere: { height: 12000, scaleHeight: 1500, rho0: 1.225 },
   texture: 'earth',
 });
 
@@ -72,6 +73,16 @@ export function bodyState(body, clock) {
 // Children of a body (bodies that orbit it).
 export function childrenOf(body) {
   return Object.values(BODIES).filter((b) => b.parent === body.id);
+}
+
+// Air density (kg/m^3) at a distance r from the body's centre; 0 above the
+// atmosphere's top or where there is none.
+export function densityAt(body, r) {
+  const atm = body.atmosphere;
+  if (!atm) return 0;
+  const alt = r - body.radius;
+  if (alt >= atm.height) return 0;
+  return atm.rho0 * Math.exp(-Math.max(0, alt) / atm.scaleHeight);
 }
 
 // Acceleration due to gravity at a body-relative position.

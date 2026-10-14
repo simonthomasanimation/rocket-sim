@@ -3,7 +3,7 @@
 // interpolation, judges the landing and collects the figures for the
 // results card. No DOM.
 
-import { CRAFTS, createCraftState, stepCraft, runEngine, commandedThrottle, lowestPointAltitude, footHalfWidth, totalMass, rk4Step, NO_COMMAND } from './craft.js';
+import { CRAFTS, createCraftState, stepCraft, runEngine, commandedThrottle, lowestPointAltitude, footHalfWidth, totalMass, rk4Step, dragFactor, NO_COMMAND } from './craft.js';
 import { BODIES, ESCAPE_RADIUS, upAngle, normalizeAngle } from './body.js';
 import { SCENARIOS } from './scenario.js';
 import { elementsOf } from './orbit.js';
@@ -55,6 +55,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
     radius() { return Math.hypot(flight.state.x, flight.state.y); },
     up() { return upAngle(flight.state.x, flight.state.y); },
     tilt() { return normalizeAngle(flight.state.angle - flight.up()); },
+    drag() { return dragFactor(flight.state, cfg); },
     // Height of the base plane above the ground directly below (radar altitude).
     altitude() { return flight.radius() - flight.terrain.groundRadiusAt(flight.state.x, flight.state.y); },
     // Vertical (positive up) and horizontal (positive clockwise, +x at the pad) speed over the ground.
@@ -85,6 +86,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
           stage: staged, x: p.x, y: p.y,
           vx: p.vx - Math.sin(p.angle) * kick, vy: p.vy - Math.cos(p.angle) * kick,
           angle: p.angle, angVel: p.angVel + flight.rng.range(-0.25, 0.25), age: 0,
+          drag: dragFactor({ stage: 0, fuel: 0, chute: 0 }, { stages: [cfg.stages[staged]] }),
         });
         flight.events.push({ tick: flight.tick, type: 'staged', stage: staged });
       } else if (hadFuel && s.fuel <= 0) {
@@ -138,7 +140,7 @@ function stepDebris(flight, dt) {
   const { body, terrain } = flight;
   for (let i = flight.debris.length - 1; i >= 0; i--) {
     const d = flight.debris[i];
-    rk4Step(d, dt, body);
+    rk4Step(d, dt, body, 0, 0, d.drag || 0);
     d.angle = normalizeAngle(d.angle + d.angVel * dt);
     d.age += dt;
     const r = Math.hypot(d.x, d.y);

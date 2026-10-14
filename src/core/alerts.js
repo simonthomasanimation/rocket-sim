@@ -44,5 +44,7 @@ export function computeAlerts(flight, prediction) {
     peAlt: el ? el.peAlt : -Infinity,
     period: el ? el.period : Infinity,
     peBelow: !!el && el.peAlt < 0,
+    // A periapsis inside the atmosphere: the orbit will decay (caution).
+    peInAir: !!el && el.peAlt >= 0 && !!flight.body.atmosphere && el.peAlt < flight.body.atmosphere.height && el.e < 1,
   };
 }

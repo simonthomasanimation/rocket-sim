@@ -9,7 +9,7 @@ import { encodeCommand, decodeCommand } from '../src/core/recording.js';
 import { replayToEnd } from '../src/core/playback.js';
 import { buildTimeline, sampleTimeline } from '../src/core/timeline.js';
 import { createFixedLoop } from '../src/core/loop.js';
-import { MOON, EARTH, circularSpeed, gravityAt, bodyState, orbitalPeriod } from '../src/core/body.js';
+import { MOON, EARTH, circularSpeed, gravityAt, bodyState, orbitalPeriod, densityAt } from '../src/core/body.js';
 import { createCraftState, rk4Step, ROCKET, deltaV } from '../src/core/craft.js';
 import { elementsOf } from '../src/core/orbit.js';
 import { predictCoast } from '../src/core/predict.js';
@@ -268,6 +268,33 @@ test('time warp is capped by the distance to the ground', () => {
   assert.equal(maxWarp(pad), 64, 'nothing to protect on the pad');
   high.state.y += 60000;
   assert.equal(maxWarp(high), 64);
+});
+
+test('the atmosphere thins with height and slows a falling stage to terminal speed', () => {
+  assert.ok(Math.abs(densityAt(EARTH, EARTH.radius) - 1.225) < 1e-9);
+  assert.ok(Math.abs(densityAt(EARTH, EARTH.radius + 1500) - 1.225 / Math.E) < 1e-6);
+  assert.equal(densityAt(EARTH, EARTH.radius + 12000), 0);
+  assert.equal(densityAt(MOON, MOON.radius), 0);
+  // A KP-3 third stage dropped from 8 km, engine off, reaches a steady fall.
+  const f = createFlight({ seed: 1, scenario: 'earthLaunch' });
+  f.phase = 'flying';
+  f.state.stage = 2; f.state.fuel = 700; f.state.y = EARTH.radius + f.terrain.height(0) + 8000;
+  let last = 0; let n = 0;
+  while (f.phase === 'flying' && n < 60 * 400) { f.step(NONE); n += 1; if (f.altitude() < 2000 && f.altitude() > 1500) last = -f.groundSpeeds().vertical; }
+  assert.ok(last > 40 && last < 400, `fell at ${last.toFixed(0)} m/s through 2 km`);
+  // Without drag it would arrive at 396 m/s; terminal speed at sea level is about 130.
+  assert.ok(f.stats.touchdown && f.stats.touchdown.verticalSpeed < 300, `hit at ${f.stats.touchdown && f.stats.touchdown.verticalSpeed.toFixed(0)}`);
+});
+
+test('an orbit dipping into the atmosphere is predicted to come down', () => {
+  const f = createFlight({ seed: 1, scenario: 'earthOrbit' });
+  const v0 = f.state.vx;
+  for (let k = 0.999; k > 0.9; k -= 0.001) { f.state.vx = v0 * k; if (f.elements.peAlt < 9000) break; f.elements = elementsOf(f.state, f.body); }
+  f.elements = elementsOf(f.state, f.body);
+  const p = predictCoast(f.state, f.body, f.terrain, { drag: f.drag() });
+  assert.ok(p.elements.peAlt < 12000 && p.elements.peAlt > 0, `pe ${p.elements.peAlt.toFixed(0)}`);
+  assert.ok(p.entry && p.entry.t > 0, 'entry marker found');
+  assert.ok(p.impact || p.points.length === 4000 || !p.closed, 'the path does not simply close');
 });
 
 let failed = 0;

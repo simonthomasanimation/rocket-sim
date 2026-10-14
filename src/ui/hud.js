@@ -98,7 +98,7 @@ export function createHud() {
     // Orbit readouts; the periapsis goes accent while it lies underground.
     const oy = top + L.row2;
     readout(ctx, L.ox, oy + 3 * G, L.ow, 'AP', formatDistance(alerts.apAlt), 'none');
-    readout(ctx, L.ox, oy + 6 * G, L.ow, 'PE', formatDistance(alerts.peAlt), alerts.peBelow ? 'marker' : 'none');
+    readout(ctx, L.ox, oy + 6 * G, L.ow, 'PE', formatDistance(alerts.peAlt), alerts.peBelow ? 'marker' : alerts.peInAir ? tone('caution') : 'none');
     readout(ctx, L.ox, oy + 9 * G, L.ow, 'T', Number.isFinite(alerts.period) ? formatTime(alerts.period) : '---', 'none');
 
     // Tapes.
