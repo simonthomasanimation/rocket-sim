@@ -5,6 +5,11 @@
 // Keys: Shift / Up / W throttle up, Ctrl / Down / S throttle down, Z full,
 // X cut, A / Left rotate left, D / Right rotate right, R restart, P replay,
 // M mute.
+//
+// In replay mode the keys become a transport: J play backwards (again for
+// faster), K pause, L play forwards (again for faster), Space play/pause,
+// Left / Right (or , and .) step one tick and repeat while held, Home / End
+// jump to the start / end, Esc exits.
 
 const KEYS = {
   ShiftLeft: 'thrUp', ShiftRight: 'thrUp', ArrowUp: 'thrUp', KeyW: 'thrUp',
@@ -14,6 +19,13 @@ const KEYS = {
   ArrowRight: 'rotRight', KeyD: 'rotRight',
 };
 const ACTIONS = { KeyR: 'restart', KeyP: 'replay', KeyM: 'mute', Enter: 'confirm', Space: 'confirm', Escape: 'back' };
+const REPLAY_ACTIONS = {
+  KeyJ: 'rev', KeyK: 'pause', KeyL: 'fwd', Space: 'toggle',
+  ArrowLeft: 'stepBack', Comma: 'stepBack', ArrowRight: 'stepFwd', Period: 'stepFwd',
+  Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit',
+  KeyR: 'restart', KeyM: 'mute',
+};
+const REPEATABLE = new Set(['stepBack', 'stepFwd']);
 
 // On-screen buttons: label, control, and where they sit (left or right cluster).
 const BUTTONS = [
@@ -38,7 +50,18 @@ export function createInput({ touchRoot } = {}) {
     gestureListeners.forEach((fn) => fn());
   }
 
+  let mode = 'flight'; // 'flight' | 'replay'
+
   window.addEventListener('keydown', (e) => {
+    if (mode === 'replay') {
+      const action = REPLAY_ACTIONS[e.code];
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat && !REPEATABLE.has(action)) return;
+      gesture();
+      actions.push(action);
+      return;
+    }
     if (e.repeat) { if (KEYS[e.code] || ACTIONS[e.code]) e.preventDefault(); return; }
     gesture();
     const control = KEYS[e.code];
@@ -117,6 +140,9 @@ export function createInput({ touchRoot } = {}) {
     // Drain the queued one-shot actions ('restart', 'confirm', 'back').
     takeActions() { return actions.splice(0, actions.length); },
     onFirstGesture(fn) { if (gestured) fn(); else gestureListeners.add(fn); },
+    // Switch the keyboard between flying and the replay transport.
+    setMode(next) { mode = next; held.clear(); pointers.clear(); updateButtons(); },
+    get mode() { return mode; },
     setButtonsVisible(visible) { if (touchRoot) touchRoot.classList.toggle('is-hidden', !visible); },
   };
 }

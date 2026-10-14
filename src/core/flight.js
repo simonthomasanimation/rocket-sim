@@ -16,6 +16,9 @@ export const LANDING_LIMITS = Object.freeze({
   tilt: (10 * Math.PI) / 180,  // radians
 });
 
+// Above this the craft has left the training area and the flight is aborted.
+export const CEILING = 1500; // m
+
 export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, body = MOON, limits = LANDING_LIMITS } = {}) {
   const rng = createRng(seed);
   const terrain = createTerrain(seed);
@@ -30,7 +33,7 @@ export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, bo
     recorder,
     start,
     tick: 0,
-    phase: 'flying',          // flying | landed | crashed
+    phase: 'flying',          // flying | landed | crashed | aborted
     state: createLanderState(start),
     prev: null,
     events: [],               // { tick, type } in order: fuelOut, landed, crashed
@@ -53,6 +56,10 @@ export function createFlight({ seed = 1, start = DEFAULT_START, cfg = LANDER, bo
       const speed = Math.hypot(s.vx, s.vy);
       if (speed > flight.stats.maxSpeed) flight.stats.maxSpeed = speed;
       if (lowestPointAltitude(s, cfg, terrain.height(s.x)) <= 0) touchdown(flight);
+      else if (s.y > CEILING) {
+        flight.phase = 'aborted';
+        flight.events.push({ tick: flight.tick, type: 'aborted' });
+      }
     },
   };
   flight.stats.fuelStart = flight.state.fuel;

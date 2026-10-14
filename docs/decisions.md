@@ -1,5 +1,7 @@
 # Decisions log (one line each, newest first)
 
+- 2026-10-14 — Replay is a scrubbable tape: the recording is run to its end once with every tick kept (a few thousand small frames), then a cursor plays it at ×1/×4/×8/×16 either way, steps a tick at a time or scrubs; editing-suite keys J/K/L, arrows and comma/period, Esc exits to the flight report. A replay of a flight still in progress stops at "now" and Esc resumes the live flight.
+- 2026-10-14 — Flights that climb above 1,500 m are aborted (ABORTED stamp) so a runaway burn ends instead of running for minutes.
 - 2026-10-13 — Lander physics: SI units, flat Moon g = 1.62, dry 2200 kg + 1400 kg fuel, 16 kN, Isp 300 s, throttle 0-100 % ramped at 100 %/s, tilt rate command 60°/s; position is the footpad plane, tilt positive leans right and pushes right.
 - 2026-10-13 — Terrain: flat-ish Moon with seeded shallow craters that are real dips (altitude is radar altitude); the SITE 1 zone (-60 to 140 m) is kept flat so a first-timer can land.
 - 2026-10-13 — Recording: command changes stored as [tick, code]; replays run the same seed through the same fixed-step sim, no state snapshots.

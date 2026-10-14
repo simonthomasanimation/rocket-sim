@@ -10,6 +10,7 @@ export const LINES = {
   drift: 'You are drifting sideways. Level off.',
   landed: 'Contact light. Engine stop. Welcome to the Moon.',
   crashed: 'We have lost your signal.',
+  aborted: 'You are leaving the training area. Flight terminated.',
 };
 
 export function createCapcom() {
@@ -29,6 +30,7 @@ export function createCapcom() {
       if (t >= 60) say('go', t);
       if (flight.phase === 'landed') { say('landed', t); return; }
       if (flight.phase === 'crashed') { say('crashed', t, true); return; }
+      if (flight.phase === 'aborted') { say('aborted', t, true); return; }
       if (alerts.fuel === 'critical') say('fuelOut', t, true);
       else if (alerts.fuel === 'caution') say('fuelLow', t);
       if (alerts.descent === 'critical') say('rate', t, true);

@@ -17,9 +17,25 @@ export function createTerrain(seed, { span = 3000, site = SITE } = {}) {
     craters.push({ x, r, depth: r * rng.range(0.08, 0.16) });
   }
 
+  craters.sort((a, b) => a.x - b.x);
+  const reach = 22 * 1.3; // widest crater rim, metres
+
+  // Index of the first crater whose centre is at or beyond x (binary search).
+  function firstAtOrAfter(x) {
+    let lo = 0;
+    let hi = craters.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (craters[mid].x < x) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+
   function height(px) {
     let h = 0;
-    for (const c of craters) {
+    for (let i = firstAtOrAfter(px - reach); i < craters.length; i++) {
+      const c = craters[i];
+      if (c.x - px > reach) break;
       const d = Math.abs(px - c.x);
       if (d < c.r) {
         const t = d / c.r;

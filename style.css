@@ -285,3 +285,107 @@ html, body {
   border-radius: 2px;
   font: 400 10px/16px var(--font-mono);
 }
+
+/* --- Replay transport ------------------------------------------------------ */
+#transport {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(112px + var(--grid) * 2 + env(safe-area-inset-bottom, 0px));
+  display: none;
+  justify-content: center;
+  padding: 0 calc(var(--grid) * 2);
+  pointer-events: none;
+}
+#transport.is-open { display: flex; }
+
+.transport-bar {
+  box-sizing: border-box;
+  width: min(100%, 760px);
+  padding: var(--grid);
+  border: var(--stroke-structure) solid var(--bp-ink);
+  border-radius: 2px;
+  background: var(--bp-paper);
+  color: var(--bp-ink);
+  pointer-events: auto;
+}
+
+.transport-tape-row {
+  display: flex;
+  align-items: center;
+  gap: var(--grid);
+  margin-bottom: var(--grid);
+}
+.transport-time {
+  flex: none;
+  font: 500 12px/16px var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.transport-tape {
+  position: relative;
+  flex: 1;
+  height: 24px;
+  border: var(--stroke-annotation) solid var(--bp-ink-2);
+  touch-action: none;
+  cursor: pointer;
+  /* hatched tape, like the fuel gauge */
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgba(169, 214, 229, 0.25) 3px 3.75px);
+}
+.transport-ticks i {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 6px;
+  border-left: var(--stroke-annotation) solid var(--bp-ink-2);
+}
+.transport-played {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--bp-ink) 3px 3.75px);
+}
+.transport-head {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 0;
+  border-left: var(--stroke-structure) solid var(--bp-ink);
+  margin-left: -0.75px;
+}
+
+.transport-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--grid);
+}
+.transport-button {
+  width: auto;
+  height: 40px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.transport-button kbd {
+  padding: 0 4px;
+  border: var(--stroke-annotation) solid currentColor;
+  border-radius: 2px;
+  font: 400 9px/14px var(--font-mono);
+}
+.transport-speed {
+  margin-left: auto;
+  font: 500 12px/16px var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--bp-ink-2);
+}
+@media (max-width: 860px) {
+  .transport-button kbd { display: none; }
+}
+@media (max-width: 720px) {
+  .transport-buttons { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .transport-button { height: 44px; padding: 0 8px; font-size: 12px; justify-content: center; }
+  .transport-speed { grid-column: 1 / -1; margin-left: 0; text-align: right; }
+}

@@ -7,13 +7,14 @@ import { createFlight, interpolated } from './core/flight.js';
 import { predictDescent } from './core/predict.js';
 import { computeAlerts } from './core/alerts.js';
 import { createCapcom } from './core/capcom.js';
-import { createPlayback } from './core/playback.js';
+import { buildTimeline, sampleTimeline } from './core/timeline.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene } from './render/blueprint.js';
 import { mountTitleBlock, updateTitleBlock, mountPage, unmountPage, reportPage, startPage } from './ui/screens.js';
 import { createInput } from './ui/input.js';
 import { createHud, HUD_HEIGHT } from './ui/hud.js';
+import { createTransport } from './ui/transport.js';
 import { createMixer } from './audio/mixer.js';
 import { createSfx } from './audio/sfx.js';
 
@@ -31,11 +32,11 @@ input.onFirstGesture(() => mixer.start());
 
 let flight = createFlight({ seed: 1 });
 let alerts = null;
-let playback = null;        // set while a recorded flight is being replayed
+let replay = null;          // { timeline, cursor, speed, playing } while replaying
 let lastRecording = null;   // the most recent live flight, for replay
+const SPEEDS = [1, 4, 8, 16];
 function stepGame(dt) {
-  if (playback) playback.step(dt);
-  else flight.step(input.command(), dt);
+  flight.step(input.command(), dt);
   const prediction = flight.phase === 'flying' ? predictDescent(flight.state, flight.terrain, flight.body.gravity) : null;
   alerts = computeAlerts(flight, prediction);
   capcom.update(flight, alerts);
@@ -55,39 +56,111 @@ function closePage() {
   pageOpen = null;
   unmountPage(pageRoot);
   input.setButtonsVisible(true);
-  loop.resume();
+  if (!replay) loop.resume();
 }
 
 function handleAction(action) {
   if (action === 'begin') { closePage(); return; }
   if (action === 'restart') { closePage(); restart(); return; }
-  if (action === 'replay') { closePage(); replay(); return; }
+  if (action === 'replay') { closePage(); startReplay(); return; }
 }
 
-function beginFlight(next, replaying) {
-  flight = next;
-  playback = replaying || null;
+function restart() {
+  if (replay) exitReplay(false);
+  else if (flight.tick > 0) lastRecording = flight.recording();
+  flight = createFlight({ seed: 1 });
   capcom = createCapcom();
   alerts = null;
   reportDueAt = null;
   loop.reset();
   camera.snap(flight.state);
   lastMetShown = -1;
-  updateTitleBlock(titleBlock, { document: replaying ? 'REPLAY' : 'BLUEPRINT' });
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
 }
 
-function restart() {
-  if (!playback && flight.tick > 0) lastRecording = flight.recording();
-  beginFlight(createFlight({ seed: 1 }), null);
-}
+// --- Replay -------------------------------------------------------------------
+// The last live flight is run to its end from its recording with every tick
+// kept, then a cursor moves over that tape: forwards, backwards, stepping
+// or scrubbing. Same seed, same inputs, same landing spot.
+const transport = createTransport(document.getElementById('transport'), onTransport);
 
-// Replay the last live flight from its recording: same seed, same inputs,
-// same landing spot.
-function replay() {
-  if (!playback && flight.tick > 0) lastRecording = flight.recording();
+function startReplay() {
+  if (!replay && flight.tick > 0) lastRecording = flight.recording();
   if (!lastRecording) return;
-  const pb = createPlayback(lastRecording);
-  beginFlight(pb.flight, pb);
+  const timeline = buildTimeline(lastRecording);
+  replay = { timeline, cursor: 0, speed: 1, playing: true };
+  loop.pause();
+  input.setMode('replay');
+  input.setButtonsVisible(false);
+  transport.show();
+  layout();
+  camera.snap(timeline.at(0).state);
+  lastMetShown = -1;
+  updateTitleBlock(titleBlock, { document: 'REPLAY' });
+}
+
+// Leave the replay; by default back to the flight report of that flight.
+function exitReplay(showReport = true) {
+  if (!replay) return;
+  const finished = replay.timeline.flight;
+  replay = null;
+  transport.hide();
+  layout();
+  input.setMode('flight');
+  input.setButtonsVisible(true);
+  camera.snap(flight.state);
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
+  if (showReport && finished.phase !== 'flying') openPage('report', reportPage(finished));
+  else if (showReport) loop.resume(); // the live flight carries on where it was
+}
+
+function onTransport(action, value) {
+  if (!replay) return;
+  const r = replay;
+  const last = r.timeline.length - 1;
+  const faster = (dir) => {
+    // Same direction: next speed up; other direction or paused: start at ×1.
+    const i = SPEEDS.indexOf(Math.abs(r.speed));
+    const next = r.playing && Math.sign(r.speed) === dir && i >= 0 ? SPEEDS[Math.min(SPEEDS.length - 1, i + 1)] : 1;
+    r.speed = dir * next;
+    r.playing = true;
+  };
+  switch (action) {
+    case 'rev': faster(-1); break;
+    case 'fwd': faster(1); break;
+    case 'pause': r.playing = false; break;
+    case 'toggle':
+      if (r.playing) r.playing = false;
+      else { if (r.cursor >= last) r.cursor = 0; r.speed = 1; r.playing = true; }
+      break;
+    case 'stepBack': r.playing = false; r.cursor = Math.max(0, Math.ceil(r.cursor) - 1); break;
+    case 'stepFwd': r.playing = false; r.cursor = Math.min(last, Math.floor(r.cursor) + 1); break;
+    case 'start': r.cursor = 0; camera.snap(r.timeline.at(0).state); break;
+    case 'end': r.cursor = last; r.playing = false; camera.snap(r.timeline.at(last).state); break;
+    case 'seek': {
+      const target = Math.round(value * last);
+      if (Math.abs(target - r.cursor) > 120) camera.snap(r.timeline.at(target).state);
+      r.cursor = target;
+      r.playing = false;
+      break;
+    }
+    case 'exit': exitReplay(true); break;
+    case 'restart': closePage(); restart(); break;
+    case 'mute': updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' }); break;
+    default: break;
+  }
+}
+
+// Move the replay cursor on by one screen frame.
+function advanceReplay(frameDt) {
+  const r = replay;
+  const last = r.timeline.length - 1;
+  if (r.playing) {
+    r.cursor += r.speed * frameDt * 60;
+    if (r.cursor >= last) { r.cursor = last; r.playing = false; }
+    if (r.cursor <= 0) { r.cursor = 0; r.playing = false; }
+  }
+  transport.update({ time: r.cursor * r.timeline.dt, duration: r.timeline.duration, speed: r.speed, playing: r.playing });
 }
 
 const touchRoot = document.getElementById('touch-controls');
@@ -95,27 +168,41 @@ const coarsePointer = window.matchMedia ? window.matchMedia('(pointer: coarse)')
 function layout() {
   camera.setViewport(surface.width, Math.max(120, surface.height - HUD_HEIGHT), 0);
   // Keep the surface clear of the on-screen buttons when they are showing.
-  const buttonsShown = (coarsePointer && coarsePointer.matches) || touchRoot.classList.contains('is-touch');
-  camera.groundClearance = buttonsShown ? 168 : 40;
+  const buttonsShown = !replay && ((coarsePointer && coarsePointer.matches) || touchRoot.classList.contains('is-touch'));
+  camera.groundClearance = replay ? transport.height + 32 : buttonsShown ? 168 : 40;
 }
 layout();
 camera.snap(flight.state);
 
-function render(alpha, frameDt) {
+// What to draw this frame: the live flight between two ticks, or a sample
+// of the replay tape at the cursor.
+function currentScene(alpha) {
+  if (replay) {
+    const sample = sampleTimeline(replay.timeline, replay.cursor);
+    const src = replay.timeline.flight;
+    return { view: sample.state, phase: sample.phase, alerts: sample.alerts, capcom: sample.capcom, src };
+  }
   const view = interpolated(flight, alpha);
+  return { view, phase: flight.phase, alerts: null, capcom: capcom.latest, src: flight };
+}
+
+function render(alpha, frameDt) {
+  const scene = currentScene(alpha);
+  const { view, phase, src } = scene;
   camera.follow(view, frameDt);
   drawPaper(surface.ctx, surface.width, surface.height, surface.dpr);
-  const prediction = flight.phase === 'flying' ? predictDescent(view, flight.terrain, flight.body.gravity) : null;
-  drawScene(surface.ctx, camera, { state: view, cfg: flight.cfg, phase: flight.phase, terrain: flight.terrain, prediction });
-  const a = alerts || computeAlerts(flight, prediction);
-  hud.update(view, a, capcom.latest, frameDt);
+  const prediction = phase === 'flying' ? predictDescent(view, src.terrain, src.body.gravity) : null;
+  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, terrain: src.terrain, prediction });
+  const a = scene.alerts || alerts || computeAlerts(src, prediction);
+  hud.update(view, a, scene.capcom, frameDt);
   hud.draw(surface.ctx, {
     width: surface.width,
     height: surface.height,
     titleBlockWidth: titleBlock.offsetWidth || 240,
     narrow: surface.width < 720,
     timeSeconds: performance.now() / 1000,
-  }, view, a, capcom.latest);
+  }, view, a, scene.capcom);
+  return scene;
 }
 
 mountTitleBlock(titleBlock, {
@@ -134,10 +221,11 @@ function frame(nowMs) {
   const frameDt = lastFrameMs === null ? 0 : Math.min(0.1, (nowMs - lastFrameMs) / 1000);
   lastFrameMs = nowMs;
   for (const action of input.takeActions()) {
+    if (replay) { onTransport(action); continue; }
     if (pageOpen === 'start' && (action === 'confirm' || action === 'restart')) { closePage(); continue; }
     if (pageOpen === 'report' && action === 'confirm') { closePage(); restart(); continue; }
     if (action === 'restart') { closePage(); restart(); }
-    if (action === 'replay') { closePage(); replay(); }
+    if (action === 'replay') { closePage(); startReplay(); }
     if (action === 'mute') updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' });
   }
   // Any flight command dismisses the start card too.
@@ -146,18 +234,23 @@ function frame(nowMs) {
     if (c.thr || c.rot || c.full || c.cut) closePage();
   }
   const { alpha } = loop.advance(nowMs / 1000);
-  // A crash cuts hard to the report; a landing lets the touchdown settle first.
-  if (flight.phase !== 'flying' && !pageOpen && reportDueAt === null) {
-    reportDueAt = flight.tick + (flight.phase === 'crashed' ? 20 : 75);
-    if (flight.phase === 'crashed') sfx.crash(); else sfx.touchdown();
+  if (replay) {
+    advanceReplay(frameDt);
+  } else {
+    // A crash cuts hard to the report; a landing lets the touchdown settle first.
+    if (flight.phase !== 'flying' && !pageOpen && reportDueAt === null) {
+      reportDueAt = flight.tick + (flight.phase === 'landed' ? 75 : 20);
+      if (flight.phase === 'crashed') sfx.crash(); else if (flight.phase === 'landed') sfx.touchdown();
+    }
+    if (reportDueAt !== null && !pageOpen && flight.tick >= reportDueAt) {
+      reportDueAt = null;
+      openPage('report', reportPage(flight));
+    }
   }
-  sfx.setEngine(flight.phase === 'flying' ? flight.state.thrust / flight.cfg.maxThrust : 0);
-  if (reportDueAt !== null && !pageOpen && flight.tick >= reportDueAt) {
-    reportDueAt = null;
-    openPage('report', reportPage(flight));
-  }
-  render(alpha, frameDt);
-  const metSeconds = Math.floor(flight.state.time);
+  const scene = render(alpha, frameDt);
+  const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : true;
+  sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / scene.src.cfg.maxThrust : 0);
+  const metSeconds = Math.floor(scene.view.time);
   if (metSeconds !== lastMetShown) {
     lastMetShown = metSeconds;
     updateTitleBlock(titleBlock, { met: metSeconds });
@@ -170,10 +263,10 @@ loop.pause();
 
 // Pause the clock while the tab is hidden; resume cleanly when it comes back.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) loop.pause(); else if (!pageOpen) loop.resume();
+  if (document.hidden) loop.pause(); else if (!pageOpen && !replay) loop.resume();
 });
 
 surface.onResize(() => { layout(); render(0, 0); });
 
 // Read-only hook for automated playtests (tools/check.js and friends).
-window.__karman = { get flight() { return flight; }, get phase() { return flight.phase; } };
+window.__karman = { get flight() { return flight; }, get phase() { return flight.phase; }, get replay() { return replay; } };

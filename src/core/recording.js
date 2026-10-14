@@ -28,15 +28,17 @@ export const NO_COMMAND_CODE = encodeCommand(NO_COMMAND);
 export function createRecorder({ seed, start }) {
   const events = [];
   let lastCode = NO_COMMAND_CODE;
+  let ticks = 0; // ticks recorded so far, so an unfinished flight replays up to "now"
   return {
     record(tick, cmd) {
+      ticks = tick + 1;
       const code = encodeCommand(cmd);
       if (code === lastCode) return;
       lastCode = code;
       events.push([tick, code]);
     },
     toJSON() {
-      return { version: RECORDING_VERSION, seed, start: { ...start }, events: events.slice() };
+      return { version: RECORDING_VERSION, seed, start: { ...start }, ticks, events: events.slice() };
     },
   };
 }

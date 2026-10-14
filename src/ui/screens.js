@@ -115,12 +115,14 @@ export function mountPage(root, page, onAction) {
 
   if (page.buttons && page.buttons.length) {
     const bar = el('div', 'manual-buttons');
+    const openedAt = performance.now();
     for (const b of page.buttons) {
       const btn = el('button', 'manual-button');
       btn.type = 'button';
       btn.append(el('span', null, b.label));
       if (b.key) btn.append(el('kbd', null, b.key));
-      btn.addEventListener('click', () => onAction(b.action));
+      // A page that appears under a finger must not take that same tap.
+      btn.addEventListener('click', () => { if (performance.now() - openedAt > 250) onAction(b.action); });
       bar.append(btn);
     }
     sheet.append(bar);
@@ -159,6 +161,29 @@ export function reportPage(flight) {
   const fuelPct = Math.round((flight.state.fuel / flight.cfg.fuelMass) * 100);
   const limits = flight.limits;
   const deg = (limits.tilt * 180) / Math.PI;
+  const buttons = [
+    { label: 'FLY AGAIN', key: 'R', action: 'restart' },
+    { label: 'WATCH REPLAY', key: 'P', action: 'replay' },
+  ];
+  if (!td) {
+    // No touchdown: the flight climbed out of the training area.
+    return {
+      section: 'SECTION 1 — LUNAR DESCENT TRAINER',
+      title: 'FLIGHT REPORT',
+      page: 'PAGE 2',
+      stamp: { text: 'ABORTED', tone: 'spot' },
+      rows: [
+        ['OUTCOME', 'Left the training area', 'spot'],
+        ['FLIGHT TIME', formatSeconds(flight.state.time)],
+        ['FUEL LEFT', `${flight.state.fuel.toFixed(0)} KG  (${fuelPct}%)`],
+        ['MAX SPEED', `${flight.stats.maxSpeed.toFixed(1)} M/S`],
+        ['ALTITUDE', `${flight.state.y.toFixed(0)} M`],
+      ],
+      figure: 'FIG. 2',
+      caption: 'Climbed past the ceiling with the engine running. The Moon is the other way.',
+      buttons,
+    };
+  }
   const rows = [
     ['OUTCOME', landed ? 'Landed on the surface' : 'Crashed on the surface', landed ? null : 'spot'],
     ['FLIGHT TIME', formatSeconds(td.time)],
@@ -179,10 +204,7 @@ export function reportPage(flight) {
     rows,
     figure: 'FIG. 2',
     caption,
-    buttons: [
-      { label: 'FLY AGAIN', key: 'R', action: 'restart' },
-      { label: 'WATCH REPLAY', key: 'P', action: 'replay' },
-    ],
+    buttons,
   };
 }
 

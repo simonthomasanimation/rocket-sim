@@ -7,6 +7,7 @@ import { createFlight } from '../src/core/flight.js';
 import { createRng } from '../src/core/rng.js';
 import { encodeCommand, decodeCommand } from '../src/core/recording.js';
 import { replayToEnd } from '../src/core/playback.js';
+import { buildTimeline, sampleTimeline } from '../src/core/timeline.js';
 import { createFixedLoop } from '../src/core/loop.js';
 
 const tests = [];
@@ -84,6 +85,30 @@ test('replaying a recording reproduces the flight exactly', () => {
     const viaJson = replayToEnd(JSON.parse(JSON.stringify(rec)));
     assert.equal(viaJson.state.x, live.state.x);
   }
+});
+
+test('a timeline keeps every tick and stops where the recording stops', () => {
+  const live = flyNoisy(3);
+  const tl = buildTimeline(live.recording());
+  assert.equal(tl.at(tl.length - 1).phase, live.phase);
+  assert.equal(tl.at(live.tick).state.x, live.state.x);
+  const mid = sampleTimeline(tl, 10.5);
+  assert.ok(mid.state.y < tl.at(10).state.y && mid.state.y > tl.at(11).state.y || mid.state.y > tl.at(10).state.y && mid.state.y < tl.at(11).state.y);
+  // An unfinished flight replays only up to "now".
+  const f = createFlight({ seed: 9 });
+  for (let i = 0; i < 100; i++) f.step({ thr: 1, rot: 0, full: 0, cut: 0 });
+  const partial = buildTimeline(f.recording());
+  assert.equal(partial.length, 101);
+  assert.equal(partial.at(100).phase, 'flying');
+  assert.equal(partial.at(100).state.y, f.state.y);
+});
+
+test('climbing out of the training area aborts the flight', () => {
+  const f = createFlight({ seed: 1 });
+  let n = 0;
+  while (f.phase === 'flying' && n < 60 * 600) { f.step({ thr: 0, rot: 0, full: 1, cut: 0 }); n += 1; }
+  assert.equal(f.phase, 'aborted');
+  assert.ok(f.state.y > 1500);
 });
 
 test('terrain is flat across the landing site and seeded', () => {

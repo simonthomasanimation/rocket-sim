@@ -71,7 +71,7 @@ export function drawScene(ctx, cam, scene) {
   drawGround(ctx, cam, terrain);
   if (phase === 'flying' && prediction) drawPrediction(ctx, cam, prediction, cfg);
   drawLander(ctx, cam, state, cfg, phase);
-  if (phase !== 'flying') drawOutcomeLabel(ctx, cam, state, cfg, phase);
+  if (phase === 'landed' || phase === 'crashed') drawOutcomeLabel(ctx, cam, state, cfg, phase);
   ctx.restore();
 }
 

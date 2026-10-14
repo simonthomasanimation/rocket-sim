@@ -21,6 +21,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Input recording as (tick, input); deterministic replay function; test that replay reproduces the landing position
 - [x] Restart under one second; manual-paper results card (outcome, time, fuel left, max speed)
 - [x] Placeholder engine noise via Web Audio (skip if awkward)
+- [x] Replay transport (owner request on #2): exit, play/pause, reverse, fast ×4/×8/×16 both ways, single-tick stepping, scrub tape; keyboard J/K/L, arrows, Home/End, Esc and touch buttons
 - [x] Gate issue opened (#2)
 
 ## M2 Orbit
