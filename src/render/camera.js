@@ -16,7 +16,7 @@ export function createCamera() {
     lift: 40,            // px the focus sits above the bottom of the flight area
     width: 1, height: 1, // flight area in CSS px (viewport minus HUD strip)
     top: 0,              // y offset of the flight area on screen
-    minScale: 0.000005, maxScale: 14, // down to the whole Earth-Moon system on one sheet
+    minScale: 0.000002, maxScale: 14, // down to the whole of Earth's reach on one sheet
     groundClearance: 96, // px kept between the surface and the bottom of the flight area, room for the strata
     heldScale: null,     // px per metre the player set, or null for automatic
     offX: 0, offY: 0,    // world metres the view is panned off the craft

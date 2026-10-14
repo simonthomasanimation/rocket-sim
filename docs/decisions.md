@@ -1,5 +1,6 @@
 # Decisions log (one line each, newest first)
 
+- 2026-10-14 — Rings of reach and body paths are drawn only when their radius on screen is under 1.5 sheet diagonals: a bigger ring crosses the sheet as a near-straight line and confuses the planet-level view. Earth's edge of reach is labelled EARTH SOI on both documents, so the top body reads like the Moon.
 - 2026-10-14 — Zoom: a zoom the player sets is an absolute scale that holds until 0, not a multiplier on the automatic zoom (the product ran away as the craft climbed); the camera focus snaps to the craft each frame and only the turn, zoom and lift ease. Drag pans both documents; 0 recentres.
 - 2026-10-14 — Transfer planning without nodes (M6 brings nodes): each body's path round the current one is a fine dotted ring, and a ghost of the body at the predicted path's closest approach, with the miss distance, appears once the path reaches a quarter of the way out; a path that enters the sphere keeps the existing segment ghost instead.
 - 2026-10-14 — Sheet furniture has right of way: the flight view's edge pointers and their labels move out of the title block and the Detail A inset (passed in as screen rectangles), and a body below a horizon-style ground is pointed to along the horizon, never into the dirt.

@@ -333,11 +333,11 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
   const centre = cam.toScreen(0, 0);
   // The reach of the body's gravity: its sphere of influence as a dotted
   // ring, or, for the body at the top (Earth), the edge beyond which the
-  // flight is lost. Drawn whenever any of it is on the sheet, so the line
-  // the craft is about to cross is there even when the ring is far bigger
-  // than the view.
+  // flight is lost, named as its SOI too. Drawn once the view is wide
+  // enough for the ring to read as a ring (see drawReachRing), so the
+  // planet-level view stays clean.
   if (Number.isFinite(body.soi)) drawReachRing(ctx, cam, centre, body.soi, `${body.name} SOI`);
-  else if (!body.parent) drawReachRing(ctx, cam, centre, ESCAPE_RADIUS, `EDGE OF ${body.name}'S REACH ${formatDistance(ESCAPE_RADIUS)} — THE FLIGHT IS LOST BEYOND IT`);
+  else if (!body.parent) drawReachRing(ctx, cam, centre, ESCAPE_RADIUS, `${body.name} SOI — EDGE OF ITS REACH ${formatDistance(ESCAPE_RADIUS)}, THE FLIGHT IS LOST BEYOND IT`);
   if (far) {
     // Off the sheet entirely, or too small to be more than a dot.
     const Rpx = R * s;
@@ -640,11 +640,15 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 // by a hash so it never twinkles, only inside the body and the view.
 // A ring of radius `radius` (m) round a centre on screen, dotted, with its
 // label on the ring at the point nearest the middle of the sheet. Skipped
-// when no part of it crosses the sheet or it is too small to see.
+// when no part of it crosses the sheet, when it is too small to see, or
+// when it is so much bigger than the sheet that it would cross it as a
+// near-straight line: the rings of reach and the bodies' paths belong to
+// the wide view, not to the planet-level one (owner's call, 14 Oct).
 function drawReachRing(ctx, cam, centre, radius, text, dash = [2, 8]) {
   const rp = radius * cam.scale;
   if (rp < 4) return;
   const W = cam.width; const H = cam.height;
+  if (rp > 1.5 * Math.hypot(W, H)) return;
   const mx = W / 2; const my = cam.top + H / 2;
   const d = Math.hypot(mx - centre.x, my - centre.y);
   const reach = Math.hypot(W, H) / 2;

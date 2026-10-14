@@ -195,7 +195,7 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
         ctx.beginPath(); ctx.arc(c.x, c.y, re, 0, Math.PI * 2); ctx.stroke();
         ctx.setLineDash([]);
         const ly = c.y - re < 14 ? c.y + re + 14 : c.y - re - 6;
-        if (ly > 0 && ly < cam.height) text(ctx, `EDGE OF ${b.name}'S REACH  ${formatDistance(ESCAPE_RADIUS)}`, c.x, ly, { size: 10, align: 'center', colour: CRT.inkDim });
+        if (ly > 0 && ly < cam.height) text(ctx, `${b.name} SOI  EDGE OF REACH ${formatDistance(ESCAPE_RADIUS)}`, c.x, ly, { size: 10, align: 'center', colour: CRT.inkDim });
       }
     }
     text(ctx, b.name, c.x, c.y + r + 12, { size: 11, align: 'center' });
