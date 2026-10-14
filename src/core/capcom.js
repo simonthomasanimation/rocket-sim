@@ -22,6 +22,7 @@ export const LINES = {
   entry: 'Entry interface. Keep the shield into the wind.',
   karman: 'Through the Kármán line. You are in space.',
   heat: 'Heating is near the limit. Hold retrograde.',
+  heatUp: 'Heating is near the limit. Ease the throttle until the air thins.',
   chute: 'Good canopy.',
   chuteTorn: 'The canopy has torn away. Too fast.',
   splashdown: 'Splashdown. Recovery is on the way.',
@@ -66,8 +67,11 @@ export function createCapcom() {
       else if (alerts.fuel === 'caution' && flight.state.fuel <= 0) say('stageDry', t);
       else if (alerts.fuel === 'caution') say('fuelLow', t);
       if (flight.body.atmosphere && alerts.vSpeed < 0 && alerts.altitude > flight.body.atmosphere.height) say('karman', t);
-      if (alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
-      if (alerts.heat === 'critical') say('heat', t, true);
+      // Air heating on the way down is an entry; on the way up it is a
+      // rocket going too fast too low.
+      const sinking = alerts.vSpeed > 0;
+      if (sinking && alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
+      if (alerts.heat === 'critical') say(sinking ? 'heat' : 'heatUp', t, true, LINES[sinking ? 'heat' : 'heatUp']);
       if (alerts.chute === 1) say('chute', t);
       if (alerts.chute === 2) say('chuteTorn', t, true);
       if (alerts.descent === 'critical') say('rate', t, true);
