@@ -14,6 +14,7 @@ import { createCraftState, rk4Step, ROCKET, deltaV } from '../src/core/craft.js'
 import { elementsOf } from '../src/core/orbit.js';
 import { predictCoast } from '../src/core/predict.js';
 import { createTerrain } from '../src/core/terrain.js';
+import { WARP_LADDER, maxWarp, maxWarpIndex } from '../src/core/warp.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -229,6 +230,18 @@ test('a scripted gravity turn reaches orbit', () => {
   assert.ok(f.stats.orbit, `no orbit after ${n} ticks, pe ${f.elements.peAlt.toFixed(0)}`);
   assert.equal(f.state.stage, 1, 'the first stage alone cannot make orbit');
   assert.ok(f.state.fuel > 50, `fuel left ${f.state.fuel.toFixed(0)} kg`);
+});
+
+test('time warp is capped by the distance to the ground', () => {
+  const low = createFlight({ seed: 1, scenario: 'descent' });
+  assert.equal(maxWarp(low), 4);
+  assert.equal(WARP_LADDER[maxWarpIndex(low)], 4);
+  const high = createFlight({ seed: 1, scenario: 'orbit' });
+  assert.equal(maxWarp(high), 32);
+  const pad = createFlight({ seed: 1, scenario: 'launch' });
+  assert.equal(maxWarp(pad), 64, 'nothing to protect on the pad');
+  high.state.y += 60000;
+  assert.equal(maxWarp(high), 64);
 });
 
 let failed = 0;

@@ -257,7 +257,7 @@ export function startPage(keys = {}) {
     lines: [
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
-      'TIME: Right arrow runs time faster, a notch per press (up to ×64); Left arrow pauses; Right or SPACE plays again at ×1. The same keys shuttle a replay.',
+      'TIME: Right arrow runs time faster, a notch per press (up to ×64, less near the ground); Left arrow pauses; Right or SPACE plays again at ×1. The same keys shuttle a replay.',
       'ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
       'R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',

@@ -10,6 +10,7 @@ import { createCapcom } from './core/capcom.js';
 import { buildTimeline, sampleTimeline } from './core/timeline.js';
 import { deltaV, twr, activeStage, progradeAngle } from './core/craft.js';
 import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
+import { WARP_LADDER, maxWarpIndex } from './core/warp.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
 import { drawPaper, drawScene } from './render/blueprint.js';
@@ -40,14 +41,17 @@ let replay = null;          // { timeline, cursor, speed, playing } while replay
 let lastRecording = null;   // the most recent live flight, for replay
 // Shuttle ladder, shared by the replay and the live time warp: each press
 // of the right arrow climbs one notch. Live, the physics steps per frame
-// scale with it (the step itself stays 1/60 s, so the flight replays exactly).
-const SPEEDS = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
-const WARPS = SPEEDS;
+// scale with it (the step itself stays 1/60 s, so the flight replays
+// exactly), capped by how close the ground is (core/warp.js).
+const SPEEDS = WARP_LADDER;
+const WARPS = WARP_LADDER;
 let warp = 0;
 function setWarp(i) {
-  warp = Math.max(0, Math.min(WARPS.length - 1, i));
+  const cap = maxWarpIndex(flight);
+  warp = Math.max(0, Math.min(cap, i));
   const w = WARPS[warp];
-  updateTitleBlock(titleBlock, { warp: `×${w % 1 === 0 ? w : w.toFixed(1)}` });
+  const text = `×${w % 1 === 0 ? w : w.toFixed(1)}`;
+  updateTitleBlock(titleBlock, { warp: warp === cap && cap < WARPS.length - 1 ? `${text} MAX` : text });
 }
 
 let shortPrediction = null;
@@ -68,6 +72,8 @@ function stepGame(dt) {
     if (ev.type === 'staged') sfx.stage();
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
   }
+  // Coming down into a slower band drops the warp to that band's cap.
+  if (warp > maxWarpIndex(flight)) setWarp(warp);
 }
 const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: stepGame });
 

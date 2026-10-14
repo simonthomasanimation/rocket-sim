@@ -1659,6 +1659,48 @@ __exports.sampleTimeline = sampleTimeline;
 return __exports;
 })();
 
+__modules["src/core/warp.js"] = (function () {
+const __exports = {};
+// Time warp rules. The ladder is shared by the live flight and the replay
+// shuttle. The cap depends on how close the ground is: the closer, the
+// slower time may run, so a descent cannot be warped past the point of no
+// return. M3 extends this with bands by sphere of influence and distance
+// to bodies, and a much taller ladder for coasting between them.
+
+const WARP_LADDER = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+
+// [altitude above the ground in metres (exclusive upper bound), highest warp allowed]
+const ALTITUDE_BANDS = [
+  [500, 4],
+  [2000, 8],
+  [10000, 16],
+  [50000, 32],
+  [Infinity, 64],
+];
+
+// Highest warp allowed for the flight right now.
+function maxWarp(flight) {
+  if (flight.phase !== 'flying') return WARP_LADDER[WARP_LADDER.length - 1];
+  const alt = flight.altitude();
+  for (const [limit, cap] of ALTITUDE_BANDS) if (alt < limit) return cap;
+  return WARP_LADDER[WARP_LADDER.length - 1];
+}
+
+// Index on the ladder of the highest warp allowed.
+function maxWarpIndex(flight) {
+  const cap = maxWarp(flight);
+  let i = 0;
+  while (i + 1 < WARP_LADDER.length && WARP_LADDER[i + 1] <= cap) i += 1;
+  return i;
+}
+
+__exports.WARP_LADDER = WARP_LADDER;
+__exports.ALTITUDE_BANDS = ALTITUDE_BANDS;
+__exports.maxWarp = maxWarp;
+__exports.maxWarpIndex = maxWarpIndex;
+return __exports;
+})();
+
 __modules["src/render/surface.js"] = (function () {
 const __exports = {};
 // Canvas surface: owns the DOM canvas, keeps it full-window and DPR-aware,
@@ -2725,7 +2767,7 @@ function startPage(keys = {}) {
     lines: [
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
-      'TIME: Right arrow runs time faster, a notch per press (up to ×64); Left arrow pauses; Right or SPACE plays again at ×1. The same keys shuttle a replay.',
+      'TIME: Right arrow runs time faster, a notch per press (up to ×64, less near the ground); Left arrow pauses; Right or SPACE plays again at ×1. The same keys shuttle a replay.',
       'ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
       'R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
@@ -3646,6 +3688,7 @@ const { createCapcom } = __m("src/core/capcom.js");
 const { buildTimeline, sampleTimeline } = __m("src/core/timeline.js");
 const { deltaV, twr, activeStage, progradeAngle } = __m("src/core/craft.js");
 const { SCENARIOS, SCENARIO_ORDER } = __m("src/core/scenario.js");
+const { WARP_LADDER, maxWarpIndex } = __m("src/core/warp.js");
 const { createSurface } = __m("src/render/surface.js");
 const { createCamera } = __m("src/render/camera.js");
 const { drawPaper, drawScene } = __m("src/render/blueprint.js");
@@ -3676,14 +3719,17 @@ let replay = null;          // { timeline, cursor, speed, playing } while replay
 let lastRecording = null;   // the most recent live flight, for replay
 // Shuttle ladder, shared by the replay and the live time warp: each press
 // of the right arrow climbs one notch. Live, the physics steps per frame
-// scale with it (the step itself stays 1/60 s, so the flight replays exactly).
-const SPEEDS = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
-const WARPS = SPEEDS;
+// scale with it (the step itself stays 1/60 s, so the flight replays
+// exactly), capped by how close the ground is (core/warp.js).
+const SPEEDS = WARP_LADDER;
+const WARPS = WARP_LADDER;
 let warp = 0;
 function setWarp(i) {
-  warp = Math.max(0, Math.min(WARPS.length - 1, i));
+  const cap = maxWarpIndex(flight);
+  warp = Math.max(0, Math.min(cap, i));
   const w = WARPS[warp];
-  updateTitleBlock(titleBlock, { warp: `×${w % 1 === 0 ? w : w.toFixed(1)}` });
+  const text = `×${w % 1 === 0 ? w : w.toFixed(1)}`;
+  updateTitleBlock(titleBlock, { warp: warp === cap && cap < WARPS.length - 1 ? `${text} MAX` : text });
 }
 
 let shortPrediction = null;
@@ -3704,6 +3750,8 @@ function stepGame(dt) {
     if (ev.type === 'staged') sfx.stage();
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
   }
+  // Coming down into a slower band drops the warp to that band's cap.
+  if (warp > maxWarpIndex(flight)) setWarp(warp);
 }
 const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: stepGame });
 
