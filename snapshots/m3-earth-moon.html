@@ -757,7 +757,8 @@ const ROCKET3 = Object.freeze({
   stages: [
     { name: 'STAGE 1', dryMass: 2600, fuelMass: 18000, maxThrust: 400000, isp: 280, height: 18.0, radius: 1.8, footHalfWidth: 3.0 },
     { name: 'STAGE 2', dryMass: 800, fuelMass: 3200, maxThrust: 30000, isp: 310, height: 7.0, radius: 1.3, footHalfWidth: 2.6 },
-    { name: 'STAGE 3', dryMass: 900, fuelMass: 700, maxThrust: 8000, isp: 310, height: 7.7, radius: 1.0, footHalfWidth: 1.6, capsule: true },
+    { name: 'STAGE 3', dryMass: 150, fuelMass: 700, maxThrust: 8000, isp: 310, height: 5.3, radius: 1.0, footHalfWidth: 1.6 },
+    { name: 'CAPSULE', dryMass: 750, fuelMass: 0, maxThrust: 0, isp: 0, height: 2.4, radius: 1.0, footHalfWidth: 1.2, capsule: true },
   ],
   throttleRate: 1.0,
   maxRotRate: Math.PI / 6,
@@ -833,6 +834,7 @@ function createCraftState(cfg, { x = 0, y = 0, vx = 0, vy = 0, angle = 0, stage 
     thrust: 0,      // N produced on the last step, for the drawing and HUD
     chute: 0,       // 0 stowed, 1 out, 2 torn away
     heat: 0,        // entry heating as a fraction of what the craft can take
+    broken: 0,      // 1 once the heat has torn the craft apart
     time: 0,        // s since the flight began
   };
 }
@@ -1118,7 +1120,7 @@ const SCENARIOS = {
     onPad: true,
     section: 'SECTION 3 — EARTH TO MOON',
     goal: 'land',
-    goalText: 'Get home: climb to a low lunar orbit, burn prograde until the map shows a path that dives past Earth with PE between 15 and 35 km, hold retrograde (G) through the air, open the chute (P) under 250 m/s.',
+    goalText: 'Get home: climb to a low lunar orbit, burn prograde until the map shows a path that dives past Earth with PE between 15 and 35 km, drop the stage (ENTER), hold retrograde (G) through the air, ENTER again for the chute under 250 m/s.',
     brief: 'The KP-3 capsule on its ascent stage, sitting on the Moon with a full tank.',
     start: (body, terrain) => ({ x: 0, y: body.radius + terrain.height(0), vx: 0, vy: 0, angle: 0, stage: 2 }),
   },
@@ -1131,8 +1133,8 @@ const SCENARIOS = {
     onPad: false,
     section: 'SECTION 3 — EARTH TO MOON',
     goal: 'land',
-    goalText: 'Come home: hold retrograde (G) so the shield takes the heat, open the parachute (P) under 250 m/s, splash down under 10 m/s.',
-    brief: 'The KP-3 capsule alone, 90 km up, periapsis already inside the air.',
+    goalText: 'Come home: drop the spent stage (ENTER), hold retrograde (G) so the shield takes the heat, ENTER again for the parachute under 250 m/s, touch down under 10 m/s.',
+    brief: 'The KP-3 capsule on its spent ascent stage, 90 km up, periapsis already inside the air.',
     start: (body) => {
       const r = body.radius + LOW_EARTH_ORBIT_ALTITUDE;
       const a = (r + body.radius + 30000) / 2;
@@ -1700,6 +1702,7 @@ function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_LIMITS 
       flight.clock += dt;
       stepDebris(flight, dt);
       if (flight.phase === 'pad' && !liftoff(flight, cmd, dt)) return;
+      if (flight.phase === 'crashed' && flight.state.broken === 1) { fall(flight, dt); return; }
       if (flight.phase !== 'flying') return;
       // On rails: no physics, the craft is moved along its orbit for the
       // warped span of this tick, stopping early at anything that needs
@@ -1736,6 +1739,7 @@ function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_LIMITS 
         flight.stats.burned = true;
         flight.phase = 'crashed';
         s.throttle = 0; s.thrust = 0;
+        breakUp(flight);
         flight.events.push({ tick: flight.tick, type: 'burned' });
         flight.events.push({ tick: flight.tick, type: 'crashed' });
         return;
@@ -1853,6 +1857,41 @@ function handoff(flight) {
   flight.body = next;
   flight.terrain = flight.terrainOf(next);
   flight.events.push({ tick: flight.tick, type: 'soi', from: cur.id, to: next.id });
+}
+
+// Past the heat limit the stack comes apart: every remaining stage becomes
+// a piece of debris thrown sideways and tumbling, still in the air stream.
+function breakUp(flight) {
+  const s = flight.state;
+  const { cfg } = flight;
+  let along = 0;
+  for (let i = s.stage; i < cfg.stages.length; i++) {
+    const st = cfg.stages[i];
+    const kick = flight.rng.range(2, 6) * (flight.rng.next() < 0.5 ? -1 : 1);
+    const up = flight.rng.range(-1, 3);
+    flight.debris.push({
+      stage: i,
+      x: s.x + Math.sin(s.angle) * along, y: s.y + Math.cos(s.angle) * along,
+      vx: s.vx + Math.cos(s.angle) * kick + Math.sin(s.angle) * up,
+      vy: s.vy - Math.sin(s.angle) * kick + Math.cos(s.angle) * up,
+      angle: s.angle, angVel: s.angVel + flight.rng.range(-1.5, 1.5), age: 0, broken: true,
+      drag: dragFactor({ stage: 0, fuel: 0, chute: 0 }, { stages: [st] }),
+    });
+    along += st.height;
+  }
+  s.broken = 1;
+  s.chute = s.chute === 1 ? 2 : s.chute;
+}
+
+// After a break-up the wreck's centre keeps falling through the air (the
+// camera and the inset follow it, the pieces drift away from it) until
+// it reaches the ground.
+function fall(flight, dt) {
+  const s = flight.state;
+  rk4Step(s, dt, flight.body, 0, 0, dragFactor({ ...s, chute: 0 }, flight.cfg));
+  s.angle = normalizeAngle(s.angle + s.angVel * dt);
+  s.heat = heatFlux(s, flight.body) / heatLimit(s, flight.cfg);
+  if (Math.hypot(s.x, s.y) <= flight.terrain.groundRadiusAt(s.x, s.y)) s.broken = 2;
 }
 
 // Dropped stages coast under gravity until they hit the ground or drift off.
@@ -2197,7 +2236,9 @@ const LINES = {
   soiMoon: 'Entering the Moon\'s sphere of influence. Lunar gravity has you now.',
   soiEarth: 'Back in Earth\'s sphere of influence.',
   entry: 'Entry interface. Keep the shield into the wind.',
+  karman: 'Through the Kármán line. You are in space.',
   heat: 'Heating is near the limit. Hold retrograde.',
+  heatUp: 'Heating is near the limit. Ease the throttle until the air thins.',
   chute: 'Good canopy.',
   chuteTorn: 'The canopy has torn away. Too fast.',
   splashdown: 'Splashdown. Recovery is on the way.',
@@ -2241,8 +2282,12 @@ function createCapcom() {
       if (alerts.fuel === 'critical') say('fuelOut', t, true);
       else if (alerts.fuel === 'caution' && flight.state.fuel <= 0) say('stageDry', t);
       else if (alerts.fuel === 'caution') say('fuelLow', t);
-      if (alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
-      if (alerts.heat === 'critical') say('heat', t, true);
+      if (flight.body.atmosphere && alerts.vSpeed < 0 && alerts.altitude > flight.body.atmosphere.height) say('karman', t);
+      // Air heating on the way down is an entry; on the way up it is a
+      // rocket going too fast too low.
+      const sinking = alerts.vSpeed > 0;
+      if (sinking && alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
+      if (alerts.heat === 'critical') say(sinking ? 'heat' : 'heatUp', t, true, LINES[sinking ? 'heat' : 'heatUp']);
       if (alerts.chute === 1) say('chute', t);
       if (alerts.chute === 2) say('chuteTorn', t, true);
       if (alerts.descent === 'critical') say('rate', t, true);
@@ -2565,7 +2610,7 @@ const __exports = {};
 // faint fold creases. Linework only, two stroke weights, no fills but hatching.
 
 const { labelAlpha } = __m("src/render/camera.js");
-const { craftHeight, footHalfWidth, activeStage } = __m("src/core/craft.js");
+const { craftHeight, footHalfWidth, activeStage, progradeAngle } = __m("src/core/craft.js");
 const { BODIES } = __m("src/core/body.js");
 
 const BLUEPRINT = {
@@ -2628,6 +2673,8 @@ function drawCreases(ctx, W, H, px) {
 const STROKE = { structure: 1.5, annotation: 0.75 };
 // Depths of the strata lines drawn inside a body, metres.
 const STRATA = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+const CHUTE_RADIUS = 7;   // canopy radius, metres
+const CHUTE_RISE = 14;    // canopy centre above the craft's top, metres
 const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
 
 // scene: { state, cfg, phase, body, terrain, prediction, debris, others }
@@ -2711,6 +2758,20 @@ function drawAltitudeRuler(ctx, cam, body, terrain, state) {
     ctx.stroke();
     label(ctx, major ? 'GROUND' : formatDistance(h), x + 10, y + 5, 'left', major ? BLUEPRINT.ink : BLUEPRINT.inkPale);
   }
+  // The edge of the air, named after the programme.
+  if (body.atmosphere) {
+    const y = groundY - body.atmosphere.height * s;
+    if (y > top && y < bottom && body.atmosphere.height * s > 60) {
+      ctx.strokeStyle = BLUEPRINT.ink;
+      ctx.lineWidth = STROKE.annotation;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x - 8, Math.round(y) + 0.5); ctx.lineTo(x + 56, Math.round(y) + 0.5);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      label(ctx, 'KÁRMÁN LINE', x + 10, y - 3, 'left', BLUEPRINT.ink);
+    }
+  }
   // Below ground the ruler names the strata lines.
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
@@ -2757,9 +2818,11 @@ function drawDetail(ctx, cam, { state, cfg, phase, debris }, box) {
   // of it), so a stage that is left alone stays the size it was rather
   // than jumping up to fill the box.
   const whole = cfg.stages.reduce((sum, st) => sum + st.height, 0);
-  const framed = Math.max(h, 0.55 * whole);
+  // With the chute out, the canopy is part of the vehicle.
+  const top = state.chute === 1 ? h + CHUTE_RISE + CHUTE_RADIUS : h;
+  const framed = Math.max(top, 0.55 * whole);
   const kTarget = (box.h * 0.6) / (framed + back);
-  const offTarget = (h - back) / 2;          // metres from the base to the framed midpoint
+  const offTarget = (top - back) / 2;        // metres from the base to the framed midpoint
   if (!inset.k) { inset.k = kTarget; inset.offset = offTarget; }
   inset.k += (kTarget - inset.k) * 0.12;
   inset.offset += (offTarget - inset.offset) * 0.12;
@@ -2916,7 +2979,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
       if (!far) {
         const p = cam.toScreen(Math.sin(thetaC) * ra, Math.cos(thetaC) * ra);
         const f = cam.frameAt(thetaC);
-        if (p.y > cam.top && p.y < cam.top + H) label(ctx, `ATMOSPHERE ${formatDistance(body.atmosphere.height)}`, p.x + f.along.x * 60 + 4, p.y + f.along.y * 60 - 4, 'left', BLUEPRINT.inkPale, labelAlpha(body.atmosphere.height * s));
+        if (p.y > cam.top && p.y < cam.top + H) label(ctx, `KÁRMÁN LINE ${formatDistance(body.atmosphere.height)} — AIR BELOW`, p.x + f.along.x * 60 + 4, p.y + f.along.y * 60 - 4, 'left', BLUEPRINT.inkPale, labelAlpha(body.atmosphere.height * s));
       }
     }
   }
@@ -3361,7 +3424,7 @@ function drawOutcomeLabel(ctx, cam, s, cfg, phase) {
   ctx.moveTo(x0, y0);
   ctx.lineTo(x, y);
   ctx.stroke();
-  label(ctx, crashed ? 'IMPACT' : 'TOUCHDOWN', x + 4, y - 2, 'left', colour);
+  label(ctx, s.broken ? 'BREAK-UP' : crashed ? 'IMPACT' : 'TOUCHDOWN', x + 4, y - 2, 'left', colour);
 }
 
 function label(ctx, text, x, y, align = 'left', colour = BLUEPRINT.ink, alpha = 1) {
@@ -3394,6 +3457,12 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
     const bell = cfg.drawing === 'lander' ? 0.95 : st.radius * 0.8;
     drawFlame(ctx, k, s.thrust / st.maxThrust, s.time, bell, cfg.drawing === 'lander' ? 0.5 : 0.1);
   }
+  if (s.broken) {
+    // The pieces are debris now; here only the point where it came apart.
+    drawBreakUp(ctx, k, s, cfg);
+    ctx.restore();
+    return;
+  }
   if (phase === 'flying' && s.heat > 0.03) drawPlasma(ctx, k, s, cfg);
   ctx.strokeStyle = BLUEPRINT.ink;
   ctx.lineWidth = STROKE.structure;
@@ -3401,8 +3470,60 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
   if (cfg.drawing === 'lander') drawLander(ctx, k, s, cfg);
   else drawRocketStack(ctx, k, s, cfg, s.stage, 0, BLUEPRINT.ink, STROKE.structure);
   ctx.setLineDash([]);
+  if (phase === 'flying' && s.heat > 0.08) drawHullHeat(ctx, k, s, cfg);
   if (s.chute) drawChute(ctx, k, s, cfg);
   ctx.restore();
+}
+
+// The hull itself heating: cross-hatching on the face that meets the air
+// (the base when flying shield-first, the nose otherwise), from a few
+// strokes at a tenth of the limit to a dense band near it; accent from
+// 80 %, when it is a warning.
+function drawHullHeat(ctx, k, s, cfg) {
+  const h = craftHeight(s, cfg);
+  const st = activeStage(s, cfg);
+  const r = st.radius || 2.4;
+  const heat = Math.min(1, s.heat);
+  let off = progradeAngle(s) - s.angle;
+  off = Math.atan2(Math.sin(off), Math.cos(off));
+  const noseFirst = Math.abs(off) < Math.PI / 2;
+  // A band of diagonal hatching across the hull at the end meeting the
+  // air, growing up the hull and tightening as the heat climbs.
+  const skirt = noseFirst ? 0 : Math.min(0.6, h * 0.1);
+  const band = h * (0.18 + 0.5 * heat);
+  const y0 = noseFirst ? h - band : skirt;
+  const count = 1 + Math.round(heat * 14);
+  const gap = band / count;
+  const wobble = 1 + 0.08 * Math.sin(s.time * 19);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-r * k, -(y0 + band) * k, 2 * r * k, band * k);
+  ctx.clip();
+  ctx.strokeStyle = heat >= 0.8 ? BLUEPRINT.accent : BLUEPRINT.ink;
+  ctx.lineWidth = heat >= 0.5 ? STROKE.structure : STROKE.annotation;
+  ctx.beginPath();
+  for (let i = 0; i <= count; i++) {
+    const y = y0 + (i + 0.5) * gap * wobble;
+    ctx.moveTo(-r * k, -(y - r * 0.6) * k);
+    ctx.lineTo(r * k, -(y + r * 0.6) * k);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Where the craft came apart: a burst of short accent strokes.
+function drawBreakUp(ctx, k, s, cfg) {
+  const r = (activeStage(s, cfg).radius || 2.4) * 2.5;
+  ctx.strokeStyle = BLUEPRINT.accent;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + 0.2;
+    const inner = r * (0.4 + 0.3 * ((i * 0.618) % 1));
+    ctx.moveTo(Math.cos(a) * inner * k, Math.sin(a) * inner * k);
+    ctx.lineTo(Math.cos(a) * r * k, Math.sin(a) * r * k);
+  }
+  ctx.stroke();
 }
 
 // Entry heating: short strokes streaming back from the base, more and
@@ -3439,8 +3560,8 @@ function drawChute(ctx, k, s, cfg) {
     ctx.setLineDash([]);
     return;
   }
-  const r = 7;                 // canopy radius, metres
-  const cy = top + 14;         // canopy centre above the base plane
+  const r = CHUTE_RADIUS;
+  const cy = top + CHUTE_RISE; // canopy centre above the base plane
   ctx.strokeStyle = BLUEPRINT.ink;
   ctx.lineWidth = STROKE.structure;
   ctx.beginPath();
@@ -3457,6 +3578,29 @@ function drawChute(ctx, k, s, cfg) {
   }
   for (const f of [-1, -0.5, 0, 0.5, 1]) { ctx.moveTo(f * r * k, -cy * k); ctx.lineTo(0, -top * k); }
   ctx.stroke();
+}
+
+// The capsule alone: a truncated cone on a heat shield (the heavy arc
+// under the base), a window, no engine.
+function drawCapsule(ctx, k, st, y, ink, weight) {
+  const r = st.radius;
+  const path = (pts, close = true) => polyline(ctx, k, pts.map(([x, py]) => [x, py + y]), close);
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = weight;
+  path([[-r, 0.35], [r, 0.35], [0.35, st.height], [-0.35, st.height]]);
+  // Shield: a shallow arc below the base, drawn heavier.
+  ctx.lineWidth = weight * 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-r * k, -(y + 0.35) * k);
+  ctx.quadraticCurveTo(0, -(y - 0.25) * k, r * k, -(y + 0.35) * k);
+  ctx.stroke();
+  ctx.lineWidth = weight;
+  if (k >= 4) {
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    path([[0.25, st.height * 0.55], [0.55, st.height * 0.55], [0.5, st.height * 0.72], [0.3, st.height * 0.72]]);
+    path([[-r * 0.8, 0.9], [r * 0.8, 0.9]], false);
+  }
 }
 
 // Screen position of a dropped stage's top end.
@@ -3492,7 +3636,9 @@ function drawDebris(ctx, cam, d, cfg, inset = false) {
   ctx.lineJoin = 'miter';
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
+  if (d.broken) ctx.setLineDash([3, 3]); // torn pieces
   drawRocketStack(ctx, cam.scale, { stage: d.stage, fuel: 0 }, cfg, d.stage, d.stage, BLUEPRINT.inkPale, STROKE.annotation, true);
+  ctx.setLineDash([]);
   ctx.restore();
 }
 
@@ -3608,7 +3754,8 @@ function drawRocketStack(ctx, k, s, cfg, from, stop, ink, weight, alone = false)
     ctx.strokeStyle = ink;
     ctx.lineWidth = weight;
     if (i === 0) drawFirstStage(ctx, k, st, y, frac, ink, weight);
-    else drawSecondStage(ctx, k, st, y, frac, ink, weight, i === top);
+    else if (!st.maxThrust) drawCapsule(ctx, k, st, y, ink, weight);
+    else drawSecondStage(ctx, k, st, y, frac, ink, weight, i === top && st.capsule);
     if (i < top) {
       // Interstage division.
       const dash = ctx.getLineDash();
@@ -3671,6 +3818,8 @@ __exports.BLUEPRINT = BLUEPRINT;
 __exports.drawPaper = drawPaper;
 __exports.STROKE = STROKE;
 __exports.STRATA = STRATA;
+__exports.CHUTE_RADIUS = CHUTE_RADIUS;
+__exports.CHUTE_RISE = CHUTE_RISE;
 __exports.MONO = MONO;
 __exports.drawScene = drawScene;
 __exports.drawScaleBar = drawScaleBar;
@@ -4232,10 +4381,10 @@ function startPage(keys = {}) {
     choices: SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: `${SCENARIOS[id].brief} GOAL — ${SCENARIOS[id].goalText}` })),
     lines: [
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
-      `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
+      `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
       'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry. SPACE pauses. The same arrows shuttle a replay.',
       'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
-      'P opens the parachute (capsule only, under 250 m/s). R restarts. N returns to this plan. V replays the last flight. M mutes.',
+      'ENTER also opens the parachute once only the capsule is left (under 250 m/s; P works too). R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',
@@ -4783,8 +4932,16 @@ function rose(ctx, cx, cy, r, info, pitch) {
   ctx.beginPath();
   ctx.arc(cx, cy, 2, 0, Math.PI * 2);
   ctx.stroke();
-  const holdText = info.hold === 1 ? 'HOLD PRO' : info.hold === 2 ? 'HOLD RET' : 'ATT';
-  text(ctx, holdText, cx, cy + r + 9, { size: 9, weight: info.hold ? 500 : 400, align: 'center', colour: info.hold ? BLUEPRINT.ink : BLUEPRINT.inkPale });
+  const holdText = info.hold === 1 ? 'AUTO PRO' : info.hold === 2 ? 'AUTO RET' : 'ATT';
+  if (info.hold) {
+    // Inverted cell, like WARP in the title block: steering is automatic.
+    const w = 54; const hh = 11;
+    ctx.fillStyle = BLUEPRINT.ink;
+    ctx.fillRect(Math.round(cx - w / 2), Math.round(cy + r - 1), w, hh);
+    text(ctx, holdText, cx, cy + r + 8, { size: 8, weight: 500, align: 'center', colour: BLUEPRINT.paper });
+  } else {
+    text(ctx, holdText, cx, cy + r + 9, { size: 9, weight: 400, align: 'center', colour: BLUEPRINT.inkPale });
+  }
 }
 
 // The vehicle as a stack of stage boxes from the bottom up: hatched to the
@@ -5195,6 +5352,7 @@ function createSfx(mixer) {
     crash() { burst({ seconds: 0.9, cutoff: 900, level: 0.9 }); },
     stage() { burst({ seconds: 0.18, cutoff: 500, level: 0.5 }); },
     stop() { setEngine(0); },
+    get engineLevel() { return lastThrottle; },
   };
 }
 
@@ -5316,7 +5474,12 @@ let shortPrediction = null;
 let sinceShort = 99;
 let seenEvents = 0;
 function stepGame(dt) {
-  flight.step(input.command(), dt);
+  let cmd = input.command();
+  // ENTER is the next step down the stack: with only the capsule left and
+  // the chute still stowed, it opens the chute.
+  const st = flight.cfg.stages[flight.state.stage];
+  if (cmd.stage && st.capsule && flight.state.stage === flight.cfg.stages.length - 1 && flight.state.chute === 0) cmd = { ...cmd, stage: 0, chute: 1 };
+  flight.step(cmd, dt);
   // The alert rules look ten seconds ahead; a short prediction every third
   // tick is plenty. The drawing predicts the whole path from the view.
   if (flight.phase !== 'flying') shortPrediction = null;
@@ -5739,10 +5902,11 @@ function frame(nowMs) {
   if (replay) {
     advanceReplay(frameDt);
   } else {
-    // A crash cuts hard to the report; a landing lets the touchdown settle first.
+    // A crash cuts hard to the report; a landing lets the touchdown settle
+    // first, and a break-up lets the pieces fall away for a moment.
     const over = flight.phase !== 'flying' && flight.phase !== 'pad';
     if (over && !pageOpen && reportDueAt === null) {
-      reportDueAt = flight.tick + (flight.phase === 'landed' ? 75 : 20);
+      reportDueAt = flight.tick + (flight.phase === 'landed' ? 75 : flight.stats.burned ? 150 : 20);
       if (flight.phase === 'crashed') sfx.crash(); else if (flight.phase === 'landed') sfx.touchdown();
       setWarp(0);
     }
@@ -5760,9 +5924,9 @@ function frame(nowMs) {
     }
   }
   const scene = render(alpha, frameDt);
-  const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : warp === 0;
+  const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : warp === 0 && !loop.paused;
   if (!replay && warp > 0 && flight.phase !== 'flying' && flight.phase !== 'pad') setWarp(0);
-  sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / activeStage(scene.view, scene.src.cfg).maxThrust : 0);
+  sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / (activeStage(scene.view, scene.src.cfg).maxThrust || 1) : 0);
   const metSeconds = Math.floor(scene.view.time);
   if (metSeconds !== lastMetShown) {
     lastMetShown = metSeconds;
@@ -5801,6 +5965,9 @@ window.__karman = {
   get extent() { return lastExtent; },
   get mapCamera() { return mapCamera; },
   get prediction() { return lastPrediction; },
+  get paused() { return loop.paused; },
+  get hold() { return input.hold; },
+  get engineLevel() { return sfx.engineLevel; },
   scenarios: Object.keys(SCENARIOS),
 };
 

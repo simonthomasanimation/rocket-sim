@@ -70,3 +70,4 @@
 - 2026-10-14 — The edge of the air is drawn and named the Kármán line (ring label, ruler tick, CAPCOM call on the way up); the game is named after it.
 - 2026-10-14 — T and G are latching automatic steering (they already were); the rose now shows AUTO PRO / AUTO RET in an inverted cell while it is on, and a tilt key takes over again.
 - 2026-10-14 — Tutorial pages are an M5 task (manual document): illustrated mechanics plus a glossary, linked from the flight plan and the explainer. Noted at the owner's request; not before the builder.
+- 2026-10-14 — Snapshots: while a milestone's gate is open, polish inside that milestone also refreshes its snapshot file, so the owner's offline copy matches the deployed page.
