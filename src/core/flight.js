@@ -69,8 +69,15 @@ export function createFlight({ seed = 1, scenario = 'descent', body = MOON, limi
       const hadFuel = s.fuel > 0;
       const { staged } = stepCraft(s, cmd, dt, cfg, body);
       if (staged >= 0) {
+        // The spent stage is pushed off backwards along the axis by the
+        // separation springs and picks up a slight tumble.
         const p = flight.prev;
-        flight.debris.push({ stage: staged, x: p.x, y: p.y, vx: p.vx, vy: p.vy, angle: p.angle, angVel: p.angVel, age: 0 });
+        const kick = 1.5;
+        flight.debris.push({
+          stage: staged, x: p.x, y: p.y,
+          vx: p.vx - Math.sin(p.angle) * kick, vy: p.vy - Math.cos(p.angle) * kick,
+          angle: p.angle, angVel: p.angVel + flight.rng.range(-0.25, 0.25), age: 0,
+        });
         flight.events.push({ tick: flight.tick, type: 'staged', stage: staged });
       } else if (hadFuel && s.fuel <= 0) {
         s.throttle = 0;

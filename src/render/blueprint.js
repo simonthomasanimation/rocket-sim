@@ -75,6 +75,7 @@ export function drawScene(ctx, cam, scene) {
   drawAltitudeRuler(ctx, cam, body, terrain, state);
   if (phase === 'flying' && prediction) drawPrediction(ctx, cam, prediction, body);
   for (const d of debris || []) drawDebris(ctx, cam, d, cfg);
+  for (const d of debris || []) if (d.age < 1 && craftHeight(state, cfg) * cam.scale >= 10) drawSeparation(ctx, cam.toScreen(state.x, state.y), debrisTop(cam, d, cfg));
   drawCraft(ctx, cam, state, cfg, phase);
   if (phase === 'landed' || phase === 'crashed') drawOutcomeLabel(ctx, cam, state, cfg, phase);
   ctx.restore();
@@ -143,16 +144,43 @@ function drawAltitudeRuler(ctx, cam, body, terrain, state) {
 // Detail inset: the vehicle full-frame in a boxed callout (an engineering
 // "DETAIL A") whenever the main view draws it under 48 px tall, so its
 // tilt, exhaust and remaining stages stay readable from any distance.
-export function drawDetail(ctx, cam, { state, cfg, phase }, box) {
+// The inset eases its framing so a dropped stage can slide into view.
+const inset = { k: 0, offset: 0 };
+
+export function drawDetail(ctx, cam, { state, cfg, phase, debris }, box) {
   const h = craftHeight(state, cfg);
   if (h * cam.scale >= 48) return;
-  const k = (box.h * 0.6) / h;
   const tilt = state.angle - Math.atan2(state.x, state.y);
+  const ax = Math.sin(state.angle); const ay = Math.cos(state.angle);
+  // Frame the vehicle, and for a few seconds after staging the spent stage
+  // behind it too (up to two and a half stage lengths back).
+  let back = 0;
+  for (const d of debris || []) {
+    if (d.age >= 5) continue;
+    const st = cfg.stages[d.stage];
+    const b = -((d.x - state.x) * ax + (d.y - state.y) * ay);
+    back = Math.max(back, Math.min(b, 2.5 * st.height));
+  }
+  const kTarget = (box.h * 0.6) / (h + back);
+  const offTarget = (h - back) / 2;          // metres from the base to the framed midpoint
+  if (!inset.k) { inset.k = kTarget; inset.offset = offTarget; }
+  inset.k += (kTarget - inset.k) * 0.12;
+  inset.offset += (offTarget - inset.offset) * 0.12;
+  const k = inset.k;
   const cx = box.x + box.w / 2;
-  const cy = box.y + box.h * 0.54;
-  // Place the base so the body sits centred whatever the tilt.
-  const base = { x: cx - Math.sin(tilt) * (h * k) / 2, y: cy + Math.cos(tilt) * (h * k) / 2 };
-  const mini = { scale: k, rot: Math.atan2(state.x, state.y), toScreen: () => base };
+  const cy = box.y + box.h * 0.52;
+  const base = { x: cx - Math.sin(tilt) * inset.offset * k, y: cy + Math.cos(tilt) * inset.offset * k };
+  const rot = Math.atan2(state.x, state.y);
+  // The inset's own little camera: the craft's base at `base`, everything
+  // else placed relative to it in metres.
+  const mini = {
+    scale: k, rot, width: box.w, height: box.h, top: box.y, left: box.x,
+    toScreen: (wx, wy) => {
+      const dx = wx - state.x; const dy = wy - state.y;
+      const c = Math.cos(rot); const sn = Math.sin(rot);
+      return { x: base.x + (dx * c - dy * sn) * k, y: base.y - (dx * sn + dy * c) * k };
+    },
+  };
   ctx.save();
   ctx.beginPath();
   ctx.rect(box.x, box.y, box.w, box.h);
@@ -171,6 +199,14 @@ export function drawDetail(ctx, cam, { state, cfg, phase }, box) {
   ctx.moveTo(box.x + 8, box.y + box.h - 20); ctx.lineTo(box.x + 28, box.y + box.h - 20);
   ctx.moveTo(box.x + box.w - 8, box.y + box.h - 20); ctx.lineTo(box.x + box.w - 28, box.y + box.h - 20);
   ctx.stroke();
+  // A stage dropped in the last few seconds falls away in the inset too.
+  for (const d of debris || []) {
+    if (d.age >= 5) continue;
+    ctx.globalAlpha = Math.min(1, (5 - d.age) / 2);
+    drawDebris(ctx, mini, d, cfg, true);
+    if (d.age < 1) drawSeparation(ctx, base, debrisTop(mini, d, cfg));
+    ctx.globalAlpha = 1;
+  }
   drawCraft(ctx, mini, state, cfg, phase);
   ctx.restore();
   ctx.strokeStyle = BLUEPRINT.ink;
@@ -551,12 +587,33 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
   ctx.restore();
 }
 
+// Screen position of a dropped stage's top end.
+function debrisTop(cam, d, cfg) {
+  const h = cfg.stages[d.stage].height;
+  return cam.toScreen(d.x + Math.sin(d.angle) * h, d.y + Math.cos(d.angle) * h);
+}
+
+// The brief's dashed separation line between the craft and the stage it
+// has just dropped, for the first second.
+function drawSeparation(ctx, a, b) {
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
 // A dropped stage falling away, drawn lighter than the live craft.
-function drawDebris(ctx, cam, d, cfg) {
+function drawDebris(ctx, cam, d, cfg, inset = false) {
   const p = cam.toScreen(d.x, d.y);
   const st = cfg.stages[d.stage];
   if (st.height * cam.scale < 6) return;
-  if (p.x < -200 || p.x > cam.width + 200 || p.y < cam.top - 200 || p.y > cam.top + cam.height + 200) return;
+  const margin = inset ? 0 : 200;
+  const left = cam.left || 0;
+  if (p.x < left - margin || p.x > left + cam.width + margin || p.y < cam.top - margin || p.y > cam.top + cam.height + margin) return;
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(d.angle - cam.rot);

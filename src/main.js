@@ -295,7 +295,7 @@ function render(alpha, frameDt) {
   const box = isNarrow
     ? { x: surface.width - 16 - 136, y: 16 + (titleBlock.offsetHeight || 170) + 8, w: 136, h: 168 }
     : { x: surface.width - 16 - 240, y: 16, w: 240, h: 272 };
-  drawDetail(surface.ctx, camera, { state: view, cfg: src.cfg, phase }, box);
+  drawDetail(surface.ctx, camera, { state: view, cfg: src.cfg, phase, debris: scene.debris }, box);
   const a = scene.alerts || alerts || computeAlerts(src, prediction);
   hud.update(view, a, scene.capcom, frameDt);
   const up = Math.atan2(view.x, view.y);
