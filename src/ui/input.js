@@ -75,8 +75,14 @@ export function createInput({ touchRoot } = {}) {
   }
 
   let mode = 'flight'; // 'flight' | 'replay'
+  const observed = {};  // code -> character printed on the key, as seen typed
+  const labelListeners = new Set();
 
   window.addEventListener('keydown', (e) => {
+    if (typeof e.key === 'string' && e.key.length === 1 && /^Key[A-Z]$/.test(e.code) && observed[e.code] !== e.key.toUpperCase()) {
+      observed[e.code] = e.key.toUpperCase();
+      labelListeners.forEach((fn) => fn({ ...observed }));
+    }
     if (mode === 'replay') {
       const action = actionFor(e, REPLAY_BY_KEY, REPLAY_BY_CODE);
       if (!action) return;
@@ -166,6 +172,9 @@ export function createInput({ touchRoot } = {}) {
     onFirstGesture(fn) { if (gestured) fn(); else gestureListeners.add(fn); },
     // Switch the keyboard between flying and the replay transport.
     setMode(next) { mode = next; held.clear(); pointers.clear(); updateButtons(); },
+    // Key labels learned from what the player actually typed (code -> letter).
+    get observedLabels() { return { ...observed }; },
+    onLabels(fn) { labelListeners.add(fn); },
     get mode() { return mode; },
     setButtonsVisible(visible) { if (touchRoot) touchRoot.classList.toggle('is-hidden', !visible); },
   };

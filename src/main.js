@@ -272,9 +272,11 @@ openPage('start', startPage());
 loop.pause();
 // Relabel the card with the keys as printed on this keyboard, once known.
 keyLabels(['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyZ', 'KeyX']).then((keys) => {
-  if (pageOpen === 'start') openPage('start', startPage(keys));
-  transport.setKeyLabels(keys);
+  if (pageOpen === 'start') openPage('start', startPage({ ...keys, ...input.observedLabels }));
+  transport.setKeyLabels({ ...keys, ...input.observedLabels });
 });
+// Browsers without a layout map still reveal the layout as keys get typed.
+input.onLabels((keys) => transport.setKeyLabels(keys));
 
 // Pause the clock while the tab is hidden; resume cleanly when it comes back.
 document.addEventListener('visibilitychange', () => {

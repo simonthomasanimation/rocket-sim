@@ -48,7 +48,10 @@ export function createTransport(root, onAction) {
   const tapeRow = el('div', 'transport-tape-row');
   tapeRow.append(timeNow, tape, timeEnd);
 
+  // EXIT on the left, the shuttle group centred, the speed on the right.
   const buttons = el('div', 'transport-buttons');
+  const left = el('div', 'transport-group transport-left');
+  const centre = el('div', 'transport-group transport-centre');
   const byId = {};
   for (const b of BUTTONS) {
     const btn = el('button', 'stamp-button transport-button');
@@ -62,11 +65,11 @@ export function createTransport(root, onAction) {
     // report after EXIT) does not catch the finger-up.
     btn.addEventListener('click', () => onAction(b.action));
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
-    buttons.append(btn);
+    (b.action === 'exit' ? left : centre).append(btn);
     if (b.id) byId[b.id] = btn;
   }
   const speed = el('span', 'transport-speed', '×1');
-  buttons.append(speed);
+  buttons.append(left, centre, speed);
 
   bar.append(tapeRow, buttons);
   root.append(bar);
