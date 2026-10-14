@@ -88,7 +88,7 @@ export const SCENARIOS = {
     onPad: true,
     section: 'SECTION 3 — EARTH TO MOON',
     goal: 'land',
-    goalText: 'Get home: climb to a low lunar orbit, burn prograde until the map shows a path that dives past Earth with PE between 15 and 35 km, drop the stage (ENTER), hold retrograde (G) through the air, ENTER again for the chute under 250 m/s.',
+    goalText: 'Get home: climb to a low lunar orbit, burn prograde until the map shows a path that dives past Earth with PE between 15 and 35 km (gently: out here 500 m/s is enough to leave Earth\'s reach for good), drop the stage (ENTER), hold retrograde (G) through the air, ENTER again for the chute under 250 m/s.',
     brief: 'The KP-3 capsule on its ascent stage, sitting on the Moon with a full tank.',
     start: (body, terrain) => ({ x: 0, y: body.radius + terrain.height(0), vx: 0, vy: 0, angle: 0, stage: 2 }),
   },

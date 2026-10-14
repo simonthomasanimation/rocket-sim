@@ -129,6 +129,7 @@ function stepGame(dt) {
   else if (sinceShort >= 3) { shortPrediction = predictCoast(flight.state, flight.body, flight.terrain, { maxTime: 12, maxSteps: 400, drag: flight.drag(), clock: flight.clock }); sinceShort = 0; }
   sinceShort += 1;
   alerts = computeAlerts(flight, shortPrediction);
+  alerts.escaping = !!(lastPrediction && lastPrediction.escaped && flight.phase === 'flying');
   capcom.update(flight, alerts);
   // Sounds and stamps for new events.
   for (; seenEvents < flight.events.length; seenEvents++) {

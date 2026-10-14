@@ -50,6 +50,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Milestone build kept in snapshots/m3-earth-moon.html (refreshed with the re-entry polish that landed while the gate was open)
 - [x] Parachutes in two automatic steps (owner request, 2026-10-14): one press puts the drogue out, the main follows by itself under 90 m/s and 3 km (reefed four seconds, then full); drawn, read out, called by CAPCOM
 - [x] Quicker descent under the canopy (owner request, 2026-10-14): ×64 allowed at any height under a canopy, E warps to the main chute under the drogue and to touchdown once the main is full, the main coming out drops the warp so it can be seen
+- [x] Finding the way in space (owner request, 2026-10-14): the Moon's sphere and the edge of Earth's reach drawn as rings whenever on the sheet, edge pointers with name and distance to bodies off the sheet, the body named when it is a dot, the end of a path marked (leaves Earth's reach, in accent, or prediction ends), CAPCOM warns of an escape
 - [x] Earth landscape (owner request, 2026-10-14): coastal pad, plains and hill country, mountain ranges to 4.5 km with contour lines, islands, seas with water lines and labels; the camera frames against the local ground
 
 ## M4 Builder

@@ -3,7 +3,7 @@
 
 import { labelAlpha } from './camera.js';
 import { craftHeight, footHalfWidth, activeStage, progradeAngle, canopyBloom } from '../core/craft.js';
-import { BODIES } from '../core/body.js';
+import { BODIES, ESCAPE_RADIUS } from '../core/body.js';
 
 export const BLUEPRINT = {
   paper: '#1B3A6B',
@@ -83,6 +83,13 @@ export function drawScene(ctx, cam, scene) {
     drawBody(ctx, shifted, o.body, o.terrain, { x: state.x - o.offset.x, y: state.y - o.offset.y }, true);
   }
   drawBody(ctx, cam, body, terrain, state);
+  // Pointers to the bodies that are off the sheet: the one the craft
+  // orbits, and the others (the Moon from Earth's sphere, Earth from the Moon's).
+  {
+    const craft = cam.toScreen(state.x, state.y);
+    drawEdgePointer(ctx, cam, body, cam.toScreen(0, 0), craft, Math.hypot(state.x, state.y));
+    for (const o of others || []) drawEdgePointer(ctx, cam, o.body, cam.toScreen(o.offset.x, o.offset.y), craft, Math.hypot(state.x - o.offset.x, state.y - o.offset.y));
+  }
   drawAltitudeRuler(ctx, cam, body, terrain, state);
   if (phase === 'flying' && prediction) drawPrediction(ctx, cam, prediction, body);
   for (const d of debris || []) drawDebris(ctx, cam, d, cfg);
@@ -302,6 +309,13 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
   const thetaC = Math.atan2(state.x, state.y);
   const diag = Math.hypot(W, H);
   const centre = cam.toScreen(0, 0);
+  // The reach of the body's gravity: its sphere of influence as a dotted
+  // ring, or, for the body at the top (Earth), the edge beyond which the
+  // flight is lost. Drawn whenever any of it is on the sheet, so the line
+  // the craft is about to cross is there even when the ring is far bigger
+  // than the view.
+  if (Number.isFinite(body.soi)) drawReachRing(ctx, cam, centre, body.soi, `${body.name} SOI`);
+  else if (!body.parent) drawReachRing(ctx, cam, centre, ESCAPE_RADIUS, `EDGE OF ${body.name}'S REACH ${formatDistance(ESCAPE_RADIUS)} — THE FLIGHT IS LOST BEYOND IT`);
   if (far) {
     // Off the sheet entirely, or too small to be more than a dot.
     const Rpx = R * s;
@@ -315,14 +329,9 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
   }
   const half = far ? Math.PI : Math.min(Math.PI, (diag / s) / R + 0.002);
   const full = half >= Math.PI;
-  // Sphere of influence as a dotted ring, once it is small enough to see whole.
-  if (Number.isFinite(body.soi) && body.soi * s < 0.8 * Math.max(W, H)) {
-    ctx.strokeStyle = BLUEPRINT.inkPale;
-    ctx.lineWidth = STROKE.annotation;
-    ctx.setLineDash([2, 8]);
-    ctx.beginPath(); ctx.arc(centre.x, centre.y, body.soi * s, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-    label(ctx, `${body.name} SOI`, centre.x, centre.y - body.soi * s - 6, 'center', BLUEPRINT.inkPale, labelAlpha(body.soi * s / 4));
+  if (!far && R * s < 12 && centre.x > -20 && centre.x < W + 20 && centre.y > cam.top - 20 && centre.y < cam.top + H + 20) {
+    // The body the craft orbits, seen from far out: name it, it is only a dot.
+    label(ctx, body.name, centre.x + 7, centre.y + 5, 'left', BLUEPRINT.inkPale);
   }
   let n = Math.ceil((2 * half) / (2 / (s * R)));
   n = Math.max(32, Math.min(3000, n));
@@ -602,6 +611,63 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 
 // Stipple across the disc: one dot per cell of a world-anchored grid, placed
 // by a hash so it never twinkles, only inside the body and the view.
+// A ring of radius `radius` (m) round a centre on screen, dotted, with its
+// label on the ring at the point nearest the middle of the sheet. Skipped
+// when no part of it crosses the sheet or it is too small to see.
+function drawReachRing(ctx, cam, centre, radius, text) {
+  const rp = radius * cam.scale;
+  if (rp < 4) return;
+  const W = cam.width; const H = cam.height;
+  const mx = W / 2; const my = cam.top + H / 2;
+  const d = Math.hypot(mx - centre.x, my - centre.y);
+  const reach = Math.hypot(W, H) / 2;
+  if (d > rp + reach || d < rp - reach) return; // the ring passes nowhere near the sheet
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.setLineDash([2, 8]);
+  ctx.beginPath(); ctx.arc(centre.x, centre.y, rp, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  // Label: on the ring, towards the middle of the sheet (straight up from
+  // the centre when the centre is the middle).
+  const ux = d > 1 ? (mx - centre.x) / d : 0; const uy = d > 1 ? (my - centre.y) / d : -1;
+  const px = centre.x + ux * rp; const py = centre.y + uy * rp;
+  if (px < 60 || px > W - 60 || py < cam.top + 20 || py > cam.top + H - 20) return;
+  label(ctx, text, px, py - 6 + (uy > 0 ? 18 : 0), 'center', BLUEPRINT.inkPale, labelAlpha(rp / 2));
+}
+
+// A pointer at the edge of the sheet towards a body that is off it: a
+// short arrow along the direction from the craft, with the body's name and
+// the distance to its centre, so a craft far out in space can always find
+// the way home. Nothing is drawn while the body's disc is on the sheet.
+function drawEdgePointer(ctx, cam, body, centre, craft, distance) {
+  const W = cam.width; const H = cam.height;
+  const rp = body.radius * cam.scale;
+  if (centre.x > -rp && centre.x < W + rp && centre.y > cam.top - rp && centre.y < cam.top + H + rp) return;
+  const dx = centre.x - craft.x; const dy = centre.y - craft.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len; const uy = dy / len;
+  // Where the ray from the craft leaves the sheet, inset from the edge.
+  const inset = 28;
+  const left = inset; const right = W - inset; const top = cam.top + inset; const bottom = cam.top + H - inset;
+  let t = Infinity;
+  if (ux > 0) t = Math.min(t, (right - craft.x) / ux); else if (ux < 0) t = Math.min(t, (left - craft.x) / ux);
+  if (uy > 0) t = Math.min(t, (bottom - craft.y) / uy); else if (uy < 0) t = Math.min(t, (top - craft.y) / uy);
+  if (!Number.isFinite(t) || t <= 0) return;
+  let px = craft.x + ux * t; let py = craft.y + uy * t;
+  // Keep clear of the Detail A inset in the top right corner.
+  if (px > W - 270 && py < cam.top + 300) { py = cam.top + 300; px = Math.min(px, W - inset); }
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.structure;
+  ctx.beginPath();
+  ctx.moveTo(px - ux * 16, py - uy * 16); ctx.lineTo(px, py);
+  ctx.moveTo(px, py); ctx.lineTo(px - ux * 7 - uy * 4, py - uy * 7 + ux * 4);
+  ctx.moveTo(px, py); ctx.lineTo(px - ux * 7 + uy * 4, py - uy * 7 - ux * 4);
+  ctx.stroke();
+  const align = px > W * 0.66 ? 'right' : px < W * 0.33 ? 'left' : 'center';
+  const ly = py - uy * 22 + (uy < 0 ? 16 : 4);
+  label(ctx, `${body.name} ${formatDistance(distance)}`, px - ux * 10, ly, align, BLUEPRINT.ink);
+}
+
 // Earth's ground furniture (see drawBody). `hs` holds the height at each of
 // the n+1 samples from theta0, dTheta apart.
 function drawEarthFurniture(ctx, cam, body, terrain, hs, { n, theta0, dTheta, full, half, thetaC }) {
@@ -871,6 +937,19 @@ function drawPrediction(ctx, cam, prediction, body) {
     ctx.moveTo(p.x, p.y - 9); ctx.lineTo(p.x, p.y + 9);
     ctx.stroke();
     label(ctx, `T-${formatTime(impact.t)}  ${(-impact.vRadial).toFixed(0)} M/S`, p.x + 12, p.y - 6, 'left', colour);
+  }
+  // Where the path ends without landing or closing: leaving Earth's reach
+  // (a warning), or simply where the prediction stopped looking.
+  if (!impact && !closed && points.length > 1) {
+    const sg = segs[segs.length - 1];
+    const q = points[points.length - 1];
+    const p = cam.toScreen(q.x + sg.offset.x, q.y + sg.offset.y);
+    if (p.x > -40 && p.x < cam.width + 40 && p.y > cam.top - 40 && p.y < cam.top + cam.height + 40) {
+      const colour = prediction.escaped ? BLUEPRINT.accent : BLUEPRINT.inkPale;
+      ctx.strokeStyle = colour; ctx.lineWidth = STROKE.annotation;
+      ctx.beginPath(); ctx.moveTo(p.x - 5, p.y - 5); ctx.lineTo(p.x + 5, p.y + 5); ctx.moveTo(p.x + 5, p.y - 5); ctx.lineTo(p.x - 5, p.y + 5); ctx.stroke();
+      label(ctx, prediction.escaped ? `LEAVES ${BODIES[sg.body].name.toUpperCase()}'S REACH T-${formatTime(q.t)} — FLIGHT LOST` : `PREDICTION ENDS T-${formatTime(q.t)}`, p.x + 9, p.y - 4, 'left', colour);
+    }
   }
   if (prediction.entry) {
     const e = prediction.entry;

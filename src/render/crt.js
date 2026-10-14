@@ -6,7 +6,7 @@
 // orbits, the craft as a bright triangle, events as labelled ticks, a
 // blocky WARP readout, a status line and the radio log in terminal type.
 
-import { BODIES, bodyState, childrenOf } from '../core/body.js';
+import { BODIES, bodyState, childrenOf, ESCAPE_RADIUS } from '../core/body.js';
 import { formatDistance, formatTime, MONO } from './blueprint.js';
 
 export const CRT = {
@@ -159,6 +159,18 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
         text(ctx, `${b.name} SOI`, c.x, c.y - rs - 6, { size: 10, align: 'center', colour: CRT.inkDim });
       }
     }
+    if (!b.parent) {
+      // The edge of the top body's reach: beyond it the flight is lost.
+      const re = ESCAPE_RADIUS * cam.scale;
+      if (re < 6000) {
+        ctx.strokeStyle = CRT.inkDim; ctx.lineWidth = 0.75;
+        ctx.setLineDash([2, 6]);
+        ctx.beginPath(); ctx.arc(c.x, c.y, re, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        const ly = c.y - re < 14 ? c.y + re + 14 : c.y - re - 6;
+        if (ly > 0 && ly < cam.height) text(ctx, `EDGE OF ${b.name}'S REACH  ${formatDistance(ESCAPE_RADIUS)}`, c.x, ly, { size: 10, align: 'center', colour: CRT.inkDim });
+      }
+    }
     text(ctx, b.name, c.x, c.y + r + 12, { size: 11, align: 'center' });
   };
   drawBodyMark(body, 0, 0);
@@ -195,8 +207,15 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
     if (el.peAlt > 0 && el.timeToPe !== null && (prediction.closed || !prediction.impact)) tick(el.periapsis.x, el.periapsis.y, `PE ${formatDistance(el.peAlt)}`, el.timeToPe);
     if (prediction.encounter) { const e = prediction.encounter; const o = (segs[e.seg] || segs[segs.length - 1]).offset; tick(e.x + o.x, e.y + o.y, `${BODIES[e.body].name} SOI`, e.t, CRT.accent); }
     if (prediction.exit) { const e = prediction.exit; const o = (segs[e.seg] || segs[0]).offset; tick(e.x + o.x, e.y + o.y, `LEAVE ${BODIES[e.body].name}`, e.t, CRT.accent); }
-    if (prediction.entry) { const e = prediction.entry; const o = (segs[e.seg] || segs[0]).offset; tick(e.x + o.x, e.y + o.y, 'ENTRY', e.t, CRT.accent); }
+    if (prediction.entry) {
+      // Entry and impact sit on the same pixel from far out: then only the impact is ticked.
+      const e = prediction.entry; const o = (segs[e.seg] || segs[0]).offset;
+      let crowded = false;
+      if (prediction.impact) { const i = prediction.impact; const io = (segs[i.seg] || segs[0]).offset; const a = cam.toScreen(e.x + o.x, e.y + o.y); const b = cam.toScreen(i.x + io.x, i.y + io.y); crowded = Math.hypot(a.x - b.x, a.y - b.y) < 24; }
+      if (!crowded) tick(e.x + o.x, e.y + o.y, 'ENTRY', e.t, CRT.accent);
+    }
     if (prediction.impact) { const e = prediction.impact; const o = (segs[e.seg] || segs[0]).offset; tick(e.x + o.x, e.y + o.y, 'IMPACT', e.t, CRT.accent); }
+    if (!prediction.impact && !prediction.closed) { const q = pts[pts.length - 1]; const o = segs[segs.length - 1].offset; tick(q.x + o.x, q.y + o.y, prediction.escaped ? 'LEAVES REACH — LOST' : 'PREDICTION ENDS', q.t, prediction.escaped ? CRT.accent : CRT.inkDim); }
     // Ghosts of other bodies at the times the path reaches them.
     for (let j = 1; j < segs.length; j++) {
       const sg = segs[j];

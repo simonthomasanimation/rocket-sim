@@ -17,6 +17,7 @@ export const LINES = {
   landed: 'Contact light. Engine stop. Welcome to the Moon.',
   crashed: 'We have lost your signal.',
   escaped: 'You have left lunar space. Flight terminated.',
+  escaping: 'Your path leaves Earth\'s reach. Burn retrograde to come back.',
   soiMoon: 'Entering the Moon\'s sphere of influence. Lunar gravity has you now.',
   soiEarth: 'Back in Earth\'s sphere of influence.',
   entry: 'Entry interface. Keep the shield into the wind.',
@@ -74,6 +75,7 @@ export function createCapcom() {
       const sinking = alerts.vSpeed > 0;
       if (sinking && alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
       if (alerts.heat === 'critical') say(sinking ? 'heat' : 'heatUp', t, true, LINES[sinking ? 'heat' : 'heatUp']);
+      if (alerts.escaping) say('escaping', t, true);
       if (alerts.chute === 3) say('drogue', t);
       if (alerts.chute === 4) say('chuteReef', t);
       if (alerts.chute === 1) say('chute', t);
