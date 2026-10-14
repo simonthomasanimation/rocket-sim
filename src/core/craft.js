@@ -127,6 +127,7 @@ export function createCraftState(cfg, { x = 0, y = 0, vx = 0, vy = 0, angle = 0,
     thrust: 0,      // N produced on the last step, for the drawing and HUD
     chute: 0,       // 0 stowed, 1 out, 2 torn away
     heat: 0,        // entry heating as a fraction of what the craft can take
+    broken: 0,      // 1 once the heat has torn the craft apart
     time: 0,        // s since the flight began
   };
 }

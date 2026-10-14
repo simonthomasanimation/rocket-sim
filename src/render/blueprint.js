@@ -2,7 +2,7 @@
 // faint fold creases. Linework only, two stroke weights, no fills but hatching.
 
 import { labelAlpha } from './camera.js';
-import { craftHeight, footHalfWidth, activeStage } from '../core/craft.js';
+import { craftHeight, footHalfWidth, activeStage, progradeAngle } from '../core/craft.js';
 import { BODIES } from '../core/body.js';
 
 export const BLUEPRINT = {
@@ -798,7 +798,7 @@ function drawOutcomeLabel(ctx, cam, s, cfg, phase) {
   ctx.moveTo(x0, y0);
   ctx.lineTo(x, y);
   ctx.stroke();
-  label(ctx, crashed ? 'IMPACT' : 'TOUCHDOWN', x + 4, y - 2, 'left', colour);
+  label(ctx, s.broken ? 'BREAK-UP' : crashed ? 'IMPACT' : 'TOUCHDOWN', x + 4, y - 2, 'left', colour);
 }
 
 function label(ctx, text, x, y, align = 'left', colour = BLUEPRINT.ink, alpha = 1) {
@@ -831,6 +831,12 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
     const bell = cfg.drawing === 'lander' ? 0.95 : st.radius * 0.8;
     drawFlame(ctx, k, s.thrust / st.maxThrust, s.time, bell, cfg.drawing === 'lander' ? 0.5 : 0.1);
   }
+  if (s.broken) {
+    // The pieces are debris now; here only the point where it came apart.
+    drawBreakUp(ctx, k, s, cfg);
+    ctx.restore();
+    return;
+  }
   if (phase === 'flying' && s.heat > 0.03) drawPlasma(ctx, k, s, cfg);
   ctx.strokeStyle = BLUEPRINT.ink;
   ctx.lineWidth = STROKE.structure;
@@ -838,8 +844,60 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
   if (cfg.drawing === 'lander') drawLander(ctx, k, s, cfg);
   else drawRocketStack(ctx, k, s, cfg, s.stage, 0, BLUEPRINT.ink, STROKE.structure);
   ctx.setLineDash([]);
+  if (phase === 'flying' && s.heat > 0.08) drawHullHeat(ctx, k, s, cfg);
   if (s.chute) drawChute(ctx, k, s, cfg);
   ctx.restore();
+}
+
+// The hull itself heating: cross-hatching on the face that meets the air
+// (the base when flying shield-first, the nose otherwise), from a few
+// strokes at a tenth of the limit to a dense band near it; accent from
+// 80 %, when it is a warning.
+function drawHullHeat(ctx, k, s, cfg) {
+  const h = craftHeight(s, cfg);
+  const st = activeStage(s, cfg);
+  const r = st.radius || 2.4;
+  const heat = Math.min(1, s.heat);
+  let off = progradeAngle(s) - s.angle;
+  off = Math.atan2(Math.sin(off), Math.cos(off));
+  const noseFirst = Math.abs(off) < Math.PI / 2;
+  // A band of diagonal hatching across the hull at the end meeting the
+  // air, growing up the hull and tightening as the heat climbs.
+  const skirt = noseFirst ? 0 : Math.min(0.6, h * 0.1);
+  const band = h * (0.18 + 0.5 * heat);
+  const y0 = noseFirst ? h - band : skirt;
+  const count = 1 + Math.round(heat * 14);
+  const gap = band / count;
+  const wobble = 1 + 0.08 * Math.sin(s.time * 19);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-r * k, -(y0 + band) * k, 2 * r * k, band * k);
+  ctx.clip();
+  ctx.strokeStyle = heat >= 0.8 ? BLUEPRINT.accent : BLUEPRINT.ink;
+  ctx.lineWidth = heat >= 0.5 ? STROKE.structure : STROKE.annotation;
+  ctx.beginPath();
+  for (let i = 0; i <= count; i++) {
+    const y = y0 + (i + 0.5) * gap * wobble;
+    ctx.moveTo(-r * k, -(y - r * 0.6) * k);
+    ctx.lineTo(r * k, -(y + r * 0.6) * k);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Where the craft came apart: a burst of short accent strokes.
+function drawBreakUp(ctx, k, s, cfg) {
+  const r = (activeStage(s, cfg).radius || 2.4) * 2.5;
+  ctx.strokeStyle = BLUEPRINT.accent;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + 0.2;
+    const inner = r * (0.4 + 0.3 * ((i * 0.618) % 1));
+    ctx.moveTo(Math.cos(a) * inner * k, Math.sin(a) * inner * k);
+    ctx.lineTo(Math.cos(a) * r * k, Math.sin(a) * r * k);
+  }
+  ctx.stroke();
 }
 
 // Entry heating: short strokes streaming back from the base, more and
@@ -929,7 +987,9 @@ function drawDebris(ctx, cam, d, cfg, inset = false) {
   ctx.lineJoin = 'miter';
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
+  if (d.broken) ctx.setLineDash([3, 3]); // torn pieces
   drawRocketStack(ctx, cam.scale, { stage: d.stage, fuel: 0 }, cfg, d.stage, d.stage, BLUEPRINT.inkPale, STROKE.annotation, true);
+  ctx.setLineDash([]);
   ctx.restore();
 }
 

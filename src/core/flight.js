@@ -81,6 +81,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
       flight.clock += dt;
       stepDebris(flight, dt);
       if (flight.phase === 'pad' && !liftoff(flight, cmd, dt)) return;
+      if (flight.phase === 'crashed' && flight.state.broken === 1) { fall(flight, dt); return; }
       if (flight.phase !== 'flying') return;
       // On rails: no physics, the craft is moved along its orbit for the
       // warped span of this tick, stopping early at anything that needs
@@ -117,6 +118,7 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
         flight.stats.burned = true;
         flight.phase = 'crashed';
         s.throttle = 0; s.thrust = 0;
+        breakUp(flight);
         flight.events.push({ tick: flight.tick, type: 'burned' });
         flight.events.push({ tick: flight.tick, type: 'crashed' });
         return;
@@ -234,6 +236,41 @@ function handoff(flight) {
   flight.body = next;
   flight.terrain = flight.terrainOf(next);
   flight.events.push({ tick: flight.tick, type: 'soi', from: cur.id, to: next.id });
+}
+
+// Past the heat limit the stack comes apart: every remaining stage becomes
+// a piece of debris thrown sideways and tumbling, still in the air stream.
+function breakUp(flight) {
+  const s = flight.state;
+  const { cfg } = flight;
+  let along = 0;
+  for (let i = s.stage; i < cfg.stages.length; i++) {
+    const st = cfg.stages[i];
+    const kick = flight.rng.range(2, 6) * (flight.rng.next() < 0.5 ? -1 : 1);
+    const up = flight.rng.range(-1, 3);
+    flight.debris.push({
+      stage: i,
+      x: s.x + Math.sin(s.angle) * along, y: s.y + Math.cos(s.angle) * along,
+      vx: s.vx + Math.cos(s.angle) * kick + Math.sin(s.angle) * up,
+      vy: s.vy - Math.sin(s.angle) * kick + Math.cos(s.angle) * up,
+      angle: s.angle, angVel: s.angVel + flight.rng.range(-1.5, 1.5), age: 0, broken: true,
+      drag: dragFactor({ stage: 0, fuel: 0, chute: 0 }, { stages: [st] }),
+    });
+    along += st.height;
+  }
+  s.broken = 1;
+  s.chute = s.chute === 1 ? 2 : s.chute;
+}
+
+// After a break-up the wreck's centre keeps falling through the air (the
+// camera and the inset follow it, the pieces drift away from it) until
+// it reaches the ground.
+function fall(flight, dt) {
+  const s = flight.state;
+  rk4Step(s, dt, flight.body, 0, 0, dragFactor({ ...s, chute: 0 }, flight.cfg));
+  s.angle = normalizeAngle(s.angle + s.angVel * dt);
+  s.heat = heatFlux(s, flight.body) / heatLimit(s, flight.cfg);
+  if (Math.hypot(s.x, s.y) <= flight.terrain.groundRadiusAt(s.x, s.y)) s.broken = 2;
 }
 
 // Dropped stages coast under gravity until they hit the ground or drift off.
