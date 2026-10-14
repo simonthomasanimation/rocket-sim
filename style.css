@@ -610,6 +610,28 @@ body.doc-vellum .stamp-button.is-down { background: var(--vl-ink); color: var(--
 .vellum-button:hover, .vellum-button:focus-visible { background: var(--vl-ink); color: var(--vl-paper); outline: none; }
 .vellum-button kbd { padding: 0 4px; border: var(--stroke-annotation) solid currentColor; border-radius: 2px; font: 400 9px/14px var(--font-mono); }
 
+.vellum-namerow { display: flex; gap: 6px; margin: 4px 0 var(--grid); }
+.vellum-name {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 8px;
+  border: var(--stroke-annotation) solid var(--vl-ink);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--vl-ink);
+  font: 500 12px/18px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.vellum-name:focus { outline: none; border-width: var(--stroke-structure); }
+.vellum-designs { margin: 0 0 4px; padding: 0; list-style: none; }
+.vellum-designs li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 5px 0; border-bottom: var(--stroke-annotation) solid var(--vl-ink-pale); }
+.vellum-designs b { font: 500 12px/16px var(--font-mono); letter-spacing: 0.04em; }
+.vellum-designs i { grid-column: 1; font: 400 10px/14px var(--font-mono); font-style: normal; color: var(--vl-ink-pale); }
+.vellum-designs-ctl { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 4px; }
+.vellum-designs-ctl .vellum-button { padding: 3px 7px; font-size: 10px; }
 .vellum-note {
   min-height: 18px;
   margin: 0;

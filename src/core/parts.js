@@ -151,6 +151,33 @@ export function createDesign(name = 'UNTITLED', stack = []) {
   return { name, stack: stack.map((e) => (typeof e === 'string' ? { id: e, radials: [] } : { id: e.id, radials: (e.radials || []).map((r) => ({ id: r.id, count: r.count || 2, drop: r.drop === 'with' ? 'with' : 'early' })) })) };
 }
 
+// A design read from a save or an import: checked part by part and
+// rebuilt, so a stray file cannot put nonsense on the sheet. Throws with a
+// plain reason when it is not a design.
+export function validateDesign(raw) {
+  if (!raw || typeof raw !== 'object') throw new Error('NOT A DESIGN');
+  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 32).toUpperCase() : 'UNTITLED';
+  if (!Array.isArray(raw.stack)) throw new Error('NO STACK IN THE FILE');
+  const stack = [];
+  raw.stack.forEach((e, i) => {
+    const id = typeof e === 'string' ? e : e && e.id;
+    const p = PART_BY_ID[id];
+    if (!p) throw new Error(`UNKNOWN PART ${String(id).toUpperCase().slice(0, 24)} AT ${i + 1}`);
+    if (p.nodes.radial === 'attach') throw new Error(`${p.name} CANNOT BE IN THE STACK`);
+    const radials = [];
+    for (const r of (e && Array.isArray(e.radials) ? e.radials : [])) {
+      const rp = PART_BY_ID[r && r.id];
+      if (!rp) throw new Error(`UNKNOWN RADIAL PART AT ${i + 1}`);
+      if (rp.nodes.radial !== 'attach') throw new Error(`${rp.name} IS NOT A RADIAL PART`);
+      if (p.nodes.radial !== 'host') throw new Error(`${p.name} TAKES NO RADIAL PARTS`);
+      if (radials.some((q) => q.id === rp.id)) continue;
+      radials.push({ id: rp.id, count: r.count === 4 ? 4 : 2, drop: r.drop === 'with' ? 'with' : 'early' });
+    }
+    stack.push({ id: p.id, radials });
+  });
+  return { name, stack };
+}
+
 // A copy that shares nothing with the original.
 export function cloneDesign(design) {
   return createDesign(design.name, design.stack);

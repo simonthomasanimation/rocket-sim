@@ -18,6 +18,7 @@ import { drawPaper, drawScene, drawDetail } from './render/blueprint.js';
 import { createMapCamera, drawCrtPaper, drawCrt } from './render/crt.js';
 import { drawVellumPaper } from './render/vellum.js';
 import { createBuilder } from './ui/builder.js';
+import { createStore } from './core/save.js';
 import { mountTitleBlock, updateTitleBlock, stampTitleBlock, mountPage, unmountPage, reportPage, orbitPage, startPage, formatMet } from './ui/screens.js';
 import { createInput, keyLabels } from './ui/input.js';
 import { createHud, hudHeight } from './ui/hud.js';
@@ -42,8 +43,14 @@ const mixer = createMixer();
 const sfx = createSfx(mixer);
 input.onFirstGesture(() => mixer.start());
 
+// Saves go through core/save.js; the browser's storage is the backend when
+// it allows itself to be used (private windows and blocked storage do not).
+let storage = null;
+try { storage = window.localStorage; storage.getItem('karman.probe'); } catch { storage = null; }
+const store = createStore(storage);
+
 // The builder (vellum document): its chrome lives in #vellum, its drafting on the canvas.
-const builder = createBuilder({ canvas: surface.canvas, root: document.getElementById('vellum'), onAction: (a) => { if (a === 'newStart') closeBuilder(); } });
+const builder = createBuilder({ canvas: surface.canvas, root: document.getElementById('vellum'), store, onAction: (a) => { if (a === 'newStart') closeBuilder(); } });
 
 let scenarioId = 'descent';
 let flight = createFlight({ seed: 1, scenario: scenarioId });
@@ -700,6 +707,7 @@ window.__karman = {
   get engineLevel() { return sfx.engineLevel; },
   get doc() { return doc; },
   get builder() { return builder; },
+  get store() { return store; },
   openBuilder, closeBuilder,
   scenarios: Object.keys(SCENARIOS),
 };

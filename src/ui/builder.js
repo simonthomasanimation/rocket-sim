@@ -5,8 +5,8 @@
 // core/parts.js; this file only moves parts about and prints what the
 // core says.
 
-import { PARTS, CATEGORIES, SIZES, partById, createDesign, cloneDesign, addPart, addRadial, insertPart, insertRefusal, removePart, removeRadial, setBoosterDrop, stagingList, designStats, compileDesign } from '../core/parts.js';
-import { KP3_DESIGN } from '../core/designs.js';
+import { PARTS, CATEGORIES, SIZES, partById, createDesign, cloneDesign, validateDesign, addPart, addRadial, insertPart, insertRefusal, removePart, removeRadial, setBoosterDrop, stagingList, designStats, compileDesign } from '../core/parts.js';
+import { KP3_DESIGN, PRESETS } from '../core/designs.js';
 import { EARTH, MOON } from '../core/body.js';
 import { preloadPartArt, partIconSrc, onPartArtReady } from '../render/partart.js';
 import { VELLUM, layoutStack, hitStack, insertionIndexAt, drawStack, drawGhost, partUnits } from '../render/vellum.js';
@@ -23,10 +23,17 @@ function el(tag, className, textContent) {
 const kg = (m) => `${Math.round(m).toLocaleString('en-US')} KG`;
 const kn = (n) => `${(n / 1000).toFixed(n < 10000 ? 1 : 0)} KN`;
 
-export function createBuilder({ canvas, root, onAction }) {
+// Saved designs live under 'designs' in the store as { name: design };
+// the sheet as it was left is kept under 'builder.current'.
+const SAVED_KEY = 'designs';
+const CURRENT_KEY = 'builder.current';
+
+export function createBuilder({ canvas, root, onAction, store = null }) {
   let open = false;
   let design = createDesign('UNTITLED');
   let loadedPreset = false;
+  let saved = {};
+  if (store) { const s = store.read(SAVED_KEY); if (s && typeof s === 'object') saved = s; }
   let selected = null;   // { kind: 'part', index } | { kind: 'radial', index, id }
   let hover = null;
   let drag = null;       // { id, from: 'catalog' | 'stack', kind, index, x, y, moved, radial }
@@ -273,13 +280,13 @@ export function createBuilder({ canvas, root, onAction }) {
 
     const bar = el('div', 'vellum-buttons');
     bar.append(button('NEW', () => { design = createDesign('UNTITLED'); selected = null; changed(); }));
-    bar.append(button('KP-3', () => { design = cloneDesign(KP3_DESIGN); selected = null; changed(); }));
     bar.append(button('FLIGHT PLAN', () => onAction('newStart'), 'N'));
     panel.append(bar);
 
     const note = el('p', 'vellum-note');
     note.dataset.role = 'note';
     panel.append(note);
+
 
     // Figures: the slide-rule panel. TWR against Earth's pad and the Moon's.
     const stats = designStats(design, { gravity: EARTH.gravity });
@@ -364,6 +371,49 @@ export function createBuilder({ canvas, root, onAction }) {
         panel.append(b2);
       }
     }
+    // Designs: name and save, the saved list, the presets, export and import.
+    panel.append(el('h2', 'vellum-group-title', 'DESIGNS'));
+    const nameRow = el('div', 'vellum-namerow');
+    const nameField = el('input', 'vellum-name');
+    nameField.type = 'text'; nameField.maxLength = 32; nameField.value = design.name; nameField.setAttribute('aria-label', 'Design name'); nameField.spellcheck = false;
+    nameField.addEventListener('change', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); changed(); });
+    nameField.addEventListener('keydown', (e) => { if (e.key === 'Enter') { nameField.blur(); saveCurrent(); } });
+    nameRow.append(nameField);
+    nameRow.append(button('SAVE', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); saveCurrent(); }));
+    panel.append(nameRow);
+    const names = Object.keys(saved).sort();
+    if (names.length) {
+      const list = el('ul', 'vellum-designs');
+      for (const n of names) {
+        const li = el('li');
+        const st = designStats(saved[n], { gravity: EARTH.gravity });
+        li.append(el('b', null, n));
+        li.append(el('i', null, `${(st.mass / 1000).toFixed(1)} T · ${st.stages.length} STG · ${Math.round(st.deltaV)} M/S`));
+        const ctl = el('span', 'vellum-designs-ctl');
+        ctl.append(button('LOAD', () => { design = cloneDesign(saved[n]); selected = null; changed(); note(`${n} ON THE SHEET`); }));
+        ctl.append(button('DELETE', () => { delete saved[n]; persistSaved(); changed(); note(`${n} STRUCK OUT`); }));
+        li.append(ctl);
+        list.append(li);
+      }
+      panel.append(list);
+    } else panel.append(el('p', 'vellum-caption', 'No saved designs yet. Name the sheet and press SAVE.'));
+    panel.append(el('h2', 'vellum-group-title', 'PRESETS'));
+    const presets = el('ul', 'vellum-designs');
+    for (const d of PRESETS) {
+      const li = el('li');
+      const st = designStats(d, { gravity: EARTH.gravity });
+      li.append(el('b', null, d.name));
+      li.append(el('i', null, `${(st.mass / 1000).toFixed(1)} T · ${st.stages.length} STG · ${Math.round(st.deltaV)} M/S`));
+      const ctl = el('span', 'vellum-designs-ctl');
+      ctl.append(button('LOAD', () => { design = cloneDesign(d); selected = null; changed(); }));
+      li.append(ctl);
+      presets.append(li);
+    }
+    panel.append(presets);
+    const io = el('div', 'vellum-buttons');
+    io.append(button('EXPORT JSON', () => exportJson()));
+    io.append(button('IMPORT JSON', () => importJson()));
+    panel.append(io);
     panel.append(el('p', 'vellum-caption', 'Drag parts from the catalog onto the axis; a tap puts one on top. Boosters, fins and legs hang on a tank. Drag a part off the sheet to remove it. Decouplers divide the stages.'));
     showNote();
   }
@@ -375,6 +425,52 @@ export function createBuilder({ canvas, root, onAction }) {
     b.addEventListener('click', fn);
     return b;
   }
+  // --- Saving ---------------------------------------------------------------
+  function persistSaved() {
+    if (store && !store.write(SAVED_KEY, saved)) note('STORAGE REFUSED THE SAVE');
+  }
+  function saveCurrent() {
+    saved[design.name] = cloneDesign(design);
+    persistSaved();
+    changed();
+    note(`${design.name} SAVED`);
+  }
+  function autosave() { if (store) store.write(CURRENT_KEY, design); }
+  function exportJson() {
+    const text = JSON.stringify({ format: 'karman-design', version: 1, design }, null, 2);
+    try {
+      const blob = new Blob([text], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${design.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'design'}.json`;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      note('EXPORTED AS A JSON FILE');
+    } catch { note('EXPORT FAILED'); }
+  }
+  function importJson() {
+    const picker = document.createElement('input');
+    picker.type = 'file'; picker.accept = '.json,application/json';
+    picker.addEventListener('change', async () => {
+      const file = picker.files && picker.files[0];
+      if (!file) return;
+      try { importText(await file.text()); } catch (e) { note(String(e.message || e).toUpperCase().slice(0, 48)); }
+    });
+    picker.click();
+  }
+  // A JSON text: a design export, or a whole save with designs in it.
+  function importText(text) {
+    const doc = JSON.parse(text);
+    if (doc && doc.format === 'karman-design') { design = validateDesign(doc.design); selected = null; changed(); note(`${design.name} IMPORTED`); return design; }
+    if (doc && doc.format === 'karman-save' && doc.data && doc.data[SAVED_KEY]) {
+      let n = 0;
+      for (const [k, v] of Object.entries(doc.data[SAVED_KEY])) { try { saved[validateDesign(v).name || k] = validateDesign(v); n += 1; } catch { /* skip the bad one */ } }
+      persistSaved(); changed(); note(`${n} DESIGNS IMPORTED`); return null;
+    }
+    design = validateDesign(doc); selected = null; changed(); note(`${design.name} IMPORTED`);
+    return design;
+  }
+
   function removeSelected() {
     if (!selected) return;
     if (selected.kind === 'part') removePart(design, selected.index); else removeRadial(design, selected.index, selected.id);
@@ -392,6 +488,7 @@ export function createBuilder({ canvas, root, onAction }) {
   function changed() {
     if (selected && selected.kind === 'part' && !design.stack[selected.index]) selected = null;
     refreshPanel();
+    autosave();
   }
 
   // --- Drawing ----------------------------------------------------------------
@@ -428,7 +525,13 @@ export function createBuilder({ canvas, root, onAction }) {
     open() {
       open = true;
       root.classList.add('is-open');
-      if (!loadedPreset) { design = cloneDesign(KP3_DESIGN); loadedPreset = true; }
+      if (!loadedPreset) {
+        // The sheet as it was left, else the KP-3 to start from.
+        loadedPreset = true;
+        let kept = null;
+        if (store) { try { const raw = store.read(CURRENT_KEY); if (raw) kept = validateDesign(raw); } catch { kept = null; } }
+        design = kept || cloneDesign(KP3_DESIGN);
+      }
       if (!catalogBuilt) buildCatalog();
       refreshPanel();
       preloadPartArt().then(() => { fillIcons(); refreshPanel(); });
@@ -459,6 +562,9 @@ export function createBuilder({ canvas, root, onAction }) {
     // For automated playtests: add a part as a tap on the catalog would.
     add(id) { tapCatalog(partById(id)); },
     load(d) { design = cloneDesign(d); selected = null; changed(); },
+    save() { saveCurrent(); },
+    importText,
+    get saved() { return { ...saved }; },
     get stats() { return designStats(design); },
   };
 }

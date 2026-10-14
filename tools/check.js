@@ -85,6 +85,22 @@ async function openAndWatch(browser, url, label) {
     if (!(s.stages.length === 3 && s.mass > 0 && s.deltaV > 0)) return `stats ${JSON.stringify(s)}`;
     if (!document.querySelector('.vellum-part img')) return 'catalog without icons';
     if (document.querySelectorAll('.vellum-stage').length !== 4) return `${document.querySelectorAll('.vellum-stage').length} staging rows`;
+    // Save it, find it in the list and in the store, import a JSON text, and
+    // check the sheet comes back as it was left.
+    b.save();
+    if (!b.saved.CHECK || b.saved.CHECK.stack.length !== 6) return 'the design was not saved';
+    const stored = k.store.read('designs');
+    if (!stored || !stored.CHECK) return 'the store does not hold the saved design';
+    if (!document.querySelector('.vellum-designs b')) return 'the saved list is empty';
+    const presets = document.querySelectorAll('.vellum-designs')[1];
+    if (!presets || presets.querySelectorAll('li').length !== 6) return 'six presets expected in the list';
+    b.importText(JSON.stringify({ format: 'karman-design', version: 1, design: { name: 'IMPORTED', stack: ['engine-s-lift', 'tank-s-long', 'probe-core', 'nose-s'] } }));
+    if (b.design.name !== 'IMPORTED' || b.design.stack.length !== 4) return 'the import did not land on the sheet';
+    let refused = false;
+    try { b.importText('{"name":"X","stack":["warp-drive"]}'); } catch { refused = true; }
+    if (!refused || b.design.name !== 'IMPORTED') return 'a bad import was not refused';
+    const current = k.store.read('builder.current');
+    if (!current || current.name !== 'IMPORTED') return 'the sheet is not kept between visits';
     k.closeBuilder();
     await new Promise((r) => setTimeout(r, 300));
     if (k.doc !== 'blueprint') return `builder did not close (${k.doc})`;

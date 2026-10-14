@@ -18,7 +18,9 @@ import { WARP_LADDER, PHYSICS_LADDER, maxPhysicsWarp, maxWarpIndex, railsAllowed
 import { propagate } from '../src/core/kepler.js';
 import { flyMission } from './mission.js';
 import { PARTS, SIZES, CATEGORIES, partById, createDesign, cloneDesign, addPart, addRadial, insertPart, movePart, setBoosterDrop, stagingList, stackRefusal, radialRefusal, compileDesign, designStats, designMass } from '../src/core/parts.js';
-import { KP3_DESIGN } from '../src/core/designs.js';
+import { KP3_DESIGN, PRESETS } from '../src/core/designs.js';
+import { createStore } from '../src/core/save.js';
+import { validateDesign } from '../src/core/parts.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -189,6 +191,40 @@ test('the stack can be edited in the middle, and boosters can be kept on until t
   assert.equal(Math.round(merged.mass), Math.round(early.mass));
   const c = createDesign('CAPSULE', ['engine-s-vac', 'tank-s-short', 'decoupler-s', 'shield-s', 'capsule-s', 'parachute']);
   assert.equal(stagingList(c).at(-1).kind, 'chute');
+});
+
+test('the six presets compile without a red-pencil note, and a design survives a save, an export and an import', () => {
+  assert.equal(PRESETS.length, 6);
+  for (const d of PRESETS) {
+    const moonRocket = d.name.includes('MOON ORBITER');
+    const s = designStats(d, { gravity: moonRocket ? MOON.gravity : EARTH.gravity });
+    assert.equal(s.warnings.length, 0, `${d.name}: ${JSON.stringify(s.warnings)}`);
+    assert.ok(s.launchTwr > 1 && s.deltaV > 1000, `${d.name}: TWR ${s.launchTwr}, dV ${s.deltaV}`);
+    assert.deepEqual(validateDesign(JSON.parse(JSON.stringify(d))), d, `${d.name} round-trips through JSON`);
+  }
+  // A store over a backend that counts, then one that refuses everything.
+  const mem = new Map();
+  const backend = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, v), removeItem: (k) => mem.delete(k), get length() { return mem.size; }, key: (i) => [...mem.keys()][i] };
+  const store = createStore(backend);
+  assert.equal(store.read('designs'), null);
+  assert.ok(store.write('designs', { 'KP-3 LUNAR RETURN': KP3_DESIGN }));
+  assert.deepEqual(store.read('designs')['KP-3 LUNAR RETURN'], KP3_DESIGN);
+  const doc = store.exportAll();
+  assert.equal(doc.format, 'karman-save');
+  const other = createStore({ getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: () => { throw new Error('blocked'); } });
+  assert.equal(other.write('x', 1), false, 'a refusing backend is reported');
+  assert.equal(other.read('x'), 1, 'but the value is kept for the session');
+  assert.deepEqual(other.importAll(JSON.parse(JSON.stringify(doc))), ['designs']);
+  assert.deepEqual(other.read('designs')['KP-3 LUNAR RETURN'], KP3_DESIGN);
+  assert.throws(() => other.importAll({ hello: 1 }), /not a Kármán/);
+  // Bad files are refused with a plain reason.
+  assert.throws(() => validateDesign({ name: 'X', stack: ['warp-drive'] }), /UNKNOWN PART WARP-DRIVE/);
+  assert.throws(() => validateDesign({ name: 'X', stack: ['fins'] }), /CANNOT BE IN THE STACK/);
+  assert.throws(() => validateDesign({ name: 'X', stack: [{ id: 'engine-s-vac', radials: [{ id: 'fins' }] }] }), /TAKES NO RADIAL PARTS/);
+  assert.throws(() => validateDesign('nope'), /NOT A DESIGN/);
+  const loose = validateDesign({ name: '  my rocket  ', stack: ['engine-s-vac', { id: 'tank-s-short', radials: [{ id: 'legs-s', count: 4, drop: 'odd' }, { id: 'legs-s' }] }] });
+  assert.equal(loose.name, 'MY ROCKET');
+  assert.deepEqual(loose.stack[1].radials, [{ id: 'legs-s', count: 4, drop: 'early' }]);
 });
 
 test('fixed loop steps in whole ticks and caps catch-up', () => {
