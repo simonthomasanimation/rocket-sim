@@ -7,6 +7,7 @@
 // blocky WARP readout, a status line and the radio log in terminal type.
 
 import { BODIES, bodyState, childrenOf, ESCAPE_RADIUS } from '../core/body.js';
+import { closestApproach } from '../core/predict.js';
 import { formatDistance, formatTime, MONO } from './blueprint.js';
 
 export const CRT = {
@@ -21,15 +22,17 @@ const G = 8;
 // The map's own camera: centred on the frame, zoom from the fit plus the
 // player's bias, eased so a change of frame does not snap.
 export function createMapCamera() {
-  const cam = { cx: 0, cy: 0, scale: 1e-4, zoomBias: 0, width: 1, height: 1 };
+  const cam = { cx: 0, cy: 0, scale: 1e-4, zoomBias: 0, offX: 0, offY: 0, width: 1, height: 1 };
   cam.zoom = (steps) => { cam.zoomBias = Math.max(-8, Math.min(8, cam.zoomBias + steps)); };
-  cam.resetZoom = () => { cam.zoomBias = 0; };
+  cam.pan = (dx, dy) => { cam.offX -= dx / cam.scale; cam.offY += dy / cam.scale; };
+  cam.isHeld = () => cam.zoomBias !== 0 || cam.offX !== 0 || cam.offY !== 0;
+  cam.resetZoom = () => { cam.zoomBias = 0; cam.offX = 0; cam.offY = 0; };
   cam.toScreen = (wx, wy) => ({ x: cam.width / 2 + (wx - cam.cx) * cam.scale, y: cam.height / 2 - (wy - cam.cy) * cam.scale });
   // Fit a box [minX, maxX] x [minY, maxY] (world) with a margin, eased.
   cam.fit = (box, dt, snap = false) => {
     // Symmetric about the frame body (the origin), so it sits at the centre.
     const w = 2 * Math.max(1, Math.abs(box.minX), Math.abs(box.maxX)); const h = 2 * Math.max(1, Math.abs(box.minY), Math.abs(box.maxY));
-    const tx = 0; const ty = 0;
+    const tx = cam.offX; const ty = cam.offY;
     let ts = Math.min((cam.width - 12 * G) / w, (cam.height - 24 * G) / h) * Math.pow(2, cam.zoomBias);
     ts = Math.max(1e-6, Math.min(2, ts));
     const far = Math.hypot(tx - cam.cx, ty - cam.cy) * cam.scale > cam.width;
@@ -121,6 +124,30 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
     if (o.body.parent === body.id) {
       const c = cam.toScreen(0, 0);
       glowStroke(ctx, () => ctx.arc(c.x, c.y, o.body.orbitRadius * cam.scale, 0, Math.PI * 2), CRT.inkDim, 0.75, 2);
+    }
+  }
+
+  // Ghosts: where the Moon (or Earth, from the Moon) will be when the
+  // predicted path passes nearest to it, tied to that point of the path.
+  if (prediction && scene.phase === 'flying') {
+    for (const o of others) {
+      const best = closestApproach(prediction, body, o.body, clock);
+      if (!best || best.t < 1) continue;
+      const c = cam.toScreen(best.x, best.y);
+      const now = cam.toScreen(o.x, o.y);
+      if (Math.hypot(c.x - now.x, c.y - now.y) < 3) continue;
+      if (c.x < -40 || c.x > cam.width + 40 || c.y < -40 || c.y > cam.height + 40) continue;
+      const rp = Math.max(3, o.body.radius * cam.scale);
+      const p = cam.toScreen(best.px, best.py);
+      ctx.strokeStyle = CRT.inkDim; ctx.lineWidth = 0.75;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
+      if (Number.isFinite(o.body.soi) && o.body.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, o.body.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.setLineDash([1, 4]);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.setLineDash([]);
+      text(ctx, `${o.body.name} AT T-${formatTime(best.t)}`, c.x, c.y + rp + 14, { align: 'center', colour: CRT.inkDim });
+      text(ctx, `PATH PASSES ${formatDistance(best.d)} OFF`, c.x, c.y + rp + 28, { align: 'center', colour: CRT.inkDim });
     }
   }
 

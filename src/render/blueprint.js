@@ -4,6 +4,7 @@
 import { labelAlpha } from './camera.js';
 import { craftHeight, footHalfWidth, activeStage, progradeAngle, canopyBloom } from '../core/craft.js';
 import { BODIES, ESCAPE_RADIUS } from '../core/body.js';
+import { closestApproach } from '../core/predict.js';
 
 export const BLUEPRINT = {
   paper: '#1B3A6B',
@@ -69,13 +70,13 @@ export const CHUTE_RADIUS = 7;   // canopy radius, metres
 export const CHUTE_RISE = 14;    // canopy centre above the craft's top, metres
 export const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
 
-// scene: { state, cfg, phase, body, terrain, prediction, debris, others, avoid }
+// scene: { state, cfg, phase, body, terrain, prediction, debris, others, avoid, clock }
 // others: [{ body, terrain, offset: { x, y } }] bodies drawn at an offset
 // from the current body's centre (the Moon seen from Earth, and the reverse).
 // avoid: [{ x, y, w, h }] screen rectangles taken by the sheet furniture
 // (the Detail A inset, the title block) that edge pointers keep clear of.
 export function drawScene(ctx, cam, scene) {
-  const { state, cfg, phase, body, terrain, prediction, debris, others, avoid } = scene;
+  const { state, cfg, phase, body, terrain, prediction, debris, others, avoid, clock } = scene;
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, cam.top, cam.width, cam.height);
@@ -85,19 +86,28 @@ export function drawScene(ctx, cam, scene) {
     drawBody(ctx, shifted, o.body, o.terrain, { x: state.x - o.offset.x, y: state.y - o.offset.y }, true);
   }
   drawBody(ctx, cam, body, terrain, state);
+  if (others && others.length) drawBodyPaths(ctx, cam, body, others, phase === 'flying' ? prediction : null, clock || 0);
   // Pointers to the bodies that are off the sheet: the one the craft
   // orbits, and the others (the Moon from Earth's sphere, Earth from the Moon's).
   // No pointer to the body the craft is standing on or skimming: with the
   // ground within a sheet's height below, the altitude ruler says it all.
+  // With the view dragged off the craft, the pointers start from the middle
+  // of the sheet and one more points back to the craft.
   {
-    const craft = cam.toScreen(state.x, state.y);
+    const W = cam.width; const H = cam.height;
+    const at = cam.toScreen(state.x, state.y);
+    const craftOn = at.x > 0 && at.x < W && at.y > cam.top && at.y < cam.top + H;
+    const craft = craftOn ? at : { x: W / 2, y: cam.top + H / 2 };
+    // The altitude ruler's column counts as furniture too.
+    const keepClear = [...(avoid || []), { x: 0, y: cam.top, w: 110, h: H }];
+    if (!craftOn) drawEdgePointer(ctx, cam, { name: cfg.name, radius: 0 }, at, craft, Math.hypot(at.x - craft.x, at.y - craft.y) / cam.scale, { avoid: keepClear });
     const r = Math.hypot(state.x, state.y);
     const gr = terrain.groundRadiusAt(state.x, state.y);
     const ground = cam.toScreen((state.x / r) * gr, (state.y / r) * gr);
     // The ground reads as a horizon line only when the disc dwarfs the sheet.
     const horizon = body.radius * cam.scale > 4 * Math.max(cam.width, cam.height);
     const floorY = horizon && ground.y > cam.top && ground.y < cam.top + cam.height ? ground.y : Infinity;
-    const opts = { avoid: avoid || [], floorY };
+    const opts = { avoid: keepClear, floorY };
     if ((r - gr) * cam.scale > cam.height) drawEdgePointer(ctx, cam, body, cam.toScreen(0, 0), craft, r, opts);
     for (const o of others || []) drawEdgePointer(ctx, cam, o.body, cam.toScreen(o.offset.x, o.offset.y), craft, Math.hypot(state.x - o.offset.x, state.y - o.offset.y), opts);
   }
@@ -134,6 +144,7 @@ export function drawScaleBar(ctx, cam, x, y) {
   ctx.moveTo(x + px / 2 + 0.5, y); ctx.lineTo(x + px / 2 + 0.5, y + 3);
   ctx.stroke();
   label(ctx, `SCALE ${formatDistance(step)}`, x, y - 4, 'left', BLUEPRINT.inkPale);
+  if (cam.isHeld && cam.isHeld()) label(ctx, 'VIEW HELD — 0 FOLLOWS THE CRAFT AGAIN', x, y + 16, 'left', BLUEPRINT.inkPale);
 }
 
 // Altitude ruler down the left edge: ticks in metres above the ground
@@ -630,7 +641,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 // A ring of radius `radius` (m) round a centre on screen, dotted, with its
 // label on the ring at the point nearest the middle of the sheet. Skipped
 // when no part of it crosses the sheet or it is too small to see.
-function drawReachRing(ctx, cam, centre, radius, text) {
+function drawReachRing(ctx, cam, centre, radius, text, dash = [2, 8]) {
   const rp = radius * cam.scale;
   if (rp < 4) return;
   const W = cam.width; const H = cam.height;
@@ -640,7 +651,7 @@ function drawReachRing(ctx, cam, centre, radius, text) {
   if (d > rp + reach || d < rp - reach) return; // the ring passes nowhere near the sheet
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
-  ctx.setLineDash([2, 8]);
+  ctx.setLineDash(dash);
   ctx.beginPath(); ctx.arc(centre.x, centre.y, rp, 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]);
   // Label: on the ring, towards the middle of the sheet (straight up from
@@ -649,6 +660,43 @@ function drawReachRing(ctx, cam, centre, radius, text) {
   const px = centre.x + ux * rp; const py = centre.y + uy * rp;
   if (px < 60 || px > W - 60 || py < cam.top + 20 || py > cam.top + H - 20) return;
   label(ctx, text, px, py - 6 + (uy > 0 ? 18 : 0), 'center', BLUEPRINT.inkPale, labelAlpha(rp / 2));
+}
+
+// The paths of the other bodies round this one, as fine dotted rings: the
+// Moon's orbit seen from Earth, and Earth's apparent path seen from the
+// Moon. When the craft's predicted path heads out that way, a ghost of the
+// body is drawn where it will be when the path passes nearest to it, tied
+// to that point of the path, with the miss distance: the planning aid for
+// a transfer, so the burn can be timed before the sphere is ever reached.
+function drawBodyPaths(ctx, cam, body, others, prediction, clock) {
+  const centre = cam.toScreen(0, 0);
+  const W = cam.width; const H = cam.height;
+  for (const o of others) {
+    const child = o.body.parent === body.id;
+    const ring = child ? o.body.orbitRadius : body.orbitRadius;
+    if (!(ring > 0)) continue;
+    drawReachRing(ctx, cam, centre, ring, child ? `${o.body.name}'S PATH` : `${o.body.name}'S PATH, SEEN FROM THE ${body.name}`, [1, 5]);
+    const best = closestApproach(prediction, body, o.body, clock);
+    if (!best || best.t < 1) continue;
+    const c = cam.toScreen(best.x, best.y);
+    const now = cam.toScreen(o.offset.x, o.offset.y);
+    if (Math.hypot(c.x - now.x, c.y - now.y) < 3) continue; // it will not have moved to speak of
+    if (c.x < -40 || c.x > W + 40 || c.y < cam.top - 40 || c.y > cam.top + H + 40) continue;
+    const rp = Math.max(3, o.body.radius * cam.scale);
+    if (rp > 4000) continue;
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
+    if (Number.isFinite(o.body.soi) && o.body.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, o.body.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
+    // The tie to the point of the path it is nearest to.
+    const p = cam.toScreen(best.px, best.py);
+    ctx.setLineDash([1, 4]);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+    ctx.setLineDash([]);
+    label(ctx, `${o.body.name} AT T-${formatTime(best.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale);
+    label(ctx, `YOUR PATH PASSES ${formatDistance(best.d)} OFF`, c.x, c.y + rp + 28, 'center', BLUEPRINT.inkPale);
+  }
 }
 
 // A pointer at the edge of the sheet towards a body that is off it: a

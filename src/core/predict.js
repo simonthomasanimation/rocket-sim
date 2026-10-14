@@ -165,3 +165,32 @@ function stepFor(s, body, period) {
   dt = Math.max(dt, fine);
   return Math.max(0.05, Math.min(600, dt));
 }
+
+// Where another body (a child of the path's frame body, or its parent)
+// will be when the craft's predicted path passes nearest to it, for the
+// sheets to draw a ghost of it: { t, d, x, y, px, py } with the body's
+// centre (x, y) and the path point (px, py) in the frame body's frame.
+// Null when the path never gets a quarter of the way out to the body's ring
+// (a ghost would only be noise), or already enters its sphere of influence
+// (the path's own segments draw that one).
+export function closestApproach(prediction, body, other, clock = 0) {
+  if (!prediction || prediction.points.length < 2) return null;
+  const child = other.parent === body.id;
+  const ring = child ? other.orbitRadius : body.orbitRadius;
+  if (!(ring > 0)) return null;
+  if ((prediction.segments || []).some((sg) => sg.body === other.id)) return null;
+  const pts = prediction.points;
+  const end = prediction.segments && prediction.segments[1] ? prediction.segments[1].from : pts.length;
+  const stride = Math.max(1, Math.floor(end / 300));
+  let best = null; let far = 0;
+  for (let i = 0; i < end; i += stride) {
+    const p = pts[i];
+    const r = Math.hypot(p.x, p.y);
+    if (r > far) far = r;
+    let q = bodyState(child ? other : body, clock + p.t);
+    if (!child) q = { x: -q.x, y: -q.y };
+    const d = Math.hypot(p.x - q.x, p.y - q.y);
+    if (!best || d < best.d) best = { t: p.t, d, x: q.x, y: q.y, px: p.x, py: p.y };
+  }
+  return far > ring / 4 ? best : null;
+}

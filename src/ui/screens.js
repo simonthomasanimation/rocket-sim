@@ -305,7 +305,7 @@ export function startPage(keys = {}) {
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
       'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry, and under the parachutes the main chute and then touchdown. Under a canopy the full ×64 is allowed at any height. SPACE pauses. The same arrows shuttle a replay.',
-      'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
+      'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom (mouse wheel and pinch too), and a zoom you set holds until you press 0. Drag the sheet with the mouse or a finger to look around, at the Moon’s path for instance; 0 brings the view back to the craft and lets the automatic zoom follow again.',
       'ENTER also opens the parachutes once only the capsule is left (under 250 m/s; P works too): the drogue comes out first, and the main follows on its own under 90 m/s and 3 km above the ground, reefed for four seconds, then full. R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],

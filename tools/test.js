@@ -9,10 +9,10 @@ import { encodeCommand, decodeCommand } from '../src/core/recording.js';
 import { replayToEnd } from '../src/core/playback.js';
 import { buildTimeline, sampleTimeline } from '../src/core/timeline.js';
 import { createFixedLoop } from '../src/core/loop.js';
-import { MOON, EARTH, circularSpeed, gravityAt, bodyState, orbitalPeriod, densityAt } from '../src/core/body.js';
+import { BODIES, MOON, EARTH, circularSpeed, gravityAt, bodyState, orbitalPeriod, densityAt } from '../src/core/body.js';
 import { createCraftState, rk4Step, ROCKET, deltaV } from '../src/core/craft.js';
 import { elementsOf } from '../src/core/orbit.js';
-import { predictCoast } from '../src/core/predict.js';
+import { predictCoast, closestApproach } from '../src/core/predict.js';
 import { createTerrain } from '../src/core/terrain.js';
 import { WARP_LADDER, PHYSICS_LADDER, maxPhysicsWarp, maxWarpIndex, railsAllowed, RAILS, PHYSICS_LEVELS } from '../src/core/warp.js';
 import { propagate } from '../src/core/kepler.js';
@@ -27,6 +27,30 @@ test('command codes round-trip', () => {
     const c = { thr, rot, full, cut, stage, hold, warp, chute };
     assert.deepEqual(decodeCommand(encodeCommand(c)), c);
   }
+});
+
+test('a zoom the player sets holds as the craft climbs, and 0 hands the view back', async () => {
+  const { createCamera } = await import('../src/render/camera.js');
+  const cam = createCamera();
+  cam.setViewport(1280, 688, 0);
+  cam.bodyRadius = EARTH.radius;
+  const pad = { x: 0, y: EARTH.radius, vx: 0, vy: 0 };
+  cam.snap(pad);
+  const auto = cam.scale;
+  cam.zoom(-4); // zoomed out sixteenfold on the pad to see the coast
+  const held = cam.scale * Math.pow(2, -4);
+  for (let i = 0; i < 300; i++) cam.follow(pad, 1 / 60);
+  assert.ok(Math.abs(cam.scale / held - 1) < 1e-6, 'the held zoom is reached');
+  // Climbing to 25 km, where the automatic zoom would have gone much wider.
+  const high = { x: 0, y: EARTH.radius + 25600, vx: 800, vy: 600 };
+  for (let i = 0; i < 600; i++) cam.follow(high, 1 / 60, { up: 24000, down: 25600, side: 200000 });
+  assert.ok(Math.abs(cam.scale / held - 1) < 1e-6, 'the held zoom stays put as the craft climbs');
+  cam.pan(100, 0);
+  assert.ok(cam.isHeld() && cam.offX !== 0, 'a drag pans the view');
+  cam.resetZoom();
+  for (let i = 0; i < 600; i++) cam.follow(high, 1 / 60, { up: 24000, down: 25600, side: 200000 });
+  assert.ok(cam.scale < auto && cam.scale < held, 'after 0 the automatic zoom follows the flight again');
+  assert.equal(cam.offX, 0);
 });
 
 test('fixed loop steps in whole ticks and caps catch-up', () => {
@@ -370,6 +394,34 @@ test('leaving the Moon hands the craft to Earth and the inertial position is unc
   const moved = n / 60 * 100; // metres travelled, roughly
   assert.ok(Math.hypot(after.x - inertial.x, after.y - inertial.y) < moved + 2000, 'position carried over');
   assert.ok(Math.hypot(f.state.vx, f.state.vy) > 150, 'the Moon\'s own orbital speed is added');
+});
+
+test('a burn that misses the Moon says where the Moon will be and by how much it misses', () => {
+  const f = createFlight({ seed: 1, scenario: 'earthOrbit' });
+  const v = Math.hypot(f.state.vx, f.state.vy);
+  // In low orbit the Moon is no concern: no ghost.
+  const low = predictCoast(f.state, f.body, f.terrain, { clock: f.clock, terrainOf: f.terrainOf });
+  assert.equal(closestApproach(low, f.body, BODIES.moon, f.clock), null);
+  // A burn short of the Moon's distance: the ghost is on the Moon's ring, at the path's closest pass, and the miss is wide.
+  let g = null; let p = null;
+  for (let dv = 700; dv <= 1000 && !g; dv += 10) {
+    const st = { ...f.state, vx: f.state.vx * (v + dv) / v, vy: f.state.vy * (v + dv) / v };
+    p = predictCoast(st, f.body, f.terrain, { clock: f.clock, terrainOf: f.terrainOf, maxSteps: 4000 });
+    g = closestApproach(p, f.body, BODIES.moon, f.clock);
+  }
+  assert.ok(g, 'a ghost of the Moon once the path reaches out far enough');
+  assert.equal(p.encounter, null);
+  assert.ok(Math.abs(Math.hypot(g.x, g.y) - BODIES.moon.orbitRadius) < 1, 'on the Moon ring');
+  const there = bodyState(BODIES.moon, f.clock + g.t);
+  assert.ok(Math.abs(there.x - g.x) < 1 && Math.abs(there.y - g.y) < 1, 'where the Moon will be at that time');
+  assert.ok(g.d > BODIES.moon.soi, 'a miss, outside the sphere');
+  assert.ok(g.d < BODIES.moon.orbitRadius, 'but a near one');
+  // A path that enters the Moon's sphere leaves the ghost to the path's own segments.
+  for (let d = 900; d <= 1100; d += 10) {
+    const s2 = { ...f.state, vx: f.state.vx * (v + d) / v, vy: f.state.vy * (v + d) / v };
+    const p2 = predictCoast(s2, f.body, f.terrain, { clock: f.clock, terrainOf: f.terrainOf, maxSteps: 4000 });
+    if (p2.encounter) { assert.equal(closestApproach(p2, f.body, BODIES.moon, f.clock), null); break; }
+  }
 });
 
 test('a burn from Earth orbit reaches the Moon in the prediction', () => {

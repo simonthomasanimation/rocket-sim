@@ -303,6 +303,7 @@ function onTransport(action, value) {
     case 'zoomOut': zoomBy(-0.5); break;
     case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
     case 'zoom': zoomBy(value); break;
+    case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
     case 'map': turnPage(); break;
     default: break;
   }
@@ -442,7 +443,7 @@ function render(alpha, frameDt) {
   // Corners the sheet's edge pointers keep clear of: the inset and the title block.
   const tb = titleBlock.getBoundingClientRect();
   const avoid = [box, { x: tb.left, y: tb.top, w: tb.width, h: tb.height }];
-  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body, terrain, prediction, debris: scene.debris, others: otherBodies(src, body, scene.clock), avoid });
+  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body, terrain, prediction, debris: scene.debris, others: otherBodies(src, body, scene.clock), avoid, clock: scene.clock });
   drawDetail(surface.ctx, camera, { state: view, cfg: src.cfg, phase, debris: scene.debris }, box);
   const a = scene.alerts || alerts || computeAlerts(src, prediction);
   hud.update(view, a, scene.capcom, frameDt);
@@ -546,6 +547,7 @@ function frame(nowMs) {
       case 'zoomOut': zoomBy(-0.5); break;
       case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
       case 'zoom': zoomBy(value); break;
+      case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
       case 'map': turnPage(); break;
       default: break;
     }

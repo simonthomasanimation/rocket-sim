@@ -2,8 +2,9 @@
 // It follows the craft, turns so the local vertical points up the screen,
 // zooms out as the craft climbs (or as its predicted path grows) and in as
 // it nears the ground, keeps the ground pinned near the bottom of the flight
-// area when it is in reach, and frames the whole Moon once it fits. The
-// player can bias the zoom; the bias persists until reset.
+// area when it is in reach, and frames the whole Moon once it fits. A zoom
+// the player sets holds as an absolute scale (the automatic zoom stops
+// moving it) and a drag pans the view off the craft; 0 hands both back.
 // Line weights are never scaled here: drawing code multiplies lengths by
 // `scale` and keeps strokes in pixels.
 
@@ -17,7 +18,8 @@ export function createCamera() {
     top: 0,              // y offset of the flight area on screen
     minScale: 0.000005, maxScale: 14, // down to the whole Earth-Moon system on one sheet
     groundClearance: 96, // px kept between the surface and the bottom of the flight area, room for the strata
-    zoomBias: 0,         // log2 of the player's zoom multiplier; 0 = automatic
+    heldScale: null,     // px per metre the player set, or null for automatic
+    offX: 0, offY: 0,    // world metres the view is panned off the craft
     bodyRadius: 1,
     groundRadius: null,  // radius of the ground under the craft (terrain), or null for the body's
   };
@@ -53,7 +55,8 @@ export function createCamera() {
       if (extent.down > alt + R / 4) scale = Math.min(scale, (H - c - pad) / (Math.max(r + R, extent.down) + extent.up));
       if (extent.side > 0) scale = Math.min(scale, (W / 2 - pad) / extent.side);
     }
-    scale = clamp(scale * Math.pow(2, cam.zoomBias), cam.minScale, cam.maxScale);
+    if (cam.heldScale !== null) scale = cam.heldScale;
+    scale = clamp(scale, cam.minScale, cam.maxScale);
     // Ground as a line: pin it near the bottom. Moon as a disc: show it all.
     // Blend by how much of the disc fits in the view.
     const asLine = Math.min(alt * scale + c, H * 0.62);
@@ -63,23 +66,36 @@ export function createCamera() {
     const asDisc = Math.min(low * scale + c, H - 48);
     const t = clamp(1 - (R * scale - H / 3) / (H - H / 3), 0, 1);
     const lift = asLine + (asDisc - asLine) * t;
-    return { x: state.x, y: state.y, rot, scale, lift };
+    return { x: state.x + cam.offX, y: state.y + cam.offY, rot, scale, lift };
   }
 
   cam.setViewport = (width, height, top = 0) => { cam.width = width; cam.height = height; cam.top = top; };
-  cam.snap = (state, extent = null) => { Object.assign(cam, target(state, extent)); };
-  // Ease towards the target; dt is frame time in seconds.
+  cam.snap = (state, extent = null) => { cam.offX = 0; cam.offY = 0; Object.assign(cam, target(state, extent)); };
+  // Ease the turn, zoom and lift towards the target; the focus itself goes
+  // straight to the craft, so it never trails off a held sheet at warp.
   cam.follow = (state, dt, extent = null) => {
     const t = target(state, extent);
     const k = 1 - Math.exp(-dt * 4);
-    cam.x += (t.x - cam.x) * k;
-    cam.y += (t.y - cam.y) * k;
+    cam.x = t.x;
+    cam.y = t.y;
     cam.rot += shortest(t.rot - cam.rot) * k;
     cam.scale *= Math.pow(t.scale / cam.scale, k); // ease in log space so zooms feel even
     cam.lift += (t.lift - cam.lift) * k;
   };
-  cam.zoom = (steps) => { cam.zoomBias = clamp(cam.zoomBias + steps, -6, 6); };
-  cam.resetZoom = () => { cam.zoomBias = 0; };
+  // A zoom step holds the scale from where the view is now, so the first
+  // press is a small change from what the player sees, not from a target
+  // the view is still easing towards.
+  cam.zoom = (steps) => { cam.heldScale = clamp((cam.heldScale ?? cam.scale) * Math.pow(2, steps), cam.minScale, cam.maxScale); };
+  // Pan by screen pixels: the view moves with the drag, the craft stays put.
+  cam.pan = (dx, dy) => {
+    const c = Math.cos(cam.rot); const s = Math.sin(cam.rot);
+    const wx = -dx / cam.scale; const wy = dy / cam.scale; // screen right = world +x turned by rot, screen up = +y
+    cam.offX += wx * c + wy * s; cam.offY += -wx * s + wy * c;
+    const limit = 4e8; // no further than the far side of the system
+    cam.offX = clamp(cam.offX, -limit, limit); cam.offY = clamp(cam.offY, -limit, limit);
+  };
+  cam.isHeld = () => cam.heldScale !== null || cam.offX !== 0 || cam.offY !== 0;
+  cam.resetZoom = () => { cam.heldScale = null; cam.offX = 0; cam.offY = 0; };
 
   // A world vector turned into screen pixels (no translation).
   cam.toScreenVec = (wx, wy) => {

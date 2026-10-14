@@ -148,24 +148,31 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
       const steps = -Math.sign(e.deltaY) * (e.deltaMode === 1 ? 0.5 : Math.min(1, Math.abs(e.deltaY) / 200));
       if (steps) actions.push({ type: 'zoom', value: steps });
     }, { passive: false });
+    // A drag pans the sheet: any mouse button, or one finger. Two fingers pinch.
     const touches = new Map();
     let pinch = null;
     zoomTarget.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse') return;
       gesture();
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      zoomTarget.setPointerCapture?.(e.pointerId);
       if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+      if (e.pointerType === 'mouse') e.preventDefault();
     });
     zoomTarget.addEventListener('pointermove', (e) => {
       if (!touches.has(e.pointerId)) return;
+      const prev = touches.get(e.pointerId);
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (touches.size === 2 && pinch) {
+      if (touches.size === 1) {
+        const dx = e.clientX - prev.x; const dy = e.clientY - prev.y;
+        if (dx || dy) actions.push({ type: 'pan', value: { dx, dy } });
+      } else if (touches.size === 2 && pinch) {
         const [a, b] = [...touches.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         if (d > 0 && Math.abs(Math.log2(d / pinch)) > 0.02) { actions.push({ type: 'zoom', value: Math.log2(d / pinch) }); pinch = d; }
       }
     });
     const endTouch = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+    zoomTarget.addEventListener('contextmenu', (e) => e.preventDefault());
     zoomTarget.addEventListener('pointerup', endTouch);
     zoomTarget.addEventListener('pointercancel', endTouch);
     zoomTarget.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
