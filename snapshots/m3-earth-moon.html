@@ -832,7 +832,8 @@ function createCraftState(cfg, { x = 0, y = 0, vx = 0, vy = 0, angle = 0, stage 
     stage,          // index of the live stage, 0 = bottom
     fuel: fuel === null ? cfg.stages[stage].fuelMass : fuel, // kg left in the live stage
     thrust: 0,      // N produced on the last step, for the drawing and HUD
-    chute: 0,       // 0 stowed, 1 out, 2 torn away
+    chute: 0,       // 0 stowed, 3 drogue out, 4 main reefed, 1 main full, 2 torn away
+    chuteT: 0,      // s since the current canopy came out
     heat: 0,        // entry heating as a fraction of what the craft can take
     broken: 0,      // 1 once the heat has torn the craft apart
     time: 0,        // s since the flight began
@@ -874,7 +875,7 @@ function progradeAngle(s) {
 
 // Advance the craft by dt seconds. Returns { staged } where staged is the
 // index of a stage dropped this step, or -1. Mutates `s`.
-function stepCraft(s, cmd, dt, cfg, body) {
+function stepCraft(s, cmd, dt, cfg, body, groundRadius = null) {
   let staged = -1;
   if (cmd.stage && s.stage < cfg.stages.length - 1) {
     staged = s.stage;
@@ -886,8 +887,18 @@ function stepCraft(s, cmd, dt, cfg, body) {
     s.fuel = cfg.stages[s.stage].fuelMass;
   }
   const thrust = runEngine(s, cmd, dt, cfg);
-  // The parachute: once, on the capsule stage; too fast and it tears away.
-  if (cmd.chute && s.chute === 0 && activeStage(s, cfg).capsule) s.chute = Math.hypot(s.vx, s.vy) > CHUTE_MAX_SPEED ? 2 : 1;
+  // The parachutes: one command, on the capsule stage, puts the drogue
+  // out (too fast and it tears away). The rest is automatic, as on a real
+  // capsule: once the drogue has the capsule under MAIN_SPEED and under
+  // MAIN_HEIGHT above the ground, the main comes out reefed (a narrow
+  // cone, a fifth of its drag) for REEF_TIME, then blooms to full over
+  // BLOOM_TIME.
+  if (cmd.chute && s.chute === 0 && activeStage(s, cfg).capsule) { s.chute = Math.hypot(s.vx, s.vy) > CHUTE_MAX_SPEED ? 2 : 3; s.chuteT = 0; }
+  if (s.chute === 3 || s.chute === 4) {
+    s.chuteT += dt;
+    if (s.chute === 3 && Math.hypot(s.vx, s.vy) < MAIN_SPEED && Math.hypot(s.x, s.y) - (groundRadius || body.radius) < MAIN_HEIGHT) { s.chute = 4; s.chuteT = 0; }
+    else if (s.chute === 4 && s.chuteT >= REEF_TIME + BLOOM_TIME) s.chute = 1;
+  }
 
   // Rotation: a rate command reached with bounded angular acceleration. The
   // attitude hold steers towards prograde or retrograde when the pilot is
@@ -920,11 +931,30 @@ function dragFactor(s, cfg) {
   const st = activeStage(s, cfg);
   const radius = st.radius || 2.4;
   let cdA = 0.5 * Math.PI * radius * radius;
-  if (s.chute === 1 && st.capsule) cdA += CHUTE_CDA;
+  if (st.capsule) cdA += canopyCdA(s);
   return cdA / (2 * totalMass(s, cfg));
 }
-const CHUTE_CDA = 420; // m^2, the main canopy: about 6 m/s at the sea with the capsule
-const CHUTE_MAX_SPEED = 250; // m/s; opened faster than this it tears away
+// Drag area of whatever canopy is out.
+function canopyCdA(s) {
+  if (s.chute === 1) return CHUTE_CDA;
+  if (s.chute === 3) return DROGUE_CDA;
+  if (s.chute === 4) return CHUTE_CDA * (REEF_FRACTION + (1 - REEF_FRACTION) * canopyBloom(s));
+  return 0;
+}
+// How far the main has opened past its reefed cone: 0 reefed, 1 full.
+function canopyBloom(s) {
+  if (s.chute === 1) return 1;
+  if (s.chute !== 4) return 0;
+  return Math.max(0, Math.min(1, (s.chuteT - REEF_TIME) / BLOOM_TIME));
+}
+const CHUTE_CDA = 520;  // m^2, the main canopy full: about 5.4 m/s at the sea with the capsule, under 9 m/s on the highest ground
+const DROGUE_CDA = 12;  // m^2, the drogue: about 30 m/s at the sea, 45 m/s at 4 km
+const REEF_FRACTION = 0.2; // the reefed main's share of its full drag area
+const REEF_TIME = 4;    // s the main stays reefed
+const BLOOM_TIME = 1;   // s it takes to open fully after that
+const MAIN_SPEED = 90;  // m/s, the main comes out under this speed...
+const MAIN_HEIGHT = 3000; // m ...and this height above the ground (radar, so a mountain counts)
+const CHUTE_MAX_SPEED = 250; // m/s; the drogue opened faster than this tears away
 
 // Heating limits for rho * v^3: a bare stack chars at the first, a capsule
 // flying shield-first holds to the second (a return from the Moon reaches
@@ -1016,7 +1046,15 @@ __exports.runEngine = runEngine;
 __exports.progradeAngle = progradeAngle;
 __exports.stepCraft = stepCraft;
 __exports.dragFactor = dragFactor;
+__exports.canopyCdA = canopyCdA;
+__exports.canopyBloom = canopyBloom;
 __exports.CHUTE_CDA = CHUTE_CDA;
+__exports.DROGUE_CDA = DROGUE_CDA;
+__exports.REEF_FRACTION = REEF_FRACTION;
+__exports.REEF_TIME = REEF_TIME;
+__exports.BLOOM_TIME = BLOOM_TIME;
+__exports.MAIN_SPEED = MAIN_SPEED;
+__exports.MAIN_HEIGHT = MAIN_HEIGHT;
 __exports.CHUTE_MAX_SPEED = CHUTE_MAX_SPEED;
 __exports.HEAT_BARE = HEAT_BARE;
 __exports.HEAT_SHIELDED = HEAT_SHIELDED;
@@ -1263,9 +1301,9 @@ const __exports = {};
 // crater floor or a continent is really lower or higher.
 //
 // The Moon: small craters right round, a few wide shallow basins. The Earth:
-// continents as broad raised plateaus (with contour lines when drawn) on a
-// sea at height 0; everything at height 0 is water. The pad sits on a flat
-// site in both cases.
+// continents with plains, hill country and mountain ranges (contour lines
+// when drawn) between seas at height 0; everything at height 0 is water.
+// The pad sits on a flat site in both cases.
 
 const { createRng } = __m("src/core/rng.js");
 
@@ -1353,39 +1391,158 @@ function moonTerrain(seed, R, C, half, wrap, site) {
   return { craters, basins, continents: [], height };
 }
 
-// Continents: broad plateaus with rolling hills on top, between seas at
-// height 0. The pad's continent is centred on the pad with a flat site.
+// Smooth seeded noise along the ground that wraps at the circumference:
+// random values on a lattice `wavelength` apart, blended with a smoothstep.
+function makeNoise(rng, C, wavelength) {
+  const n = Math.max(4, Math.round(C / wavelength));
+  const vals = new Float64Array(n);
+  for (let i = 0; i < n; i++) vals[i] = rng.range(-1, 1);
+  const cell = C / n;
+  const half = C / 2;
+  return (s) => {
+    const u = (s + half) / cell;
+    let i = Math.floor(u);
+    const t = u - i;
+    i = ((i % n) + n) % n;
+    const j = (i + 1) % n;
+    const k = t * t * (3 - 2 * t);
+    return vals[i] + (vals[j] - vals[i]) * k;
+  };
+}
+
+// Octaves of ground detail, wavelength and share of the local relief: the
+// longest shape a whole hill country, the shortest a bump under the lander.
+const OCTAVES = [[60000, 1], [20000, 0.5], [6000, 0.3], [2000, 0.15], [800, 0.12], [250, 0.04], [60, 0.012]];
+const PLAIN_RELIEF = 160;      // m, the up-and-down of the plains
+const HILL_RELIEF = 500;       // m, extra on hill country at its crest
+const RANGE_RELIEF = 1600;     // m, extra ruggedness on a mountain range at its crest
+const EARTH_PEAK_MAX = 4500; // m, no range is taller than this
+
+// A smooth hump of unit height over |d| < w/2 (cosine squared).
+function hump(d, w) {
+  const u = Math.abs(d) / (w / 2);
+  if (u >= 1) return 0;
+  const c = Math.cos(u * Math.PI / 2);
+  return c * c;
+}
+
+// The Earth, a coast-to-coast landscape laid out round the globe:
+//  - the home continent, with the pad on a coastal plain 70 km from its
+//    east coast so the first stage falls in the sea, hill country inland
+//    and a mountain range in its western interior;
+//  - three more continents, each with its own ranges, separated by seas,
+//    with a few islands out in the water;
+//  - the sea at height 0 everywhere outside the land, so splashdowns are
+//    anything that comes down between the coasts.
+// Land is a plain (150 to 350 m, drifting slowly) plus mountain ranges
+// (humps 60 to 160 km wide, peaks 2 to 4.5 km) plus layered noise whose
+// amplitude grows on the ranges, all shaded into the sea across a coastal
+// shelf. The pad sits on a flat site at the plain's height.
 function earthTerrain(seed, R, C, half, wrap, site) {
   const rng = createRng(seed ^ 0xea27);
   const continents = [];
-  // The home continent at the pad, then four more in evenly spaced slots
-  // round the globe, each jittered within its slot so the seas differ.
-  const slots = 5;
-  continents.push({ x: 0, w: rng.range(500000, 700000), h: rng.range(300, 600) });
-  for (let i = 1; i < slots; i++) {
-    const w = rng.range(250000, 650000);
-    const x = wrap((i / slots) * C + rng.range(-60000, 60000));
-    continents.push({ x, w, h: rng.range(200, 800) });
+  const ranges = [];
+  const PAD_TO_COAST = 70000;
+
+  // Home continent: its east coast is 70 km east of the pad.
+  const homeW = rng.range(460000, 560000);
+  continents.push({ x: wrap(PAD_TO_COAST - homeW / 2), w: homeW, home: true });
+  // The rest, walking east from the home coast: sea, land, sea, land ...
+  // with the widths drawn so about a third of the globe is land.
+  const widths = [rng.range(300000, 440000), rng.range(130000, 230000), rng.range(200000, 340000)];
+  const landTotal = homeW + widths.reduce((a, b) => a + b, 0);
+  const seaTotal = C - landTotal;
+  const seaShares = [1, 1, 1, 1].map(() => rng.range(0.7, 1.3));
+  const seaSum = seaShares.reduce((a, b) => a + b, 0);
+  let cursor = PAD_TO_COAST; // east coast of the land just placed
+  const seas = [];
+  for (let i = 0; i < 4; i++) {
+    const gap = seaTotal * seaShares[i] / seaSum;
+    seas.push({ x: wrap(cursor + gap / 2), w: gap });
+    cursor += gap;
+    if (i < widths.length) { continents.push({ x: wrap(cursor + widths[i] / 2), w: widths[i] }); cursor += widths[i]; }
+  }
+  // Islands: one or two in each sea, well clear of the coasts.
+  for (const sea of seas) {
+    const count = rng.int(1, 2);
+    for (let k = 0; k < count; k++) {
+      const w = rng.range(8000, 36000);
+      const x = wrap(sea.x + rng.range(-0.3, 0.3) * sea.w);
+      continents.push({ x, w, island: true });
+    }
   }
   continents.sort((a, b) => a.x - b.x);
-  // Hills: a few gentle sine waves per continent, seeded.
-  const hills = continents.map(() => [rng.range(0.6, 1.4), rng.range(0.3, 0.9), rng.range(0, 6.28), rng.range(0, 6.28)]);
 
-  function landAt(s) {
-    let h = 0;
-    for (let i = 0; i < continents.length; i++) {
-      const c = continents[i];
-      const d = wrap(s - c.x);
-      const u = d / (c.w / 2);
-      if (Math.abs(u) >= 1) continue;
-      // Plateau shoulders: smooth rise over the outer 30 % of the half-width.
-      const edge = Math.min(1, (1 - Math.abs(u)) / 0.3);
-      const shoulder = edge * edge * (3 - 2 * edge);
-      const [f1, f2, p1, p2] = hills[i];
-      const rolling = 0.35 * Math.sin(u * Math.PI * 3 * f1 + p1) + 0.2 * Math.sin(u * Math.PI * 7 * f2 + p2);
-      h = Math.max(h, c.h * shoulder * (0.7 + rolling * shoulder));
+  // Mountain ranges: one in the home continent, its near foot 110 to 160 km
+  // west of the pad so it stands on the horizon of a launch; one or two per
+  // other continent, inside the interior. Hill country: lower, narrower
+  // humps, two or three per continent, the home ones starting 25 km west of
+  // the pad (the rocket flies east, over the sea).
+  const hills = [];
+  for (const c of continents) {
+    if (c.island) continue;
+    const inner = c.w * 0.3; // the ranges sit within the middle 60 %
+    const count = c.home ? 1 : rng.int(1, 2);
+    for (let k = 0; k < count; k++) {
+      const w = rng.range(60000, 160000);
+      const h = rng.range(2000, EARTH_PEAK_MAX);
+      let x;
+      if (c.home) x = -rng.range(110000, 160000) - w / 2;
+      else x = wrap(c.x + rng.range(-inner, inner));
+      if (ranges.some((r) => Math.abs(wrap(r.x - x)) < (r.w + w) / 2)) continue;
+      ranges.push({ x, w, h });
     }
-    return h;
+    const hillCount = rng.int(2, 3);
+    for (let k = 0; k < hillCount; k++) {
+      const w = rng.range(15000, 50000);
+      const h = rng.range(300, 900);
+      let x;
+      if (c.home && k === 0) x = -25000 - w / 2 - rng.range(0, 20000);
+      else x = wrap(c.x + rng.range(-c.w * 0.4, c.w * 0.4));
+      if (Math.abs(wrap(x)) < 12000 + w / 2) continue; // never over the pad
+      hills.push({ x, w, h });
+    }
+  }
+  ranges.sort((a, b) => a.x - b.x);
+
+  const plainDrift = makeNoise(rng, C, 150000);
+  const octaves = OCTAVES.map(([wl, share]) => [makeNoise(rng, C, wl), share]);
+
+  // The land envelope, 1 in the interior and 0 at the water line, falling
+  // across a shelf that is 8 % of the width (at least 10 km, 1.5 km on an island).
+  function envelope(s) {
+    let e = 0;
+    for (const c of continents) {
+      const d = Math.abs(wrap(s - c.x));
+      const hw = c.w / 2;
+      if (d >= hw) continue;
+      const shelf = Math.max(c.island ? 1500 : 10000, c.w * 0.08);
+      const t = Math.min(1, (hw - d) / shelf);
+      e = Math.max(e, t * t * (3 - 2 * t));
+    }
+    return e;
+  }
+  function landAt(s) {
+    const e = envelope(s);
+    if (e <= 0) return 0;
+    let ridge = 0; let rugged = 0; let hilly = 0;
+    for (const r of ranges) {
+      const b = hump(wrap(s - r.x), r.w);
+      if (b > 0) { ridge += r.h * b; rugged = Math.max(rugged, b); }
+    }
+    for (const r of hills) {
+      const b = hump(wrap(s - r.x), r.w);
+      if (b > 0) { ridge += r.h * b; hilly = Math.max(hilly, b); }
+    }
+    const relief = PLAIN_RELIEF + HILL_RELIEF * hilly + RANGE_RELIEF * rugged;
+    let noise = 0;
+    for (const [fn, share] of octaves) noise += fn(s) * share;
+    const plain = 250 + 100 * plainDrift(s);
+    let h = plain + ridge + relief * noise;
+    // Soft cap: the noise on a tall ridge may not carry a peak past the limit.
+    const knee = EARTH_PEAK_MAX * 0.8;
+    if (h > knee) h = knee + (EARTH_PEAK_MAX - knee) * Math.tanh((h - knee) / (EARTH_PEAK_MAX - knee));
+    return e * Math.max(3, h);
   }
   // The site is flat at the height of the land around it.
   const siteHeight = landAt((site.from + site.to) / 2);
@@ -1400,11 +1557,19 @@ function earthTerrain(seed, R, C, half, wrap, site) {
     }
     return landAt(s);
   }
-  return { craters: [], basins: [], continents, height, isWater: (s) => height(s) <= 0.01, seaLevel: 0 };
+  // The peak of each range, found by a fine search over its width, for labels.
+  const peaks = ranges.map((r) => {
+    let best = { x: r.x, h: 0 };
+    for (let d = -r.w / 2; d <= r.w / 2; d += 250) { const h = height(r.x + d); if (h > best.h) best = { x: wrap(r.x + d), h }; }
+    return best;
+  });
+  const maxHeight = peaks.reduce((m, p) => Math.max(m, p.h), 1000);
+  return { craters: [], basins: [], continents, ranges, hills, peaks, seas, maxHeight, height, isWater: (s) => height(s) <= 0.01, seaLevel: 0 };
 }
 
 __exports.SITE = SITE;
 __exports.createTerrain = createTerrain;
+__exports.EARTH_PEAK_MAX = EARTH_PEAK_MAX;
 return __exports;
 })();
 
@@ -1642,7 +1807,7 @@ const LANDING_LIMITS = Object.freeze({
   verticalSpeed: 3,            // m/s
   horizontalSpeed: 1,          // m/s
   tilt: (10 * Math.PI) / 180,  // radians
-  chuteVerticalSpeed: 8,       // m/s, under a canopy
+  chuteVerticalSpeed: 10,      // m/s, under the full main (it gives 5.4 m/s at the sea, under 9 on the highest ground)
   splashVerticalSpeed: 10,     // m/s, under a canopy into the sea
 });
 
@@ -1711,7 +1876,7 @@ function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_LIMITS 
       if (cmd.warp > 0 && !wantsThrust && railsAllowed(flight, cmd.warp)) { railsStep(flight, cmd, dt * RAILS[cmd.warp - 1].rate); return; }
       const s = flight.state;
       const hadFuel = s.fuel > 0;
-      const { staged } = stepCraft(s, cmd, dt, cfg, flight.body);
+      const { staged } = stepCraft(s, cmd, dt, cfg, flight.body, flight.terrain.groundRadiusAt(s.x, s.y));
       if (staged >= 0) {
         // The spent stage is pushed off backwards along the axis by the
         // separation springs and picks up a slight tumble.
@@ -1880,7 +2045,7 @@ function breakUp(flight) {
     along += st.height;
   }
   s.broken = 1;
-  s.chute = s.chute === 1 ? 2 : s.chute;
+  if (s.chute && s.chute !== 2) s.chute = 2; // whatever canopy was out is lost
 }
 
 // After a break-up the wreck's centre keeps falling through the air (the
@@ -1918,7 +2083,7 @@ function touchdown(flight) {
   const hSpeed = Math.abs(horizontal);
   const arc = terrain.arcAt(s.x, s.y);
   const water = terrain.isWater(arc);
-  const chute = s.chute === 1;
+  const chute = s.chute === 1; // only the full main counts; a drogue or a reefed main is still a fall
   const vLimit = chute ? (water ? limits.splashVerticalSpeed : limits.chuteVerticalSpeed) : limits.verticalSpeed;
   const hLimit = chute ? Infinity : limits.horizontalSpeed;
   const tiltLimit = chute ? Infinity : limits.tilt;
@@ -2239,8 +2404,10 @@ const LINES = {
   karman: 'Through the Kármán line. You are in space.',
   heat: 'Heating is near the limit. Hold retrograde.',
   heatUp: 'Heating is near the limit. Ease the throttle until the air thins.',
-  chute: 'Good canopy.',
-  chuteTorn: 'The canopy has torn away. Too fast.',
+  drogue: 'Drogue out. Steadying.',
+  chuteReef: 'Main chute out, reefed. Four seconds to full open.',
+  chute: 'Good canopy. Full main.',
+  chuteTorn: 'The drogue has torn away. Too fast.',
   splashdown: 'Splashdown. Recovery is on the way.',
   burned: 'We have lost the vehicle on entry.',
   alt500: 'Five hundred metres.',
@@ -2288,6 +2455,8 @@ function createCapcom() {
       const sinking = alerts.vSpeed > 0;
       if (sinking && alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
       if (alerts.heat === 'critical') say(sinking ? 'heat' : 'heatUp', t, true, LINES[sinking ? 'heat' : 'heatUp']);
+      if (alerts.chute === 3) say('drogue', t);
+      if (alerts.chute === 4) say('chuteReef', t);
       if (alerts.chute === 1) say('chute', t);
       if (alerts.chute === 2) say('chuteTorn', t, true);
       if (alerts.descent === 'critical') say('rate', t, true);
@@ -2505,6 +2674,7 @@ function createCamera() {
     groundClearance: 96, // px kept between the surface and the bottom of the flight area, room for the strata
     zoomBias: 0,         // log2 of the player's zoom multiplier; 0 = automatic
     bodyRadius: 1,
+    groundRadius: null,  // radius of the ground under the craft (terrain), or null for the body's
   };
 
   // Where the camera wants to be for the given craft position. `extent` is
@@ -2514,7 +2684,9 @@ function createCamera() {
     const R = cam.bodyRadius;
     const r = Math.hypot(state.x, state.y);
     const rot = Math.atan2(state.x, state.y);
-    const alt = Math.max(0, r - R);
+    // Height above the ground under the craft, so a mountain top or a
+    // crater floor frames like the flat pad does.
+    const alt = Math.max(0, r - (cam.groundRadius || R));
     const H = cam.height; const W = cam.width;
     const c = cam.groundClearance; const pad = 24;
     // Near the ground the view is the M1 lander's: never under 3 px/m.
@@ -2610,7 +2782,7 @@ const __exports = {};
 // faint fold creases. Linework only, two stroke weights, no fills but hatching.
 
 const { labelAlpha } = __m("src/render/camera.js");
-const { craftHeight, footHalfWidth, activeStage, progradeAngle } = __m("src/core/craft.js");
+const { craftHeight, footHalfWidth, activeStage, progradeAngle, canopyBloom } = __m("src/core/craft.js");
 const { BODIES } = __m("src/core/body.js");
 
 const BLUEPRINT = {
@@ -2819,7 +2991,7 @@ function drawDetail(ctx, cam, { state, cfg, phase, debris }, box) {
   // than jumping up to fill the box.
   const whole = cfg.stages.reduce((sum, st) => sum + st.height, 0);
   // With the chute out, the canopy is part of the vehicle.
-  const top = state.chute === 1 ? h + CHUTE_RISE + CHUTE_RADIUS : h;
+  const top = Math.max(h, canopyTop(state, h));
   const framed = Math.max(top, 0.55 * whole);
   const kTarget = (box.h * 0.6) / (framed + back);
   const offTarget = (top - back) / 2;        // metres from the base to the framed midpoint
@@ -2944,7 +3116,14 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 
   // Stipple inside the disc when the view is wide enough to read it as a
   // disc; fades out as the hatch band takes over close in.
-  if (s < 0.5) drawStipple(ctx, cam, R, Math.min(1, (0.5 - s) / 0.25));
+  const earth = body.texture === 'earth';
+  if (s < 0.5 && !earth) drawStipple(ctx, cam, R, Math.min(1, (0.5 - s) / 0.25));
+
+  // Heights along the drawn arc, sampled once for the surface line, the
+  // contours and the water line.
+  const hs = new Float64Array(n + 1);
+  for (let k = 0; k <= n; k++) hs[k] = terrain.height((theta0 + k * dTheta) * R);
+  const pointAt = (theta, r) => cam.toScreen(Math.sin(theta) * r, Math.cos(theta) * r);
 
   // Surface polyline.
   ctx.strokeStyle = BLUEPRINT.ink;
@@ -2952,7 +3131,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
   ctx.lineJoin = 'round';
   ctx.beginPath();
   for (let k = 0; k <= n; k++) {
-    const p = surfaceAt(theta0 + k * dTheta);
+    const p = pointAt(theta0 + k * dTheta, R + hs[k]);
     if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
   }
   if (full) ctx.closePath();
@@ -2984,48 +3163,13 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
     }
   }
 
-  // Earth: contour lines across the continents at round heights, and a
-  // dashed line under the sea.
-  if (body.texture === 'earth') {
-    const levels = [100, 200, 400, 800];
-    ctx.lineWidth = STROKE.annotation;
-    for (const level of levels) {
-      if (level * s < 5) continue;
-      ctx.strokeStyle = BLUEPRINT.inkPale;
-      ctx.globalAlpha = Math.min(1, (level * s - 5) / 10);
-      ctx.beginPath();
-      let pen = false;
-      for (let k = 0; k <= n; k++) {
-        const th = theta0 + k * dTheta;
-        const h = terrain.height(th * R);
-        if (h >= level) {
-          const r = R + level;
-          const p = cam.toScreen(Math.sin(th) * r, Math.cos(th) * r);
-          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
-          pen = true;
-        } else pen = false;
-      }
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    if (s >= 0.02) {
-      ctx.strokeStyle = BLUEPRINT.inkPale;
-      ctx.setLineDash([6, 6]);
-      ctx.beginPath();
-      let pen = false;
-      const off = Math.min(6, Math.max(3, 2 * s)) / s;
-      for (let k = 0; k <= n; k++) {
-        const th = theta0 + k * dTheta;
-        if (terrain.isWater(th * R)) {
-          const p = cam.toScreen(Math.sin(th) * (R - off), Math.cos(th) * (R - off));
-          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
-          pen = true;
-        } else pen = false;
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-  }
+  // Earth: contour lines across the land at round heights, the step picked
+  // so neighbouring lines sit at least 7 px apart (a finer set fades in
+  // between them as the view closes in); two dashed lines under the sea;
+  // from orbit, where the relief is under a pixel, a band of coast-following
+  // contours inside each landmass so land and sea still read; the highest
+  // peak of each range and each sea labelled when there is room.
+  if (earth) drawEarthFurniture(ctx, cam, body, terrain, hs, { n, theta0, dTheta, full, half, thetaC });
 
   // Hatch band under the surface: 45-degree strokes between "down" and
   // "along", anchored to arc positions so they scroll with the ground.
@@ -3083,7 +3227,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 
   // Surface ticks: distance along the ground from the pad, at a round step,
   // so sideways motion and horizontal scale read at every zoom.
-  if (!far) {
+  if (!far && R * s >= 120) {
     const step = niceStep(s, 90, 220);
     const arc0 = Math.floor(((thetaC - half) * R) / step) * step;
     const arc1 = (thetaC + half) * R;
@@ -3238,6 +3382,158 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 
 // Stipple across the disc: one dot per cell of a world-anchored grid, placed
 // by a hash so it never twinkles, only inside the body and the view.
+// Earth's ground furniture (see drawBody). `hs` holds the height at each of
+// the n+1 samples from theta0, dTheta apart.
+function drawEarthFurniture(ctx, cam, body, terrain, hs, { n, theta0, dTheta, full, half, thetaC }) {
+  const R = body.radius;
+  const s = cam.scale;
+  const W = cam.width; const H = cam.height;
+  const pointAt = (theta, r) => cam.toScreen(Math.sin(theta) * r, Math.cos(theta) * r);
+  const onSheet = (p) => p.x > -40 && p.x < W + 40 && p.y > cam.top - 40 && p.y < cam.top + H + 40;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+
+  // Contours: a level step from the ladder so that step * s >= 7 px, drawn
+  // where the land is above the level, with the ends interpolated between
+  // samples. The next finer step fades in as it reaches 3.5 px.
+  const ladder = [5, 10, 20, 50, 100, 200, 500, 1000, 2000];
+  let hmin = Infinity; let hmax = 0;
+  for (let k = 0; k <= n; k++) { if (hs[k] < hmin) hmin = hs[k]; if (hs[k] > hmax) hmax = hs[k]; }
+  const contourAt = (level, alpha) => {
+    if (alpha <= 0 || level > hmax) return;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    let pen = false;
+    for (let k = 0; k <= n; k++) {
+      const above = hs[k] >= level;
+      if (above && !pen) {
+        // Rising edge: start where the ground crosses the level.
+        let th = theta0 + k * dTheta;
+        if (k > 0) { const t = (level - hs[k - 1]) / (hs[k] - hs[k - 1]); th = theta0 + (k - 1 + t) * dTheta; }
+        const p = pointAt(th, R + level); ctx.moveTo(p.x, p.y); pen = true;
+      } else if (!above && pen) {
+        const t = (hs[k - 1] - level) / (hs[k - 1] - hs[k]);
+        const p = pointAt(theta0 + (k - 1 + t) * dTheta, R + level); ctx.lineTo(p.x, p.y); pen = false;
+      }
+      if (above && pen && k > 0) { const p = pointAt(theta0 + k * dTheta, R + level); ctx.lineTo(p.x, p.y); }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  };
+  let major = ladder.find((st) => st * s >= 7) || null;
+  if (major) {
+    const minor = ladder[ladder.indexOf(major) - 1];
+    const lo = Math.max(major, Math.floor(hmin / major) * major);
+    for (let level = lo; level <= hmax; level += major) contourAt(level, Math.min(1, (major * s - 7) / 5));
+    if (minor && minor * s >= 3.5) {
+      const alpha = Math.min(1, (minor * s - 3.5) / 3.5) * 0.7;
+      const lo2 = Math.max(minor, Math.floor(hmin / minor) * minor);
+      for (let level = lo2; level <= hmax; level += minor) if (level % major !== 0) contourAt(level, alpha);
+    }
+  }
+
+  // Water: two dashed lines just under the sea surface, the draughtsman's
+  // ripple, as soon as the sea is wide enough to hold a dash.
+  if (s >= 0.004) {
+    const off = Math.min(6, Math.max(3, 2 * s)) / s;
+    ctx.setLineDash([6, 6]);
+    for (const [depth, dashShift] of [[off, 0], [off * 2.2, 6]]) {
+      ctx.lineDashOffset = dashShift;
+      ctx.beginPath();
+      let pen = false;
+      for (let k = 0; k <= n; k++) {
+        if (hs[k] <= 0.01) {
+          const p = pointAt(theta0 + k * dTheta, R - depth);
+          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+          pen = true;
+        } else pen = false;
+      }
+      ctx.stroke();
+    }
+    ctx.lineDashOffset = 0;
+    ctx.setLineDash([]);
+  }
+
+  // Coast band from orbit: for each run of land, nested arcs 6 px apart
+  // inside the surface, each one drawn back 7 px from the ends of the one
+  // outside it, so a landmass reads like an island on a chart.
+  const bandAlpha = Math.max(0, Math.min(1, (0.004 - s) / 0.002));
+  if (bandAlpha > 0) {
+    ctx.globalAlpha = bandAlpha;
+    const runs = [];
+    let start = -1;
+    for (let k = 0; k <= n; k++) {
+      const land = hs[k] > 0.01;
+      if (land && start < 0) start = k;
+      if ((!land || k === n) && start >= 0) { runs.push([start, land ? k : k - 1]); start = -1; }
+    }
+    // On a full disc a run may wrap across the seam: join the first and last.
+    if (full && runs.length > 1 && runs[0][0] === 0 && runs[runs.length - 1][1] === n) {
+      const last = runs.pop(); runs[0] = [last[0] - n, runs[0][1]];
+    }
+    const pxPerSample = dTheta * R * s;
+    ctx.beginPath();
+    for (const [a, b] of runs) {
+      const widthPx = (b - a) * pxPerSample;
+      if (widthPx < 4) continue;
+      const lines = Math.min(4, Math.floor(widthPx / 14));
+      for (let i = 1; i <= lines; i++) {
+        const inset = (7 * i) / pxPerSample;
+        const ka = a + inset; const kb = b - inset;
+        if (kb <= ka) break;
+        const r = R - (6 * i) / s;
+        const steps = Math.max(2, Math.ceil(kb - ka));
+        for (let j = 0; j <= steps; j++) {
+          const k = ka + (kb - ka) * (j / steps);
+          const p = pointAt(theta0 + k * dTheta, r);
+          if (j === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+        }
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Labels: the peak of each range (with a tick down from it) once the
+  // range is tall on the sheet, and each sea once it is wide enough.
+  const visible = (arc) => full || Math.abs(terrain.wrap(arc - thetaC * R)) < half * R;
+  for (const peak of terrain.peaks || []) {
+    if (!visible(peak.x)) continue;
+    const alpha = labelAlpha(peak.h * s * 2);
+    if (alpha <= 0) continue;
+    const theta = peak.x / R;
+    const p = pointAt(theta, R + peak.h);
+    if (!onSheet(p)) continue;
+    const f = cam.frameAt(theta);
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(p.x + f.up.x * 4, p.y + f.up.y * 4);
+    ctx.lineTo(p.x + f.up.x * 16, p.y + f.up.y * 16);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    label(ctx, `PEAK ${(peak.h / 1000).toFixed(1)} KM`, p.x + f.up.x * 22, p.y + f.up.y * 22 + 5, 'center', BLUEPRINT.inkPale, alpha);
+  }
+  // A sea is labelled at its middle, or at the nearest point of it that is
+  // on the sheet when the middle is not (a coast seen from the land).
+  for (const sea of terrain.seas || []) {
+    const alpha = labelAlpha(sea.w * s / 6);
+    if (alpha <= 0) continue;
+    const margin = Math.min(sea.w * 0.4, 60 / s);
+    const window = full ? Math.PI * R : half * R * 0.85;
+    let arc = terrain.wrap(sea.x - thetaC * R); // relative to the craft
+    if (!full) {
+      if (arc - sea.w / 2 + margin > window || arc + sea.w / 2 - margin < -window) continue;
+      arc = Math.max(-window, Math.min(window, arc));
+      arc = Math.max(terrain.wrap(sea.x - thetaC * R) - sea.w / 2 + margin, Math.min(terrain.wrap(sea.x - thetaC * R) + sea.w / 2 - margin, arc));
+    }
+    const theta = thetaC + arc / R;
+    const inset = Math.min(28 / s, R / 4);
+    const p = pointAt(theta, R - inset);
+    if (!onSheet(p)) continue;
+    label(ctx, 'SEA', p.x, p.y + 5, 'center', BLUEPRINT.inkPale, alpha * 0.8);
+  }
+}
+
 function drawStipple(ctx, cam, R, alpha) {
   const s = cam.scale;
   let cell = 1;
@@ -3545,6 +3841,21 @@ function drawPlasma(ctx, k, s, cfg) {
   ctx.stroke();
 }
 
+// The drogue: a small canopy on a long line; the main: reefed, a narrow
+// cone, blooming to the full arc. Each as width and height factors of the
+// full main, and the line length as a factor of CHUTE_RISE.
+function canopyShape(s) {
+  if (s.chute === 3) return { w: 0.3, hgt: 0.3, rise: 1.7 };
+  const b = canopyBloom(s);
+  return { w: 0.3 + 0.7 * b, hgt: 0.7 + 0.3 * b, rise: 1 };
+}
+// Height of the highest point of the canopy above the craft's base plane.
+function canopyTop(s, h) {
+  if (!s.chute || s.chute === 2) return h;
+  const c = canopyShape(s);
+  return h + CHUTE_RISE * c.rise + CHUTE_RADIUS * c.hgt;
+}
+
 // The parachute above the capsule: canopy as an arc with gore lines and
 // shrouds to the craft's top; torn, only a few loose lines remain.
 function drawChute(ctx, k, s, cfg) {
@@ -3560,23 +3871,27 @@ function drawChute(ctx, k, s, cfg) {
     ctx.setLineDash([]);
     return;
   }
-  const r = CHUTE_RADIUS;
-  const cy = top + CHUTE_RISE; // canopy centre above the base plane
+  const c = canopyShape(s);
+  const rw = CHUTE_RADIUS * c.w;   // half-width of the canopy
+  const rh = CHUTE_RADIUS * c.hgt; // its height above the skirt
+  const cy = top + CHUTE_RISE * c.rise; // skirt line above the base plane
+  const gores = s.chute === 3 ? 3 : 6;
   ctx.strokeStyle = BLUEPRINT.ink;
   ctx.lineWidth = STROKE.structure;
   ctx.beginPath();
-  ctx.arc(0, -cy * k, r * k, Math.PI, 2 * Math.PI);
-  ctx.lineTo(-r * k, -cy * k);
+  ctx.ellipse(0, -cy * k, rw * k, rh * k, 0, Math.PI, 2 * Math.PI);
+  ctx.lineTo(-rw * k, -cy * k);
   ctx.stroke();
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
   ctx.beginPath();
-  for (let i = 1; i < 6; i++) {
-    const a = Math.PI + (i / 6) * Math.PI;
-    ctx.moveTo(0, -(cy - r * 0.2) * k);
-    ctx.lineTo(Math.cos(a) * r * k, -(cy - Math.sin(a) * r) * k);
+  for (let i = 1; i < gores; i++) {
+    const a = Math.PI + (i / gores) * Math.PI;
+    ctx.moveTo(0, -(cy - rh * 0.2) * k);
+    ctx.lineTo(Math.cos(a) * rw * k, -(cy - Math.sin(a) * rh) * k);
   }
-  for (const f of [-1, -0.5, 0, 0.5, 1]) { ctx.moveTo(f * r * k, -cy * k); ctx.lineTo(0, -top * k); }
+  const shrouds = s.chute === 3 ? [-1, 0, 1] : [-1, -0.5, 0, 0.5, 1];
+  for (const f of shrouds) { ctx.moveTo(f * rw * k, -cy * k); ctx.lineTo(0, -top * k); }
   ctx.stroke();
 }
 
@@ -4322,7 +4637,7 @@ function reportPage(flight) {
     ['TOUCHDOWN V-SPEED', `${td.verticalSpeed.toFixed(1)} M/S${lim(tl.verticalSpeed)}`, td.reasons.includes('verticalSpeed') ? 'spot' : null],
     ['TOUCHDOWN H-SPEED', `${td.horizontalSpeed.toFixed(1)} M/S${lim(tl.horizontalSpeed)}`, td.reasons.includes('horizontalSpeed') ? 'spot' : null],
     ['TOUCHDOWN TILT', `${Math.abs((td.tilt * 180) / Math.PI).toFixed(0)} DEG${Number.isFinite(tl.tilt) ? `  (LIMIT ${deg.toFixed(0)})` : ''}`, td.reasons.includes('tilt') ? 'spot' : null],
-    ['PARACHUTE', td.chute ? 'Open' : s.chute === 2 ? 'Torn away' : 'Not used'],
+    ['PARACHUTE', { 1: 'Main, full', 4: 'Main, reefed', 3: 'Drogue only', 2: 'Torn away' }[s.chute] || 'Not used'],
     ['DOWNRANGE', `${(Math.abs(td.arc) / 1000).toFixed(Math.abs(td.arc) > 10000 ? 0 : 1)} KM FROM PAD 1`],
   ];
   const caption = landed
@@ -4384,7 +4699,7 @@ function startPage(keys = {}) {
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
       'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry. SPACE pauses. The same arrows shuttle a replay.',
       'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
-      'ENTER also opens the parachute once only the capsule is left (under 250 m/s; P works too). R restarts. N returns to this plan. V replays the last flight. M mutes.',
+      'ENTER also opens the parachutes once only the capsule is left (under 250 m/s; P works too): the drogue comes out first, and the main follows on its own under 90 m/s and 3 km above the ground, reefed for four seconds, then full. R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',
@@ -4697,6 +5012,9 @@ const { BLUEPRINT, STROKE, MONO, formatDistance, formatTime, drawScaleBar } = __
 const G = 8; // grid
 
 // The strip is one row on wide sheets and two on narrow ones (phones).
+// The CHUTE cell: stowed, drogue out, main reefed, main full, torn away.
+const CHUTE_WORDS = { 0: 'STOWED', 3: 'DROGUE', 4: 'REEFED', 1: 'MAIN', 2: 'TORN' };
+
 function hudHeight(narrow) {
   return narrow ? 200 : 112;
 }
@@ -4799,7 +5117,7 @@ function createHud() {
     readout(ctx, L.sx, oy + 3 * G, L.sw, 'STAGE', info.stageText, 'none');
     readout(ctx, L.sx, oy + 6 * G, L.sw, 'DV', `${Math.round(info.dv)} M/S`, 'none');
     readout(ctx, L.sx, oy + 9 * G, L.sw, 'TWR', info.twr.toFixed(1), 'none');
-    if (info.capsule) readout(ctx, L.sx, oy + 12 * G, L.sw, 'CHUTE', ['STOWED', 'OPEN', 'TORN'][alerts.chute || 0], alerts.chute === 2 ? 'marker' : 'none');
+    if (info.capsule) readout(ctx, L.sx, oy + 12 * G, L.sw, 'CHUTE', CHUTE_WORDS[alerts.chute || 0], alerts.chute === 2 ? 'marker' : 'none');
     if (info.stages) stack(ctx, L.stack, oy + 11 * G, info.stages);
 
     // CAPCOM line: in the strip when there is room, else top left of the
@@ -5493,7 +5811,7 @@ function stepGame(dt) {
     if (ev.type === 'staged') sfx.stage();
     else if (ev.type === 'splashdown') stampTitleBlock(titleBlock, 'RECOVERED');
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
-    else if (ev.type === 'soi') { camera.bodyRadius = flight.body.radius; camera.snap(flight.state); flashSoi(); }
+    else if (ev.type === 'soi') { aimCamera(flight.body, flight.terrain, flight.state); camera.snap(flight.state); flashSoi(); }
   }
   // Coming down into a slower band, or up to an event, drops the warp to the cap.
   if (warp > maxWarpIndex(flight, eventIn())) setWarp(warp);
@@ -5578,6 +5896,7 @@ function restart() {
   loop.reset();
   if (!pageOpen) loop.resume();
   camera.resetZoom();
+  aimCamera(flight.body, flight.terrain, flight.state);
   camera.snap(flight.state);
   lastMetShown = -1;
   stampTitleBlock(titleBlock, null);
@@ -5758,10 +6077,16 @@ function otherBodies(src, body, clock) {
   return out;
 }
 
+// Tell the camera which body it frames and how high the ground is under the craft.
+function aimCamera(body, terrain, state) {
+  camera.bodyRadius = body.radius;
+  camera.groundRadius = terrain.groundRadiusAt(state.x, state.y);
+}
+
 function render(alpha, frameDt) {
   const scene = currentScene(alpha);
   const { view, phase, src, body, terrain } = scene;
-  camera.bodyRadius = body.radius;
+  aimCamera(body, terrain, view);
   const prediction = phase === 'flying' ? predictCoast(view, body, terrain, { drag: dragFactor(view, src.cfg), clock: scene.clock, terrainOf: src.terrainOf }) : null;
   if (!replay) lastPrediction = prediction;
   const extent = extentOf(view, prediction);
