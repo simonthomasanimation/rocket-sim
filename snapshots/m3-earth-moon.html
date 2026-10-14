@@ -2316,7 +2316,37 @@ function stepFor(s, body, period) {
   return Math.max(0.05, Math.min(600, dt));
 }
 
+// Where another body (a child of the path's frame body, or its parent)
+// will be when the craft's predicted path passes nearest to it, for the
+// sheets to draw a ghost of it: { t, d, x, y, px, py } with the body's
+// centre (x, y) and the path point (px, py) in the frame body's frame.
+// Null when the path never gets a quarter of the way out to the body's ring
+// (a ghost would only be noise), or already enters its sphere of influence
+// (the path's own segments draw that one).
+function closestApproach(prediction, body, other, clock = 0) {
+  if (!prediction || prediction.points.length < 2) return null;
+  const child = other.parent === body.id;
+  const ring = child ? other.orbitRadius : body.orbitRadius;
+  if (!(ring > 0)) return null;
+  if ((prediction.segments || []).some((sg) => sg.body === other.id)) return null;
+  const pts = prediction.points;
+  const end = prediction.segments && prediction.segments[1] ? prediction.segments[1].from : pts.length;
+  const stride = Math.max(1, Math.floor(end / 300));
+  let best = null; let far = 0;
+  for (let i = 0; i < end; i += stride) {
+    const p = pts[i];
+    const r = Math.hypot(p.x, p.y);
+    if (r > far) far = r;
+    let q = bodyState(child ? other : body, clock + p.t);
+    if (!child) q = { x: -q.x, y: -q.y };
+    const d = Math.hypot(p.x - q.x, p.y - q.y);
+    if (!best || d < best.d) best = { t: p.t, d, x: q.x, y: q.y, px: p.x, py: p.y };
+  }
+  return far > ring / 4 ? best : null;
+}
+
 __exports.predictCoast = predictCoast;
+__exports.closestApproach = closestApproach;
 return __exports;
 })();
 
@@ -2664,8 +2694,9 @@ const __exports = {};
 // It follows the craft, turns so the local vertical points up the screen,
 // zooms out as the craft climbs (or as its predicted path grows) and in as
 // it nears the ground, keeps the ground pinned near the bottom of the flight
-// area when it is in reach, and frames the whole Moon once it fits. The
-// player can bias the zoom; the bias persists until reset.
+// area when it is in reach, and frames the whole Moon once it fits. A zoom
+// the player sets holds as an absolute scale (the automatic zoom stops
+// moving it) and a drag pans the view off the craft; 0 hands both back.
 // Line weights are never scaled here: drawing code multiplies lengths by
 // `scale` and keeps strokes in pixels.
 
@@ -2679,7 +2710,8 @@ function createCamera() {
     top: 0,              // y offset of the flight area on screen
     minScale: 0.000005, maxScale: 14, // down to the whole Earth-Moon system on one sheet
     groundClearance: 96, // px kept between the surface and the bottom of the flight area, room for the strata
-    zoomBias: 0,         // log2 of the player's zoom multiplier; 0 = automatic
+    heldScale: null,     // px per metre the player set, or null for automatic
+    offX: 0, offY: 0,    // world metres the view is panned off the craft
     bodyRadius: 1,
     groundRadius: null,  // radius of the ground under the craft (terrain), or null for the body's
   };
@@ -2715,7 +2747,8 @@ function createCamera() {
       if (extent.down > alt + R / 4) scale = Math.min(scale, (H - c - pad) / (Math.max(r + R, extent.down) + extent.up));
       if (extent.side > 0) scale = Math.min(scale, (W / 2 - pad) / extent.side);
     }
-    scale = clamp(scale * Math.pow(2, cam.zoomBias), cam.minScale, cam.maxScale);
+    if (cam.heldScale !== null) scale = cam.heldScale;
+    scale = clamp(scale, cam.minScale, cam.maxScale);
     // Ground as a line: pin it near the bottom. Moon as a disc: show it all.
     // Blend by how much of the disc fits in the view.
     const asLine = Math.min(alt * scale + c, H * 0.62);
@@ -2725,23 +2758,36 @@ function createCamera() {
     const asDisc = Math.min(low * scale + c, H - 48);
     const t = clamp(1 - (R * scale - H / 3) / (H - H / 3), 0, 1);
     const lift = asLine + (asDisc - asLine) * t;
-    return { x: state.x, y: state.y, rot, scale, lift };
+    return { x: state.x + cam.offX, y: state.y + cam.offY, rot, scale, lift };
   }
 
   cam.setViewport = (width, height, top = 0) => { cam.width = width; cam.height = height; cam.top = top; };
-  cam.snap = (state, extent = null) => { Object.assign(cam, target(state, extent)); };
-  // Ease towards the target; dt is frame time in seconds.
+  cam.snap = (state, extent = null) => { cam.offX = 0; cam.offY = 0; Object.assign(cam, target(state, extent)); };
+  // Ease the turn, zoom and lift towards the target; the focus itself goes
+  // straight to the craft, so it never trails off a held sheet at warp.
   cam.follow = (state, dt, extent = null) => {
     const t = target(state, extent);
     const k = 1 - Math.exp(-dt * 4);
-    cam.x += (t.x - cam.x) * k;
-    cam.y += (t.y - cam.y) * k;
+    cam.x = t.x;
+    cam.y = t.y;
     cam.rot += shortest(t.rot - cam.rot) * k;
     cam.scale *= Math.pow(t.scale / cam.scale, k); // ease in log space so zooms feel even
     cam.lift += (t.lift - cam.lift) * k;
   };
-  cam.zoom = (steps) => { cam.zoomBias = clamp(cam.zoomBias + steps, -6, 6); };
-  cam.resetZoom = () => { cam.zoomBias = 0; };
+  // A zoom step holds the scale from where the view is now, so the first
+  // press is a small change from what the player sees, not from a target
+  // the view is still easing towards.
+  cam.zoom = (steps) => { cam.heldScale = clamp((cam.heldScale ?? cam.scale) * Math.pow(2, steps), cam.minScale, cam.maxScale); };
+  // Pan by screen pixels: the view moves with the drag, the craft stays put.
+  cam.pan = (dx, dy) => {
+    const c = Math.cos(cam.rot); const s = Math.sin(cam.rot);
+    const wx = -dx / cam.scale; const wy = dy / cam.scale; // screen right = world +x turned by rot, screen up = +y
+    cam.offX += wx * c + wy * s; cam.offY += -wx * s + wy * c;
+    const limit = 4e8; // no further than the far side of the system
+    cam.offX = clamp(cam.offX, -limit, limit); cam.offY = clamp(cam.offY, -limit, limit);
+  };
+  cam.isHeld = () => cam.heldScale !== null || cam.offX !== 0 || cam.offY !== 0;
+  cam.resetZoom = () => { cam.heldScale = null; cam.offX = 0; cam.offY = 0; };
 
   // A world vector turned into screen pixels (no translation).
   cam.toScreenVec = (wx, wy) => {
@@ -2791,6 +2837,7 @@ const __exports = {};
 const { labelAlpha } = __m("src/render/camera.js");
 const { craftHeight, footHalfWidth, activeStage, progradeAngle, canopyBloom } = __m("src/core/craft.js");
 const { BODIES, ESCAPE_RADIUS } = __m("src/core/body.js");
+const { closestApproach } = __m("src/core/predict.js");
 
 const BLUEPRINT = {
   paper: '#1B3A6B',
@@ -2856,13 +2903,13 @@ const CHUTE_RADIUS = 7;   // canopy radius, metres
 const CHUTE_RISE = 14;    // canopy centre above the craft's top, metres
 const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
 
-// scene: { state, cfg, phase, body, terrain, prediction, debris, others, avoid }
+// scene: { state, cfg, phase, body, terrain, prediction, debris, others, avoid, clock }
 // others: [{ body, terrain, offset: { x, y } }] bodies drawn at an offset
 // from the current body's centre (the Moon seen from Earth, and the reverse).
 // avoid: [{ x, y, w, h }] screen rectangles taken by the sheet furniture
 // (the Detail A inset, the title block) that edge pointers keep clear of.
 function drawScene(ctx, cam, scene) {
-  const { state, cfg, phase, body, terrain, prediction, debris, others, avoid } = scene;
+  const { state, cfg, phase, body, terrain, prediction, debris, others, avoid, clock } = scene;
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, cam.top, cam.width, cam.height);
@@ -2872,19 +2919,28 @@ function drawScene(ctx, cam, scene) {
     drawBody(ctx, shifted, o.body, o.terrain, { x: state.x - o.offset.x, y: state.y - o.offset.y }, true);
   }
   drawBody(ctx, cam, body, terrain, state);
+  if (others && others.length) drawBodyPaths(ctx, cam, body, others, phase === 'flying' ? prediction : null, clock || 0);
   // Pointers to the bodies that are off the sheet: the one the craft
   // orbits, and the others (the Moon from Earth's sphere, Earth from the Moon's).
   // No pointer to the body the craft is standing on or skimming: with the
   // ground within a sheet's height below, the altitude ruler says it all.
+  // With the view dragged off the craft, the pointers start from the middle
+  // of the sheet and one more points back to the craft.
   {
-    const craft = cam.toScreen(state.x, state.y);
+    const W = cam.width; const H = cam.height;
+    const at = cam.toScreen(state.x, state.y);
+    const craftOn = at.x > 0 && at.x < W && at.y > cam.top && at.y < cam.top + H;
+    const craft = craftOn ? at : { x: W / 2, y: cam.top + H / 2 };
+    // The altitude ruler's column counts as furniture too.
+    const keepClear = [...(avoid || []), { x: 0, y: cam.top, w: 110, h: H }];
+    if (!craftOn) drawEdgePointer(ctx, cam, { name: cfg.name, radius: 0 }, at, craft, Math.hypot(at.x - craft.x, at.y - craft.y) / cam.scale, { avoid: keepClear });
     const r = Math.hypot(state.x, state.y);
     const gr = terrain.groundRadiusAt(state.x, state.y);
     const ground = cam.toScreen((state.x / r) * gr, (state.y / r) * gr);
     // The ground reads as a horizon line only when the disc dwarfs the sheet.
     const horizon = body.radius * cam.scale > 4 * Math.max(cam.width, cam.height);
     const floorY = horizon && ground.y > cam.top && ground.y < cam.top + cam.height ? ground.y : Infinity;
-    const opts = { avoid: avoid || [], floorY };
+    const opts = { avoid: keepClear, floorY };
     if ((r - gr) * cam.scale > cam.height) drawEdgePointer(ctx, cam, body, cam.toScreen(0, 0), craft, r, opts);
     for (const o of others || []) drawEdgePointer(ctx, cam, o.body, cam.toScreen(o.offset.x, o.offset.y), craft, Math.hypot(state.x - o.offset.x, state.y - o.offset.y), opts);
   }
@@ -2921,6 +2977,7 @@ function drawScaleBar(ctx, cam, x, y) {
   ctx.moveTo(x + px / 2 + 0.5, y); ctx.lineTo(x + px / 2 + 0.5, y + 3);
   ctx.stroke();
   label(ctx, `SCALE ${formatDistance(step)}`, x, y - 4, 'left', BLUEPRINT.inkPale);
+  if (cam.isHeld && cam.isHeld()) label(ctx, 'VIEW HELD — 0 FOLLOWS THE CRAFT AGAIN', x, y + 16, 'left', BLUEPRINT.inkPale);
 }
 
 // Altitude ruler down the left edge: ticks in metres above the ground
@@ -3417,7 +3474,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
 // A ring of radius `radius` (m) round a centre on screen, dotted, with its
 // label on the ring at the point nearest the middle of the sheet. Skipped
 // when no part of it crosses the sheet or it is too small to see.
-function drawReachRing(ctx, cam, centre, radius, text) {
+function drawReachRing(ctx, cam, centre, radius, text, dash = [2, 8]) {
   const rp = radius * cam.scale;
   if (rp < 4) return;
   const W = cam.width; const H = cam.height;
@@ -3427,7 +3484,7 @@ function drawReachRing(ctx, cam, centre, radius, text) {
   if (d > rp + reach || d < rp - reach) return; // the ring passes nowhere near the sheet
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
-  ctx.setLineDash([2, 8]);
+  ctx.setLineDash(dash);
   ctx.beginPath(); ctx.arc(centre.x, centre.y, rp, 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]);
   // Label: on the ring, towards the middle of the sheet (straight up from
@@ -3436,6 +3493,43 @@ function drawReachRing(ctx, cam, centre, radius, text) {
   const px = centre.x + ux * rp; const py = centre.y + uy * rp;
   if (px < 60 || px > W - 60 || py < cam.top + 20 || py > cam.top + H - 20) return;
   label(ctx, text, px, py - 6 + (uy > 0 ? 18 : 0), 'center', BLUEPRINT.inkPale, labelAlpha(rp / 2));
+}
+
+// The paths of the other bodies round this one, as fine dotted rings: the
+// Moon's orbit seen from Earth, and Earth's apparent path seen from the
+// Moon. When the craft's predicted path heads out that way, a ghost of the
+// body is drawn where it will be when the path passes nearest to it, tied
+// to that point of the path, with the miss distance: the planning aid for
+// a transfer, so the burn can be timed before the sphere is ever reached.
+function drawBodyPaths(ctx, cam, body, others, prediction, clock) {
+  const centre = cam.toScreen(0, 0);
+  const W = cam.width; const H = cam.height;
+  for (const o of others) {
+    const child = o.body.parent === body.id;
+    const ring = child ? o.body.orbitRadius : body.orbitRadius;
+    if (!(ring > 0)) continue;
+    drawReachRing(ctx, cam, centre, ring, child ? `${o.body.name}'S PATH` : `${o.body.name}'S PATH, SEEN FROM THE ${body.name}`, [1, 5]);
+    const best = closestApproach(prediction, body, o.body, clock);
+    if (!best || best.t < 1) continue;
+    const c = cam.toScreen(best.x, best.y);
+    const now = cam.toScreen(o.offset.x, o.offset.y);
+    if (Math.hypot(c.x - now.x, c.y - now.y) < 3) continue; // it will not have moved to speak of
+    if (c.x < -40 || c.x > W + 40 || c.y < cam.top - 40 || c.y > cam.top + H + 40) continue;
+    const rp = Math.max(3, o.body.radius * cam.scale);
+    if (rp > 4000) continue;
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
+    if (Number.isFinite(o.body.soi) && o.body.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, o.body.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
+    // The tie to the point of the path it is nearest to.
+    const p = cam.toScreen(best.px, best.py);
+    ctx.setLineDash([1, 4]);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+    ctx.setLineDash([]);
+    label(ctx, `${o.body.name} AT T-${formatTime(best.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale);
+    label(ctx, `YOUR PATH PASSES ${formatDistance(best.d)} OFF`, c.x, c.y + rp + 28, 'center', BLUEPRINT.inkPale);
+  }
 }
 
 // A pointer at the edge of the sheet towards a body that is off it: a
@@ -4293,6 +4387,7 @@ const __exports = {};
 // blocky WARP readout, a status line and the radio log in terminal type.
 
 const { BODIES, bodyState, childrenOf, ESCAPE_RADIUS } = __m("src/core/body.js");
+const { closestApproach } = __m("src/core/predict.js");
 const { formatDistance, formatTime, MONO } = __m("src/render/blueprint.js");
 
 const CRT = {
@@ -4307,15 +4402,17 @@ const G = 8;
 // The map's own camera: centred on the frame, zoom from the fit plus the
 // player's bias, eased so a change of frame does not snap.
 function createMapCamera() {
-  const cam = { cx: 0, cy: 0, scale: 1e-4, zoomBias: 0, width: 1, height: 1 };
+  const cam = { cx: 0, cy: 0, scale: 1e-4, zoomBias: 0, offX: 0, offY: 0, width: 1, height: 1 };
   cam.zoom = (steps) => { cam.zoomBias = Math.max(-8, Math.min(8, cam.zoomBias + steps)); };
-  cam.resetZoom = () => { cam.zoomBias = 0; };
+  cam.pan = (dx, dy) => { cam.offX -= dx / cam.scale; cam.offY += dy / cam.scale; };
+  cam.isHeld = () => cam.zoomBias !== 0 || cam.offX !== 0 || cam.offY !== 0;
+  cam.resetZoom = () => { cam.zoomBias = 0; cam.offX = 0; cam.offY = 0; };
   cam.toScreen = (wx, wy) => ({ x: cam.width / 2 + (wx - cam.cx) * cam.scale, y: cam.height / 2 - (wy - cam.cy) * cam.scale });
   // Fit a box [minX, maxX] x [minY, maxY] (world) with a margin, eased.
   cam.fit = (box, dt, snap = false) => {
     // Symmetric about the frame body (the origin), so it sits at the centre.
     const w = 2 * Math.max(1, Math.abs(box.minX), Math.abs(box.maxX)); const h = 2 * Math.max(1, Math.abs(box.minY), Math.abs(box.maxY));
-    const tx = 0; const ty = 0;
+    const tx = cam.offX; const ty = cam.offY;
     let ts = Math.min((cam.width - 12 * G) / w, (cam.height - 24 * G) / h) * Math.pow(2, cam.zoomBias);
     ts = Math.max(1e-6, Math.min(2, ts));
     const far = Math.hypot(tx - cam.cx, ty - cam.cy) * cam.scale > cam.width;
@@ -4407,6 +4504,30 @@ function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
     if (o.body.parent === body.id) {
       const c = cam.toScreen(0, 0);
       glowStroke(ctx, () => ctx.arc(c.x, c.y, o.body.orbitRadius * cam.scale, 0, Math.PI * 2), CRT.inkDim, 0.75, 2);
+    }
+  }
+
+  // Ghosts: where the Moon (or Earth, from the Moon) will be when the
+  // predicted path passes nearest to it, tied to that point of the path.
+  if (prediction && scene.phase === 'flying') {
+    for (const o of others) {
+      const best = closestApproach(prediction, body, o.body, clock);
+      if (!best || best.t < 1) continue;
+      const c = cam.toScreen(best.x, best.y);
+      const now = cam.toScreen(o.x, o.y);
+      if (Math.hypot(c.x - now.x, c.y - now.y) < 3) continue;
+      if (c.x < -40 || c.x > cam.width + 40 || c.y < -40 || c.y > cam.height + 40) continue;
+      const rp = Math.max(3, o.body.radius * cam.scale);
+      const p = cam.toScreen(best.px, best.py);
+      ctx.strokeStyle = CRT.inkDim; ctx.lineWidth = 0.75;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
+      if (Number.isFinite(o.body.soi) && o.body.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, o.body.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.setLineDash([1, 4]);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.setLineDash([]);
+      text(ctx, `${o.body.name} AT T-${formatTime(best.t)}`, c.x, c.y + rp + 14, { align: 'center', colour: CRT.inkDim });
+      text(ctx, `PATH PASSES ${formatDistance(best.d)} OFF`, c.x, c.y + rp + 28, { align: 'center', colour: CRT.inkDim });
     }
   }
 
@@ -4855,7 +4976,7 @@ function startPage(keys = {}) {
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
       'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry, and under the parachutes the main chute and then touchdown. Under a canopy the full ×64 is allowed at any height. SPACE pauses. The same arrows shuttle a replay.',
-      'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
+      'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom (mouse wheel and pinch too), and a zoom you set holds until you press 0. Drag the sheet with the mouse or a finger to look around, at the Moon’s path for instance; 0 brings the view back to the craft and lets the automatic zoom follow again.',
       'ENTER also opens the parachutes once only the capsule is left (under 250 m/s; P works too): the drogue comes out first, and the main follows on its own under 90 m/s and 3 km above the ground, reefed for four seconds, then full. R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
@@ -5030,24 +5151,31 @@ function createInput({ touchRoot, zoomTarget } = {}) {
       const steps = -Math.sign(e.deltaY) * (e.deltaMode === 1 ? 0.5 : Math.min(1, Math.abs(e.deltaY) / 200));
       if (steps) actions.push({ type: 'zoom', value: steps });
     }, { passive: false });
+    // A drag pans the sheet: any mouse button, or one finger. Two fingers pinch.
     const touches = new Map();
     let pinch = null;
     zoomTarget.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse') return;
       gesture();
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      zoomTarget.setPointerCapture?.(e.pointerId);
       if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+      if (e.pointerType === 'mouse') e.preventDefault();
     });
     zoomTarget.addEventListener('pointermove', (e) => {
       if (!touches.has(e.pointerId)) return;
+      const prev = touches.get(e.pointerId);
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (touches.size === 2 && pinch) {
+      if (touches.size === 1) {
+        const dx = e.clientX - prev.x; const dy = e.clientY - prev.y;
+        if (dx || dy) actions.push({ type: 'pan', value: { dx, dy } });
+      } else if (touches.size === 2 && pinch) {
         const [a, b] = [...touches.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         if (d > 0 && Math.abs(Math.log2(d / pinch)) > 0.02) { actions.push({ type: 'zoom', value: Math.log2(d / pinch) }); pinch = d; }
       }
     });
     const endTouch = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+    zoomTarget.addEventListener('contextmenu', (e) => e.preventDefault());
     zoomTarget.addEventListener('pointerup', endTouch);
     zoomTarget.addEventListener('pointercancel', endTouch);
     zoomTarget.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
@@ -6143,6 +6271,7 @@ function onTransport(action, value) {
     case 'zoomOut': zoomBy(-0.5); break;
     case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
     case 'zoom': zoomBy(value); break;
+    case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
     case 'map': turnPage(); break;
     default: break;
   }
@@ -6282,7 +6411,7 @@ function render(alpha, frameDt) {
   // Corners the sheet's edge pointers keep clear of: the inset and the title block.
   const tb = titleBlock.getBoundingClientRect();
   const avoid = [box, { x: tb.left, y: tb.top, w: tb.width, h: tb.height }];
-  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body, terrain, prediction, debris: scene.debris, others: otherBodies(src, body, scene.clock), avoid });
+  drawScene(surface.ctx, camera, { state: view, cfg: src.cfg, phase, body, terrain, prediction, debris: scene.debris, others: otherBodies(src, body, scene.clock), avoid, clock: scene.clock });
   drawDetail(surface.ctx, camera, { state: view, cfg: src.cfg, phase, debris: scene.debris }, box);
   const a = scene.alerts || alerts || computeAlerts(src, prediction);
   hud.update(view, a, scene.capcom, frameDt);
@@ -6386,6 +6515,7 @@ function frame(nowMs) {
       case 'zoomOut': zoomBy(-0.5); break;
       case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
       case 'zoom': zoomBy(value); break;
+      case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
       case 'map': turnPage(); break;
       default: break;
     }
