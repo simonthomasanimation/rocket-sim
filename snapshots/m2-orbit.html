@@ -2182,8 +2182,9 @@ function drawPrediction(ctx, cam, prediction, body) {
   // Markers only where the path really passes.
   const apOnPath = el.apoapsis && (closed || (impact && el.timeToAp < impact.t) || (!impact && !closed && el.timeToAp !== null));
   const peOnPath = el.peAlt > 0 && (closed || (!impact && el.timeToPe !== null));
-  if (apOnPath) drawMarker(ctx, cam, el.apoapsis, `AP ${formatDistance(el.apAlt)}`, BLUEPRINT.ink);
-  if (peOnPath) drawMarker(ctx, cam, el.periapsis, `PE ${formatDistance(el.peAlt)}`, BLUEPRINT.ink);
+  const eta = (t) => (t !== null && Number.isFinite(t) ? `  T-${formatTime(t)}` : '');
+  if (apOnPath) drawMarker(ctx, cam, el.apoapsis, `AP ${formatDistance(el.apAlt)}${eta(el.timeToAp)}`, BLUEPRINT.ink);
+  if (peOnPath) drawMarker(ctx, cam, el.periapsis, `PE ${formatDistance(el.peAlt)}${eta(el.timeToPe)}`, BLUEPRINT.ink);
 }
 
 function drawMarker(ctx, cam, at, text, colour) {

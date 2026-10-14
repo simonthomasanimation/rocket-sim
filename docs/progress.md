@@ -35,7 +35,8 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 - [x] Fixed two-stage rocket with staging; surface-to-orbit achievable
 - [x] Sandbox start chooser: surface or low orbit
 - [x] Physics time warp ×1–×50 so an orbit can be watched, limited near the ground (added: M3 brings the full ladder and warp-to-event)
-- [ ] Gate issue opened
+- [x] Gate issue opened (#3)
+- [x] Milestone build kept in snapshots/m2-orbit.html
 
 ## M3 Earth–Moon
 - [ ] Scaled Earth–Moon system on shared scale rules; Moon orbits Earth
