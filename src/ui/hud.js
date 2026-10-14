@@ -244,8 +244,16 @@ function rose(ctx, cx, cy, r, info, pitch) {
   ctx.beginPath();
   ctx.arc(cx, cy, 2, 0, Math.PI * 2);
   ctx.stroke();
-  const holdText = info.hold === 1 ? 'HOLD PRO' : info.hold === 2 ? 'HOLD RET' : 'ATT';
-  text(ctx, holdText, cx, cy + r + 9, { size: 9, weight: info.hold ? 500 : 400, align: 'center', colour: info.hold ? BLUEPRINT.ink : BLUEPRINT.inkPale });
+  const holdText = info.hold === 1 ? 'AUTO PRO' : info.hold === 2 ? 'AUTO RET' : 'ATT';
+  if (info.hold) {
+    // Inverted cell, like WARP in the title block: steering is automatic.
+    const w = 54; const hh = 11;
+    ctx.fillStyle = BLUEPRINT.ink;
+    ctx.fillRect(Math.round(cx - w / 2), Math.round(cy + r - 1), w, hh);
+    text(ctx, holdText, cx, cy + r + 8, { size: 8, weight: 500, align: 'center', colour: BLUEPRINT.paper });
+  } else {
+    text(ctx, holdText, cx, cy + r + 9, { size: 9, weight: 400, align: 'center', colour: BLUEPRINT.inkPale });
+  }
 }
 
 // The vehicle as a stack of stage boxes from the bottom up: hatched to the

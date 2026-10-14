@@ -65,6 +65,8 @@ function drawCreases(ctx, W, H, px) {
 export const STROKE = { structure: 1.5, annotation: 0.75 };
 // Depths of the strata lines drawn inside a body, metres.
 export const STRATA = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+export const CHUTE_RADIUS = 7;   // canopy radius, metres
+export const CHUTE_RISE = 14;    // canopy centre above the craft's top, metres
 export const MONO = '"IBM Plex Mono", "Courier Prime", ui-monospace, Menlo, monospace';
 
 // scene: { state, cfg, phase, body, terrain, prediction, debris, others }
@@ -148,6 +150,20 @@ function drawAltitudeRuler(ctx, cam, body, terrain, state) {
     ctx.stroke();
     label(ctx, major ? 'GROUND' : formatDistance(h), x + 10, y + 5, 'left', major ? BLUEPRINT.ink : BLUEPRINT.inkPale);
   }
+  // The edge of the air, named after the programme.
+  if (body.atmosphere) {
+    const y = groundY - body.atmosphere.height * s;
+    if (y > top && y < bottom && body.atmosphere.height * s > 60) {
+      ctx.strokeStyle = BLUEPRINT.ink;
+      ctx.lineWidth = STROKE.annotation;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x - 8, Math.round(y) + 0.5); ctx.lineTo(x + 56, Math.round(y) + 0.5);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      label(ctx, 'KÁRMÁN LINE', x + 10, y - 3, 'left', BLUEPRINT.ink);
+    }
+  }
   // Below ground the ruler names the strata lines.
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
@@ -194,9 +210,11 @@ export function drawDetail(ctx, cam, { state, cfg, phase, debris }, box) {
   // of it), so a stage that is left alone stays the size it was rather
   // than jumping up to fill the box.
   const whole = cfg.stages.reduce((sum, st) => sum + st.height, 0);
-  const framed = Math.max(h, 0.55 * whole);
+  // With the chute out, the canopy is part of the vehicle.
+  const top = state.chute === 1 ? h + CHUTE_RISE + CHUTE_RADIUS : h;
+  const framed = Math.max(top, 0.55 * whole);
   const kTarget = (box.h * 0.6) / (framed + back);
-  const offTarget = (h - back) / 2;          // metres from the base to the framed midpoint
+  const offTarget = (top - back) / 2;        // metres from the base to the framed midpoint
   if (!inset.k) { inset.k = kTarget; inset.offset = offTarget; }
   inset.k += (kTarget - inset.k) * 0.12;
   inset.offset += (offTarget - inset.offset) * 0.12;
@@ -353,7 +371,7 @@ function drawBody(ctx, cam, body, terrain, state, far = false) {
       if (!far) {
         const p = cam.toScreen(Math.sin(thetaC) * ra, Math.cos(thetaC) * ra);
         const f = cam.frameAt(thetaC);
-        if (p.y > cam.top && p.y < cam.top + H) label(ctx, `ATMOSPHERE ${formatDistance(body.atmosphere.height)}`, p.x + f.along.x * 60 + 4, p.y + f.along.y * 60 - 4, 'left', BLUEPRINT.inkPale, labelAlpha(body.atmosphere.height * s));
+        if (p.y > cam.top && p.y < cam.top + H) label(ctx, `KÁRMÁN LINE ${formatDistance(body.atmosphere.height)} — AIR BELOW`, p.x + f.along.x * 60 + 4, p.y + f.along.y * 60 - 4, 'left', BLUEPRINT.inkPale, labelAlpha(body.atmosphere.height * s));
       }
     }
   }
@@ -934,8 +952,8 @@ function drawChute(ctx, k, s, cfg) {
     ctx.setLineDash([]);
     return;
   }
-  const r = 7;                 // canopy radius, metres
-  const cy = top + 14;         // canopy centre above the base plane
+  const r = CHUTE_RADIUS;
+  const cy = top + CHUTE_RISE; // canopy centre above the base plane
   ctx.strokeStyle = BLUEPRINT.ink;
   ctx.lineWidth = STROKE.structure;
   ctx.beginPath();
@@ -952,6 +970,29 @@ function drawChute(ctx, k, s, cfg) {
   }
   for (const f of [-1, -0.5, 0, 0.5, 1]) { ctx.moveTo(f * r * k, -cy * k); ctx.lineTo(0, -top * k); }
   ctx.stroke();
+}
+
+// The capsule alone: a truncated cone on a heat shield (the heavy arc
+// under the base), a window, no engine.
+function drawCapsule(ctx, k, st, y, ink, weight) {
+  const r = st.radius;
+  const path = (pts, close = true) => polyline(ctx, k, pts.map(([x, py]) => [x, py + y]), close);
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = weight;
+  path([[-r, 0.35], [r, 0.35], [0.35, st.height], [-0.35, st.height]]);
+  // Shield: a shallow arc below the base, drawn heavier.
+  ctx.lineWidth = weight * 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-r * k, -(y + 0.35) * k);
+  ctx.quadraticCurveTo(0, -(y - 0.25) * k, r * k, -(y + 0.35) * k);
+  ctx.stroke();
+  ctx.lineWidth = weight;
+  if (k >= 4) {
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    path([[0.25, st.height * 0.55], [0.55, st.height * 0.55], [0.5, st.height * 0.72], [0.3, st.height * 0.72]]);
+    path([[-r * 0.8, 0.9], [r * 0.8, 0.9]], false);
+  }
 }
 
 // Screen position of a dropped stage's top end.
@@ -1105,7 +1146,8 @@ function drawRocketStack(ctx, k, s, cfg, from, stop, ink, weight, alone = false)
     ctx.strokeStyle = ink;
     ctx.lineWidth = weight;
     if (i === 0) drawFirstStage(ctx, k, st, y, frac, ink, weight);
-    else drawSecondStage(ctx, k, st, y, frac, ink, weight, i === top);
+    else if (!st.maxThrust) drawCapsule(ctx, k, st, y, ink, weight);
+    else drawSecondStage(ctx, k, st, y, frac, ink, weight, i === top && st.capsule);
     if (i < top) {
       // Interstage division.
       const dash = ctx.getLineDash();

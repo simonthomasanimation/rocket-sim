@@ -382,6 +382,7 @@ test('a burn from Earth orbit reaches the Moon in the prediction', () => {
 
 test('a capsule rides the heat shield-first, opens the chute and splashes down or lands', () => {
   const f = createFlight({ seed: 1, scenario: 'reentry' });
+  f.step({ ...NONE, stage: 1 });
   let n = 0; let opened = false; let maxHeat = 0;
   while (f.phase === 'flying' && n < 60 * 3600) {
     const v = Math.hypot(f.state.vx, f.state.vy);
@@ -397,10 +398,12 @@ test('a capsule rides the heat shield-first, opens the chute and splashes down o
   assert.ok(f.stats.touchdown.verticalSpeed < 10, `came down at ${f.stats.touchdown.verticalSpeed.toFixed(1)} m/s`);
   // Nose first it burns; with the chute opened too early it tears and the capsule hits hard.
   const g = createFlight({ seed: 1, scenario: 'reentry' });
+  g.step({ ...NONE, stage: 1 });
   n = 0;
   while (g.phase === 'flying' && n < 60 * 3600) { g.step({ ...NONE, hold: 1 }); n += 1; }
   assert.ok(g.stats.burned, 'prograde entry burns up');
   const h = createFlight({ seed: 1, scenario: 'reentry' });
+  h.step({ ...NONE, stage: 1 });
   n = 0;
   while (h.phase === 'flying' && n < 60 * 3600) { h.step({ ...NONE, hold: 2, chute: n === 10 ? 1 : 0 }); n += 1; }
   assert.equal(h.state.chute, 2, 'opened at orbital speed the chute tears');

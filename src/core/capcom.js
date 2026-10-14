@@ -20,6 +20,7 @@ export const LINES = {
   soiMoon: 'Entering the Moon\'s sphere of influence. Lunar gravity has you now.',
   soiEarth: 'Back in Earth\'s sphere of influence.',
   entry: 'Entry interface. Keep the shield into the wind.',
+  karman: 'Through the Kármán line. You are in space.',
   heat: 'Heating is near the limit. Hold retrograde.',
   chute: 'Good canopy.',
   chuteTorn: 'The canopy has torn away. Too fast.',
@@ -64,6 +65,7 @@ export function createCapcom() {
       if (alerts.fuel === 'critical') say('fuelOut', t, true);
       else if (alerts.fuel === 'caution' && flight.state.fuel <= 0) say('stageDry', t);
       else if (alerts.fuel === 'caution') say('fuelLow', t);
+      if (flight.body.atmosphere && alerts.vSpeed < 0 && alerts.altitude > flight.body.atmosphere.height) say('karman', t);
       if (alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
       if (alerts.heat === 'critical') say('heat', t, true);
       if (alerts.chute === 1) say('chute', t);

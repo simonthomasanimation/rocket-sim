@@ -110,7 +110,12 @@ let shortPrediction = null;
 let sinceShort = 99;
 let seenEvents = 0;
 function stepGame(dt) {
-  flight.step(input.command(), dt);
+  let cmd = input.command();
+  // ENTER is the next step down the stack: with only the capsule left and
+  // the chute still stowed, it opens the chute.
+  const st = flight.cfg.stages[flight.state.stage];
+  if (cmd.stage && st.capsule && flight.state.stage === flight.cfg.stages.length - 1 && flight.state.chute === 0) cmd = { ...cmd, stage: 0, chute: 1 };
+  flight.step(cmd, dt);
   // The alert rules look ten seconds ahead; a short prediction every third
   // tick is plenty. The drawing predicts the whole path from the view.
   if (flight.phase !== 'flying') shortPrediction = null;
@@ -557,7 +562,7 @@ function frame(nowMs) {
   const scene = render(alpha, frameDt);
   const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : warp === 0 && !loop.paused;
   if (!replay && warp > 0 && flight.phase !== 'flying' && flight.phase !== 'pad') setWarp(0);
-  sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / activeStage(scene.view, scene.src.cfg).maxThrust : 0);
+  sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / (activeStage(scene.view, scene.src.cfg).maxThrust || 1) : 0);
   const metSeconds = Math.floor(scene.view.time);
   if (metSeconds !== lastMetShown) {
     lastMetShown = metSeconds;
@@ -597,6 +602,7 @@ window.__karman = {
   get mapCamera() { return mapCamera; },
   get prediction() { return lastPrediction; },
   get paused() { return loop.paused; },
+  get hold() { return input.hold; },
   get engineLevel() { return sfx.engineLevel; },
   scenarios: Object.keys(SCENARIOS),
 };

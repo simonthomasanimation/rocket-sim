@@ -200,6 +200,8 @@ export function flyMission({ seed = 1, log = () => {}, stopAt = null } = {}) {
   log(`   back in Earth's sphere, periapsis ${(el().peAlt / 1e3).toFixed(0)} km`);
   // The corridor: too high skips out, too low burns. Fix it with short pulses.
   correct(f, step, el, alive, log, 20000, 35000, 4);
+  step({ stage: 1 });
+  log(`   dropped the ascent stage, ${fuel()}`);
   coast(() => alt() < 70000, 60 * 60 * 6, 2);
   log(`   entry interface at ${Math.hypot(f.state.vx, f.state.vy).toFixed(0)} m/s, T+${(f.state.time / 3600).toFixed(1)} h`);
   let opened = false;

@@ -88,7 +88,7 @@ export const SCENARIOS = {
     onPad: true,
     section: 'SECTION 3 — EARTH TO MOON',
     goal: 'land',
-    goalText: 'Get home: climb to a low lunar orbit, burn prograde until the map shows a path that dives past Earth with PE between 15 and 35 km, hold retrograde (G) through the air, open the chute (P) under 250 m/s.',
+    goalText: 'Get home: climb to a low lunar orbit, burn prograde until the map shows a path that dives past Earth with PE between 15 and 35 km, drop the stage (ENTER), hold retrograde (G) through the air, ENTER again for the chute under 250 m/s.',
     brief: 'The KP-3 capsule on its ascent stage, sitting on the Moon with a full tank.',
     start: (body, terrain) => ({ x: 0, y: body.radius + terrain.height(0), vx: 0, vy: 0, angle: 0, stage: 2 }),
   },
@@ -101,8 +101,8 @@ export const SCENARIOS = {
     onPad: false,
     section: 'SECTION 3 — EARTH TO MOON',
     goal: 'land',
-    goalText: 'Come home: hold retrograde (G) so the shield takes the heat, open the parachute (P) under 250 m/s, splash down under 10 m/s.',
-    brief: 'The KP-3 capsule alone, 90 km up, periapsis already inside the air.',
+    goalText: 'Come home: drop the spent stage (ENTER), hold retrograde (G) so the shield takes the heat, ENTER again for the parachute under 250 m/s, touch down under 10 m/s.',
+    brief: 'The KP-3 capsule on its spent ascent stage, 90 km up, periapsis already inside the air.',
     start: (body) => {
       const r = body.radius + LOW_EARTH_ORBIT_ALTITUDE;
       const a = (r + body.radius + 30000) / 2;

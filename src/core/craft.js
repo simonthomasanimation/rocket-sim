@@ -51,7 +51,8 @@ export const ROCKET3 = Object.freeze({
   stages: [
     { name: 'STAGE 1', dryMass: 2600, fuelMass: 18000, maxThrust: 400000, isp: 280, height: 18.0, radius: 1.8, footHalfWidth: 3.0 },
     { name: 'STAGE 2', dryMass: 800, fuelMass: 3200, maxThrust: 30000, isp: 310, height: 7.0, radius: 1.3, footHalfWidth: 2.6 },
-    { name: 'STAGE 3', dryMass: 900, fuelMass: 700, maxThrust: 8000, isp: 310, height: 7.7, radius: 1.0, footHalfWidth: 1.6, capsule: true },
+    { name: 'STAGE 3', dryMass: 150, fuelMass: 700, maxThrust: 8000, isp: 310, height: 5.3, radius: 1.0, footHalfWidth: 1.6 },
+    { name: 'CAPSULE', dryMass: 750, fuelMass: 0, maxThrust: 0, isp: 0, height: 2.4, radius: 1.0, footHalfWidth: 1.2, capsule: true },
   ],
   throttleRate: 1.0,
   maxRotRate: Math.PI / 6,
