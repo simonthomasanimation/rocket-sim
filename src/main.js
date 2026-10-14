@@ -533,10 +533,11 @@ function frame(nowMs) {
   if (replay) {
     advanceReplay(frameDt);
   } else {
-    // A crash cuts hard to the report; a landing lets the touchdown settle first.
+    // A crash cuts hard to the report; a landing lets the touchdown settle
+    // first, and a break-up lets the pieces fall away for a moment.
     const over = flight.phase !== 'flying' && flight.phase !== 'pad';
     if (over && !pageOpen && reportDueAt === null) {
-      reportDueAt = flight.tick + (flight.phase === 'landed' ? 75 : 20);
+      reportDueAt = flight.tick + (flight.phase === 'landed' ? 75 : flight.stats.burned ? 150 : 20);
       if (flight.phase === 'crashed') sfx.crash(); else if (flight.phase === 'landed') sfx.touchdown();
       setWarp(0);
     }
@@ -554,7 +555,7 @@ function frame(nowMs) {
     }
   }
   const scene = render(alpha, frameDt);
-  const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : warp === 0;
+  const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : warp === 0 && !loop.paused;
   if (!replay && warp > 0 && flight.phase !== 'flying' && flight.phase !== 'pad') setWarp(0);
   sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / activeStage(scene.view, scene.src.cfg).maxThrust : 0);
   const metSeconds = Math.floor(scene.view.time);
@@ -595,5 +596,7 @@ window.__karman = {
   get extent() { return lastExtent; },
   get mapCamera() { return mapCamera; },
   get prediction() { return lastPrediction; },
+  get paused() { return loop.paused; },
+  get engineLevel() { return sfx.engineLevel; },
   scenarios: Object.keys(SCENARIOS),
 };
