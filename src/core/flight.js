@@ -90,7 +90,9 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
       if (cmd.warp > 0 && !wantsThrust && railsAllowed(flight, cmd.warp)) { railsStep(flight, cmd, dt * RAILS[cmd.warp - 1].rate); return; }
       const s = flight.state;
       const hadFuel = s.fuel > 0;
+      const hadChute = s.chute;
       const { staged } = stepCraft(s, cmd, dt, cfg, flight.body, flight.terrain.groundRadiusAt(s.x, s.y));
+      if (s.chute !== hadChute) flight.events.push({ tick: flight.tick, type: 'chute', chute: s.chute });
       if (staged >= 0) {
         // The spent stage is pushed off backwards along the axis by the
         // separation springs and picks up a slight tumble.

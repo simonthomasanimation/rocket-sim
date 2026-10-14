@@ -36,6 +36,9 @@ export const ALTITUDE_BANDS = [
 // Highest physics warp allowed for the flight right now.
 export function maxPhysicsWarp(flight) {
   if (flight.phase !== 'flying') return 64;
+  // Under a canopy there is nothing left to fly: the descent may run at x64.
+  const chute = flight.state.chute;
+  if (chute && chute !== 2) return 64;
   const alt = flight.altitude();
   for (const [limit, cap] of ALTITUDE_BANDS) if (alt < limit) return cap;
   return 64;
@@ -47,7 +50,7 @@ export function railsAllowed(flight, level) {
   if (level < 1 || level > RAILS.length) return false;
   if (flight.phase !== 'flying') return false;
   const s = flight.state;
-  if (s.throttle > 0 || s.thrust > 0 || s.chute === 1) return false;
+  if (s.throttle > 0 || s.thrust > 0 || (s.chute && s.chute !== 2)) return false;
   const body = flight.body;
   const alt = flight.radius() - body.radius;
   if (body.atmosphere && alt < body.atmosphere.height + 2000) return false;

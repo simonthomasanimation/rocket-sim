@@ -8,7 +8,7 @@ import { predictCoast } from './core/predict.js';
 import { computeAlerts } from './core/alerts.js';
 import { createCapcom } from './core/capcom.js';
 import { buildTimeline, sampleTimeline } from './core/timeline.js';
-import { deltaV, twr, activeStage, progradeAngle, dragFactor } from './core/craft.js';
+import { deltaV, twr, activeStage, progradeAngle, dragFactor, MAIN_HEIGHT } from './core/craft.js';
 import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
 import { WARP_LADDER, maxWarpIndex, railsLevel } from './core/warp.js';
 import { BODIES, bodyState, childrenOf } from './core/body.js';
@@ -78,7 +78,7 @@ function setWarp(i) {
   if (cell) cell.classList.toggle('is-active', warp > 0);
 }
 
-// E: warp to the next event (Ap, Pe, SOI change, atmosphere entry), easing
+// E: warp to the next event (Ap, Pe, SOI change, atmosphere entry, touchdown under the main), easing
 // the warp down so it arrives within a couple of seconds of real time.
 function startWarpTo() {
   if (flight.phase !== 'flying') return;
@@ -90,6 +90,13 @@ function startWarpTo() {
   if (p && p.encounter) candidates.push({ t: p.encounter.t, name: `${p.encounter.body.toUpperCase()} SOI` });
   if (p && p.exit) candidates.push({ t: p.exit.t, name: 'SOI EXIT' });
   if (p && p.entry) candidates.push({ t: p.entry.t, name: 'ENTRY' });
+  // Under a canopy the descent is steady, so the predicted touchdown is an
+  // event too, and under the drogue so is the height where the main comes out.
+  if (p && p.impact && flight.state.chute === 1) candidates.push({ t: p.impact.t, name: 'TOUCHDOWN' });
+  if (p && flight.state.chute === 3) {
+    const pt = p.points.find((q) => Math.hypot(q.x, q.y) - flight.terrain.groundRadiusAt(q.x, q.y) < MAIN_HEIGHT);
+    if (pt) candidates.push({ t: pt.t, name: 'MAIN CHUTE' });
+  }
   const next = candidates.filter((c) => c.t > 5).sort((a, b) => a.t - b.t)[0];
   if (!next) return;
   warpTo = { at: flight.clock + next.t - 2, name: next.name };
@@ -130,6 +137,7 @@ function stepGame(dt) {
     else if (ev.type === 'splashdown') stampTitleBlock(titleBlock, 'RECOVERED');
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
     else if (ev.type === 'soi') { aimCamera(flight.body, flight.terrain, flight.state); camera.snap(flight.state); flashSoi(); }
+    else if (ev.type === 'chute' && ev.chute === 4 && warp > 0) { warpTo = null; setWarp(0); } // the main coming out is worth watching
   }
   // Coming down into a slower band, or up to an event, drops the warp to the cap.
   if (warp > maxWarpIndex(flight, eventIn())) setWarp(warp);

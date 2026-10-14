@@ -285,6 +285,10 @@ test('time warp is capped by the distance to the ground, rails by floors and the
   assert.ok(!railsAllowed(high, 1), 'engine on: no rails');
   const leo = createFlight({ seed: 1, scenario: 'earthOrbit' });
   assert.ok(railsAllowed(leo, 2) && !railsAllowed(leo, 3), '60 km over the Earth: x1000 yes, x10,000 no');
+  low.state.chute = 1;
+  assert.equal(maxPhysicsWarp(low), 64, 'under a canopy the descent may run at x64 at any height');
+  low.state.chute = 2;
+  assert.equal(maxPhysicsWarp(low), 4, 'a torn canopy is no canopy');
 });
 
 test('Kepler propagation matches the integrator and closes an orbit', () => {

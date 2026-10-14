@@ -1734,6 +1734,9 @@ const ALTITUDE_BANDS = [
 // Highest physics warp allowed for the flight right now.
 function maxPhysicsWarp(flight) {
   if (flight.phase !== 'flying') return 64;
+  // Under a canopy there is nothing left to fly: the descent may run at x64.
+  const chute = flight.state.chute;
+  if (chute && chute !== 2) return 64;
   const alt = flight.altitude();
   for (const [limit, cap] of ALTITUDE_BANDS) if (alt < limit) return cap;
   return 64;
@@ -1745,7 +1748,7 @@ function railsAllowed(flight, level) {
   if (level < 1 || level > RAILS.length) return false;
   if (flight.phase !== 'flying') return false;
   const s = flight.state;
-  if (s.throttle > 0 || s.thrust > 0 || s.chute === 1) return false;
+  if (s.throttle > 0 || s.thrust > 0 || (s.chute && s.chute !== 2)) return false;
   const body = flight.body;
   const alt = flight.radius() - body.radius;
   if (body.atmosphere && alt < body.atmosphere.height + 2000) return false;
@@ -1876,7 +1879,9 @@ function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_LIMITS 
       if (cmd.warp > 0 && !wantsThrust && railsAllowed(flight, cmd.warp)) { railsStep(flight, cmd, dt * RAILS[cmd.warp - 1].rate); return; }
       const s = flight.state;
       const hadFuel = s.fuel > 0;
+      const hadChute = s.chute;
       const { staged } = stepCraft(s, cmd, dt, cfg, flight.body, flight.terrain.groundRadiusAt(s.x, s.y));
+      if (s.chute !== hadChute) flight.events.push({ tick: flight.tick, type: 'chute', chute: s.chute });
       if (staged >= 0) {
         // The spent stage is pushed off backwards along the axis by the
         // separation springs and picks up a slight tumble.
@@ -4697,7 +4702,7 @@ function startPage(keys = {}) {
     lines: [
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
-      'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry. SPACE pauses. The same arrows shuttle a replay.',
+      'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry, and under the parachutes the main chute and then touchdown. Under a canopy the full ×64 is allowed at any height. SPACE pauses. The same arrows shuttle a replay.',
       'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
       'ENTER also opens the parachutes once only the capsule is left (under 250 m/s; P works too): the drogue comes out first, and the main follows on its own under 90 m/s and 3 km above the ground, reefed for four seconds, then full. R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
@@ -5690,7 +5695,7 @@ const { predictCoast } = __m("src/core/predict.js");
 const { computeAlerts } = __m("src/core/alerts.js");
 const { createCapcom } = __m("src/core/capcom.js");
 const { buildTimeline, sampleTimeline } = __m("src/core/timeline.js");
-const { deltaV, twr, activeStage, progradeAngle, dragFactor } = __m("src/core/craft.js");
+const { deltaV, twr, activeStage, progradeAngle, dragFactor, MAIN_HEIGHT } = __m("src/core/craft.js");
 const { SCENARIOS, SCENARIO_ORDER } = __m("src/core/scenario.js");
 const { WARP_LADDER, maxWarpIndex, railsLevel } = __m("src/core/warp.js");
 const { BODIES, bodyState, childrenOf } = __m("src/core/body.js");
@@ -5760,7 +5765,7 @@ function setWarp(i) {
   if (cell) cell.classList.toggle('is-active', warp > 0);
 }
 
-// E: warp to the next event (Ap, Pe, SOI change, atmosphere entry), easing
+// E: warp to the next event (Ap, Pe, SOI change, atmosphere entry, touchdown under the main), easing
 // the warp down so it arrives within a couple of seconds of real time.
 function startWarpTo() {
   if (flight.phase !== 'flying') return;
@@ -5772,6 +5777,13 @@ function startWarpTo() {
   if (p && p.encounter) candidates.push({ t: p.encounter.t, name: `${p.encounter.body.toUpperCase()} SOI` });
   if (p && p.exit) candidates.push({ t: p.exit.t, name: 'SOI EXIT' });
   if (p && p.entry) candidates.push({ t: p.entry.t, name: 'ENTRY' });
+  // Under a canopy the descent is steady, so the predicted touchdown is an
+  // event too, and under the drogue so is the height where the main comes out.
+  if (p && p.impact && flight.state.chute === 1) candidates.push({ t: p.impact.t, name: 'TOUCHDOWN' });
+  if (p && flight.state.chute === 3) {
+    const pt = p.points.find((q) => Math.hypot(q.x, q.y) - flight.terrain.groundRadiusAt(q.x, q.y) < MAIN_HEIGHT);
+    if (pt) candidates.push({ t: pt.t, name: 'MAIN CHUTE' });
+  }
   const next = candidates.filter((c) => c.t > 5).sort((a, b) => a.t - b.t)[0];
   if (!next) return;
   warpTo = { at: flight.clock + next.t - 2, name: next.name };
@@ -5812,6 +5824,7 @@ function stepGame(dt) {
     else if (ev.type === 'splashdown') stampTitleBlock(titleBlock, 'RECOVERED');
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
     else if (ev.type === 'soi') { aimCamera(flight.body, flight.terrain, flight.state); camera.snap(flight.state); flashSoi(); }
+    else if (ev.type === 'chute' && ev.chute === 4 && warp > 0) { warpTo = null; setWarp(0); } // the main coming out is worth watching
   }
   // Coming down into a slower band, or up to an event, drops the warp to the cap.
   if (warp > maxWarpIndex(flight, eventIn())) setWarp(warp);
