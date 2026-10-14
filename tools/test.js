@@ -14,15 +14,16 @@ import { createCraftState, rk4Step, ROCKET, deltaV } from '../src/core/craft.js'
 import { elementsOf } from '../src/core/orbit.js';
 import { predictCoast } from '../src/core/predict.js';
 import { createTerrain } from '../src/core/terrain.js';
-import { WARP_LADDER, maxWarp, maxWarpIndex } from '../src/core/warp.js';
+import { WARP_LADDER, PHYSICS_LADDER, maxPhysicsWarp, maxWarpIndex, railsAllowed, RAILS, PHYSICS_LEVELS } from '../src/core/warp.js';
+import { propagate } from '../src/core/kepler.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 const NONE = { thr: 0, rot: 0, full: 0, cut: 0, stage: 0, hold: 0 };
 
 test('command codes round-trip', () => {
-  for (const thr of [-1, 0, 1]) for (const rot of [-1, 0, 1]) for (const full of [0, 1]) for (const cut of [0, 1]) for (const stage of [0, 1]) for (const hold of [0, 1, 2]) {
-    const c = { thr, rot, full, cut, stage, hold };
+  for (const thr of [-1, 0, 1]) for (const rot of [-1, 0, 1]) for (const full of [0, 1]) for (const cut of [0, 1]) for (const stage of [0, 1]) for (const hold of [0, 1, 2]) for (const warp of [0, 1, 4]) for (const chute of [0, 1]) {
+    const c = { thr, rot, full, cut, stage, hold, warp, chute };
     assert.deepEqual(decodeCommand(encodeCommand(c)), c);
   }
 });
@@ -258,16 +259,63 @@ test('a scripted gravity turn reaches orbit', () => {
   assert.ok(f.state.fuel > 50, `fuel left ${f.state.fuel.toFixed(0)} kg`);
 });
 
-test('time warp is capped by the distance to the ground', () => {
+test('time warp is capped by the distance to the ground, rails by floors and the engine', () => {
   const low = createFlight({ seed: 1, scenario: 'descent' });
-  assert.equal(maxWarp(low), 4);
+  assert.equal(maxPhysicsWarp(low), 4);
   assert.equal(WARP_LADDER[maxWarpIndex(low)], 4);
   const high = createFlight({ seed: 1, scenario: 'orbit' });
-  assert.equal(maxWarp(high), 32);
+  assert.equal(maxPhysicsWarp(high), 32);
+  assert.equal(maxWarpIndex(high), PHYSICS_LADDER.indexOf(32), 'no rails under 50 km over the Moon');
   const pad = createFlight({ seed: 1, scenario: 'launch' });
-  assert.equal(maxWarp(pad), 64, 'nothing to protect on the pad');
-  high.state.y += 60000;
-  assert.equal(maxWarp(high), 64);
+  assert.equal(maxPhysicsWarp(pad), 64, 'nothing to protect on the pad');
+  assert.ok(!railsAllowed(pad, 1), 'no rails on the pad');
+  high.state.y += 60000; high.elements = elementsOf(high.state, high.body);
+  assert.equal(maxPhysicsWarp(high), 64);
+  assert.ok(railsAllowed(high, 1) && railsAllowed(high, 2) && !railsAllowed(high, 3), '75 km over the Moon: x1000 yes, x10,000 no');
+  assert.equal(WARP_LADDER[maxWarpIndex(high)], 1000);
+  assert.equal(WARP_LADDER[maxWarpIndex(high, 4)], 64, 'an event 4 s away keeps it off the rails');
+  high.state.throttle = 0.5;
+  assert.ok(!railsAllowed(high, 1), 'engine on: no rails');
+  const leo = createFlight({ seed: 1, scenario: 'earthOrbit' });
+  assert.ok(railsAllowed(leo, 2) && !railsAllowed(leo, 3), '60 km over the Earth: x1000 yes, x10,000 no');
+});
+
+test('Kepler propagation matches the integrator and closes an orbit', () => {
+  const r = EARTH.radius + 60000;
+  const v = circularSpeed(EARTH, r);
+  const s0 = { x: 0, y: r, vx: v, vy: 0 };
+  const T = 2 * Math.PI * Math.sqrt(r ** 3 / EARTH.mu);
+  const back = propagate(s0, EARTH.mu, T);
+  assert.ok(Math.hypot(back.x - s0.x, back.y - s0.y) < 1, `after one period off by ${Math.hypot(back.x - s0.x, back.y - s0.y).toFixed(3)} m`);
+  // An elliptical and a hyperbolic case against RK4 over 2000 s.
+  for (const k of [1.3, 1.6]) {
+    const e0 = { x: 0, y: r, vx: v * k, vy: 0 };
+    const rk = { ...e0 };
+    for (let i = 0; i < 2000; i++) rk4Step(rk, 1, EARTH);
+    const kp = propagate(e0, EARTH.mu, 2000);
+    assert.ok(Math.hypot(kp.x - rk.x, kp.y - rk.y) < 5, `k ${k}: ${Math.hypot(kp.x - rk.x, kp.y - rk.y).toFixed(2)} m apart`);
+  }
+});
+
+test('a flight on rails replays exactly and reaches the Moon', () => {
+  const f = createFlight({ seed: 3, scenario: 'earthOrbit' });
+  // Find a translunar burn by prediction, then apply it as a short full burn.
+  for (let i = 0; i < 60 * 150 && f.elements.apAlt < 39.5e6; i++) f.step({ ...NONE, full: 1, hold: 1 });
+  f.step({ ...NONE, cut: 1 });
+  let n = 0;
+  while (f.body.id !== 'moon' && f.phase === 'flying' && n < 20000) {
+    let level = 0;
+    for (let l = RAILS.length; l >= 1; l--) if (railsAllowed(f, l)) { level = l; break; }
+    f.step({ ...NONE, warp: level });
+    n += 1;
+  }
+  assert.equal(f.body.id, 'moon', `after ${n} ticks still at ${f.body.id}, ap ${(f.elements.apAlt / 1e3).toFixed(0)} km`);
+  assert.ok(f.state.time > 20 * 3600 && f.state.time < 70 * 3600, `arrived after ${(f.state.time / 3600).toFixed(1)} h`);
+  const again = replayToEnd(f.recording(), { maxTicks: 60 * 150 + n + 10 });
+  assert.equal(again.body.id, 'moon');
+  assert.equal(again.state.x, f.state.x);
+  assert.equal(again.state.y, f.state.y);
+  assert.equal(again.clock, f.clock);
 });
 
 test('the atmosphere thins with height and slows a falling stage to terminal speed', () => {

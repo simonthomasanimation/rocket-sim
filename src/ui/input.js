@@ -29,7 +29,7 @@ const KEYS = {
   KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
-const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6' };
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6' };
 const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut' };
 const REPLAY_BY_KEY = { r: 'restart', m: 'mute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
@@ -79,6 +79,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
   const gestureListeners = new Set();
   let gestured = false;
   let hold = 0;                // 0 none, 1 prograde, 2 retrograde
+  let railsLevel = 0;          // rails warp level the next ticks run at (set by the game)
   let stagePending = false;    // one tick of 'stage' queued
   const pulses = new Set();    // full / cut taps too quick for a tick still count once
 
@@ -234,6 +235,8 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
       cut,
       stage,
       hold,
+      warp: railsLevel,
+      chute: 0,
     };
   }
 
@@ -245,6 +248,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     stageNow() { stagePending = true; },
     get hold() { return hold; },
     setHold(value) { hold = value; updateButtons(); },
+    setRails(level) { railsLevel = level; },
     onFirstGesture(fn) { if (gestured) fn(); else gestureListeners.add(fn); },
     // Switch the keyboard between flying and the replay transport.
     setMode(next) { mode = next; held.clear(); pointers.clear(); pulses.clear(); stagePending = false; updateButtons(); },

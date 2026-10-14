@@ -10,6 +10,9 @@ import { elementsOf } from './orbit.js';
 import { createRng } from './rng.js';
 import { createTerrain } from './terrain.js';
 import { createRecorder } from './recording.js';
+import { propagate } from './kepler.js';
+import { RAILS, railsAllowed } from './warp.js';
+import { progradeAngle } from './craft.js';
 
 // A touchdown is safe when all three hold at the moment of contact.
 export const LANDING_LIMITS = Object.freeze({
@@ -74,6 +77,11 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
       stepDebris(flight, dt);
       if (flight.phase === 'pad' && !liftoff(flight, cmd, dt)) return;
       if (flight.phase !== 'flying') return;
+      // On rails: no physics, the craft is moved along its orbit for the
+      // warped span of this tick, stopping early at anything that needs
+      // physics again. A thrust command takes the tick off the rails.
+      const wantsThrust = cmd.full || cmd.thr > 0;
+      if (cmd.warp > 0 && !wantsThrust && railsAllowed(flight, cmd.warp)) { railsStep(flight, cmd, dt * RAILS[cmd.warp - 1].rate); return; }
       const s = flight.state;
       const hadFuel = s.fuel > 0;
       const { staged } = stepCraft(s, cmd, dt, cfg, body);
@@ -134,6 +142,41 @@ function liftoff(flight, cmd, dt) {
   runEngine(s, cmd, dt, cfg);
   if (hadFuel && s.fuel <= 0) { s.throttle = 0; flight.events.push({ tick: flight.tick, type: 'fuelOut', stage: s.stage }); }
   return false;
+}
+
+// Move the craft along its orbit for `span` seconds in chunks, handing it
+// over at a sphere-of-influence change and stopping at the edge of an
+// atmosphere or the ground. Debris is left behind. Mutates the flight.
+function railsStep(flight, cmd, span) {
+  const s = flight.state;
+  flight.debris.length = 0;
+  const chunk = Math.min(60, span);
+  let left = span;
+  while (left > 1e-6) {
+    const dt = Math.min(chunk, left);
+    const body = flight.body;
+    const next = propagate(s, body.mu, dt);
+    s.x = next.x; s.y = next.y; s.vx = next.vx; s.vy = next.vy;
+    s.time += dt;
+    flight.clock += dt;
+    left -= dt;
+    const r = Math.hypot(s.x, s.y);
+    if (body.atmosphere && r - body.radius < body.atmosphere.height + 2000) break;
+    if (r <= flight.terrain.groundRadiusAt(s.x, s.y) + 1000) break;
+    const before = flight.body;
+    handoff(flight);
+    if (flight.body !== before) break;
+  }
+  // The hold keeps the nose where it would be; otherwise the heading stays.
+  if (cmd.hold && Math.hypot(s.vx, s.vy) > 0.5) s.angle = normalizeAngle(progradeAngle(s) + (cmd.hold === 2 ? Math.PI : 0));
+  s.angVel = 0; s.throttle = 0; s.thrust = 0;
+  flight.elements = elementsOf(s, flight.body);
+  const alt = flight.altitude();
+  if (alt > flight.stats.maxAltitude) flight.stats.maxAltitude = alt;
+  if (!flight.body.parent && flight.radius() > ESCAPE_RADIUS) {
+    flight.phase = 'escaped';
+    flight.events.push({ tick: flight.tick, type: 'escaped' });
+  }
 }
 
 // Patched conics: leaving the body's sphere of influence hands the craft

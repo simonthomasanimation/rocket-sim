@@ -133,8 +133,9 @@ export function createCraftState(cfg, { x = 0, y = 0, vx = 0, vy = 0, angle = 0,
 // Command for one step. thr: -1 ramp down / 0 hold / +1 ramp up. rot: -1
 // left, 0 none, +1 right. full and cut jump the throttle to 100 % / 0 %.
 // stage drops the live stage this tick. hold: 0 none, 1 prograde, 2
-// retrograde; an attitude hold that steers when rot is 0.
-export const NO_COMMAND = Object.freeze({ thr: 0, rot: 0, full: 0, cut: 0, stage: 0, hold: 0 });
+// retrograde; an attitude hold that steers when rot is 0. warp: the rails
+// level (0 = physics) the tick runs at. chute: open the parachute.
+export const NO_COMMAND = Object.freeze({ thr: 0, rot: 0, full: 0, cut: 0, stage: 0, hold: 0, warp: 0, chute: 0 });
 
 // Throttle and fuel for one step; returns the thrust produced. Mutates `s`.
 export function runEngine(s, cmd, dt, cfg) {

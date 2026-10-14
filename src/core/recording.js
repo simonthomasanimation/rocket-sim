@@ -5,14 +5,14 @@
 
 import { NO_COMMAND } from './craft.js';
 
-export const RECORDING_VERSION = 2;
+export const RECORDING_VERSION = 3;
 
 // Commands pack into one small integer: thr (-1..1) in bits 0-1, rot in
 // bits 2-3, full in bit 4, cut in bit 5, stage in bit 6, hold (0..2) in
-// bits 7-8.
+// bits 7-8, rails warp level (0..7) in bits 9-11, chute in bit 12.
 export function encodeCommand(c) {
   return ((c.thr + 1) & 3) | (((c.rot + 1) & 3) << 2) | ((c.full ? 1 : 0) << 4) | ((c.cut ? 1 : 0) << 5)
-    | ((c.stage ? 1 : 0) << 6) | (((c.hold || 0) & 3) << 7);
+    | ((c.stage ? 1 : 0) << 6) | (((c.hold || 0) & 3) << 7) | (((c.warp || 0) & 7) << 9) | ((c.chute ? 1 : 0) << 12);
 }
 
 export function decodeCommand(code) {
@@ -23,6 +23,8 @@ export function decodeCommand(code) {
     cut: (code >> 5) & 1,
     stage: (code >> 6) & 1,
     hold: (code >> 7) & 3,
+    warp: (code >> 9) & 7,
+    chute: (code >> 12) & 1,
   };
 }
 

@@ -27,10 +27,12 @@ export function createPlayback(recording) {
   };
 }
 
-// Run a recording to its end in one go (used by the tests and the ghosts).
+// Run a recording to its end in one go (used by the tests and the ghosts):
+// as far as the recording goes, or until the flight is over.
 export function replayToEnd(recording, { maxTicks = 60 * 60 * 10, dt = 1 / 60 } = {}) {
   const playback = createPlayback(recording);
+  const limit = Math.min(maxTicks, recording.ticks || maxTicks);
   let n = 0;
-  while (playback.step(dt) && n < maxTicks) n += 1;
+  while (n < limit && playback.step(dt)) n += 1;
   return playback.flight;
 }

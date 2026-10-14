@@ -10,7 +10,7 @@ import { createCapcom } from './core/capcom.js';
 import { buildTimeline, sampleTimeline } from './core/timeline.js';
 import { deltaV, twr, activeStage, progradeAngle, dragFactor } from './core/craft.js';
 import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
-import { WARP_LADDER, maxWarpIndex } from './core/warp.js';
+import { WARP_LADDER, maxWarpIndex, railsLevel } from './core/warp.js';
 import { BODIES, bodyState, childrenOf } from './core/body.js';
 import { createSurface } from './render/surface.js';
 import { createCamera } from './render/camera.js';
@@ -43,18 +43,61 @@ let lastRecording = null;   // the most recent live flight, for replay
 // of the right arrow climbs one notch. Live, the physics steps per frame
 // scale with it (the step itself stays 1/60 s, so the flight replays
 // exactly), capped by how close the ground is (core/warp.js).
-const SPEEDS = WARP_LADDER;
+const SPEEDS = WARP_LADDER.slice(0, 13); // the replay shuttle stops at x64
 const WARPS = WARP_LADDER;
 let warp = 0;
+let lastPrediction = null;  // the drawn (long) prediction: event times for the warp rules
+let warpTo = null;          // { at: clock, name } while warping to an event
+// Time to the next hard event on the predicted path, if one is known.
+function eventIn() {
+  const p = lastPrediction;
+  if (!p) return Infinity;
+  let t = Infinity;
+  for (const e of [p.encounter, p.exit, p.entry, p.impact]) if (e && e.t < t) t = e.t;
+  return t;
+}
 function setWarp(i) {
-  const cap = maxWarpIndex(flight);
+  const cap = maxWarpIndex(flight, eventIn());
   warp = Math.max(0, Math.min(cap, i));
   const w = WARPS[warp];
-  const text = `×${w % 1 === 0 ? w : w.toFixed(1)}`;
-  updateTitleBlock(titleBlock, { warp: warp === cap && cap < WARPS.length - 1 ? `${text} MAX` : text });
+  const rails = railsLevel(warp);
+  let text = `×${w % 1 === 0 ? w : w.toFixed(1)}`;
+  if (rails) text += ' RAILS';
+  if (warpTo) text += ` → ${warpTo.name}`;
+  else if (warp === cap && cap < WARPS.length - 1) text += ' MAX';
+  updateTitleBlock(titleBlock, { warp: text });
+  input.setRails(rails);
   // Faster than real time is shown inverted so it cannot be forgotten.
   const cell = titleBlock.querySelector('[data-field="warp"]');
   if (cell) cell.classList.toggle('is-active', warp > 0);
+}
+
+// E: warp to the next event (Ap, Pe, SOI change, atmosphere entry), easing
+// the warp down so it arrives within a couple of seconds of real time.
+function startWarpTo() {
+  if (flight.phase !== 'flying') return;
+  const el = flight.elements;
+  const p = lastPrediction;
+  const candidates = [];
+  if (el && el.timeToAp !== null && Number.isFinite(el.timeToAp) && el.apAlt > 0) candidates.push({ t: el.timeToAp, name: 'AP' });
+  if (el && el.timeToPe !== null && el.peAlt > 0) candidates.push({ t: el.timeToPe, name: 'PE' });
+  if (p && p.encounter) candidates.push({ t: p.encounter.t, name: `${p.encounter.body.toUpperCase()} SOI` });
+  if (p && p.exit) candidates.push({ t: p.exit.t, name: 'SOI EXIT' });
+  if (p && p.entry) candidates.push({ t: p.entry.t, name: 'ENTRY' });
+  const next = candidates.filter((c) => c.t > 5).sort((a, b) => a.t - b.t)[0];
+  if (!next) return;
+  warpTo = { at: flight.clock + next.t - 2, name: next.name };
+  steerWarpTo();
+}
+function steerWarpTo() {
+  if (!warpTo) return;
+  const remaining = warpTo.at - flight.clock;
+  if (remaining <= 0 || flight.phase !== 'flying') { warpTo = null; setWarp(0); return; }
+  // The highest level whose tick (rate / 60 s) still fits three times into
+  // what is left, so each level lasts well under a second of real time.
+  let i = 0;
+  while (i + 1 < WARPS.length && WARPS[i + 1] <= 20 * remaining) i += 1;
+  setWarp(i);
 }
 
 let shortPrediction = null;
@@ -76,8 +119,8 @@ function stepGame(dt) {
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
     else if (ev.type === 'soi') { camera.bodyRadius = flight.body.radius; camera.snap(flight.state); flashSoi(); }
   }
-  // Coming down into a slower band drops the warp to that band's cap.
-  if (warp > maxWarpIndex(flight)) setWarp(warp);
+  // Coming down into a slower band, or up to an event, drops the warp to the cap.
+  if (warp > maxWarpIndex(flight, eventIn())) setWarp(warp);
 }
 const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: stepGame });
 
@@ -137,8 +180,8 @@ function setPaused(value) {
 function togglePause() { setPaused(!userPaused); }
 // Right arrow: a notch faster, or play again from pause. Left arrow: a
 // notch slower, down to x1 (Space is the pause).
-function warpUp() { if (userPaused) setPaused(false); else setWarp(warp + 1); }
-function warpDown() { if (!userPaused) setWarp(warp - 1); }
+function warpUp() { warpTo = null; if (userPaused) setPaused(false); else setWarp(warp + 1); }
+function warpDown() { warpTo = null; if (!userPaused) setWarp(warp - 1); }
 
 function restart() {
   userPaused = false;
@@ -153,6 +196,8 @@ function restart() {
   reportDueAt = null;
   orbitDueAt = null;
   orbitShown = false;
+  warpTo = null;
+  lastPrediction = null;
   input.setHold(0);
   loop.reset();
   if (!pageOpen) loop.resume();
@@ -324,6 +369,7 @@ function render(alpha, frameDt) {
   const { view, phase, src, body, terrain } = scene;
   camera.bodyRadius = body.radius;
   const prediction = phase === 'flying' ? predictCoast(view, body, terrain, { drag: dragFactor(view, src.cfg), clock: scene.clock, terrainOf: src.terrainOf }) : null;
+  if (!replay) lastPrediction = prediction;
   const extent = extentOf(view, prediction);
   lastExtent = extent;
   camera.follow(view, frameDt, extent);
@@ -414,6 +460,7 @@ function frame(nowMs) {
       case 'mute': updateTitleBlock(titleBlock, { audio: mixer.toggleMuted() ? 'MUTED' : 'ON' }); break;
       case 'warpUp': warpUp(); break;
       case 'warpDown': warpDown(); break;
+      case 'warpTo': if (warpTo) { warpTo = null; setWarp(0); } else startWarpTo(); break;
       case 'zoomIn': camera.zoom(0.5); break;
       case 'zoomOut': camera.zoom(-0.5); break;
       case 'zoomReset': camera.resetZoom(); break;
@@ -421,7 +468,10 @@ function frame(nowMs) {
       default: break;
     }
   }
-  const { alpha } = loop.advance(nowMs / 1000, WARPS[warp]);
+  if (warpTo && !replay && !pageOpen) steerWarpTo();
+  // Rails levels run one tick per sixtieth of real time, each tick a long
+  // jump along the orbit; physics levels run more ticks per frame.
+  const { alpha } = loop.advance(nowMs / 1000, railsLevel(warp) ? 1 : WARPS[warp]);
   if (replay) {
     advanceReplay(frameDt);
   } else {
@@ -447,6 +497,7 @@ function frame(nowMs) {
   }
   const scene = render(alpha, frameDt);
   const running = replay ? replay.playing && Math.abs(replay.speed) === 1 : warp === 0;
+  if (!replay && warp > 0 && flight.phase !== 'flying' && flight.phase !== 'pad') setWarp(0);
   sfx.setEngine(scene.phase === 'flying' && running ? scene.view.thrust / activeStage(scene.view, scene.src.cfg).maxThrust : 0);
   const metSeconds = Math.floor(scene.view.time);
   if (metSeconds !== lastMetShown) {
