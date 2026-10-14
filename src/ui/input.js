@@ -29,7 +29,7 @@ const KEYS = {
   KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
-const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6' };
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', p: 'chute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6' };
 const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut', Tab: 'map' };
 const REPLAY_BY_KEY = { r: 'restart', m: 'mute', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
@@ -72,6 +72,7 @@ const BUTTONS = [
   { id: 'full', label: 'FULL', cluster: 'right' },
   { id: 'cut', label: 'CUT', cluster: 'right' },
   { id: 'stage', label: 'STAGE', cluster: 'right', tap: true },
+  { id: 'chute', label: 'CHUTE', cluster: 'right', tap: true },
 ];
 
 export function createInput({ touchRoot, zoomTarget } = {}) {
@@ -83,6 +84,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
   let hold = 0;                // 0 none, 1 prograde, 2 retrograde
   let railsLevel = 0;          // rails warp level the next ticks run at (set by the game)
   let stagePending = false;    // one tick of 'stage' queued
+  let chutePending = false;    // one tick of 'chute' queued
   const pulses = new Set();    // full / cut taps too quick for a tick still count once
 
   function gesture() {
@@ -100,6 +102,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     if (id === 'holdPro') { hold = hold === 1 ? 0 : 1; updateButtons(); return; }
     if (id === 'holdRet') { hold = hold === 2 ? 0 : 2; updateButtons(); return; }
     if (id === 'stage') { stagePending = true; return; }
+    if (id === 'chute') { chutePending = true; return; }
     actions.push(id);
   }
 
@@ -128,7 +131,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
       e.preventDefault();
       return;
     }
-    if (action === 'holdPro' || action === 'holdRet') { tap(action); e.preventDefault(); return; }
+    if (action === 'holdPro' || action === 'holdRet' || action === 'chute') { tap(action); e.preventDefault(); return; }
     if (action) { actions.push(action); e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => {
@@ -227,6 +230,8 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     const right = isHeld('rotRight');
     const stage = stagePending ? 1 : 0;
     stagePending = false;
+    const chute = chutePending ? 1 : 0;
+    chutePending = false;
     const full = isHeld('full') || pulses.has('full') ? 1 : 0;
     const cut = isHeld('cut') || pulses.has('cut') ? 1 : 0;
     pulses.clear();
@@ -238,7 +243,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
       stage,
       hold,
       warp: railsLevel,
-      chute: 0,
+      chute,
     };
   }
 
@@ -253,7 +258,7 @@ export function createInput({ touchRoot, zoomTarget } = {}) {
     setRails(level) { railsLevel = level; },
     onFirstGesture(fn) { if (gestured) fn(); else gestureListeners.add(fn); },
     // Switch the keyboard between flying and the replay transport.
-    setMode(next) { mode = next; held.clear(); pointers.clear(); pulses.clear(); stagePending = false; updateButtons(); },
+    setMode(next) { mode = next; held.clear(); pointers.clear(); pulses.clear(); stagePending = false; chutePending = false; updateButtons(); },
     // Key labels learned from what the player actually typed (code -> letter).
     get observedLabels() { return { ...observed }; },
     onLabels(fn) { labelListeners.add(fn); },

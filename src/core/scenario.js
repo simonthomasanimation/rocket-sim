@@ -3,7 +3,7 @@
 
 import { circularSpeed, EARTH, MOON } from './body.js';
 
-export const LOW_EARTH_ORBIT_ALTITUDE = 60000; // m
+export const LOW_EARTH_ORBIT_ALTITUDE = 90000; // m, above the 60 km atmosphere
 
 export const LOW_ORBIT_ALTITUDE = 15000; // m
 
@@ -73,12 +73,29 @@ export const SCENARIOS = {
     section: 'SECTION 3 — EARTH TO MOON',
     goal: 'land',
     goalText: 'Fly to the Moon and land on it: burn prograde when the Moon is about 60° ahead, let its gravity catch you, then come down.',
-    brief: 'Stages 2 and 3 of the KP-3 in a 60 km Earth orbit, tanks full.',
+    brief: 'Stages 2 and 3 of the KP-3 in a 90 km Earth orbit, tanks full.',
     start: (body) => {
       const r = body.radius + LOW_EARTH_ORBIT_ALTITUDE;
       return { x: 0, y: r, vx: circularSpeed(body, r), vy: 0, angle: Math.PI / 2, stage: 1 };
     },
   },
+  reentry: {
+    id: 'reentry',
+    go: 'goOrbit',
+    name: 'RE-ENTRY',
+    craft: 'rocket3',
+    body: 'earth',
+    onPad: false,
+    section: 'SECTION 3 — EARTH TO MOON',
+    goal: 'land',
+    goalText: 'Come home: hold retrograde (G) so the shield takes the heat, open the parachute (P) under 250 m/s, splash down under 10 m/s.',
+    brief: 'The KP-3 capsule alone, 90 km up, periapsis already inside the air.',
+    start: (body) => {
+      const r = body.radius + LOW_EARTH_ORBIT_ALTITUDE;
+      const a = (r + body.radius + 30000) / 2;
+      return { x: 0, y: r, vx: Math.sqrt(body.mu * (2 / r - 1 / a)), vy: 0, angle: -Math.PI / 2, stage: 2, fuel: 60 };
+    },
+  },
 };
 
-export const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit'];
+export const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'reentry'];

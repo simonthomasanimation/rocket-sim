@@ -3,7 +3,7 @@
 // interpolation, judges the landing and collects the figures for the
 // results card. No DOM.
 
-import { CRAFTS, createCraftState, stepCraft, runEngine, commandedThrottle, lowestPointAltitude, footHalfWidth, totalMass, rk4Step, dragFactor, NO_COMMAND } from './craft.js';
+import { CRAFTS, createCraftState, stepCraft, runEngine, commandedThrottle, lowestPointAltitude, footHalfWidth, totalMass, rk4Step, dragFactor, heatFlux, heatLimit, NO_COMMAND } from './craft.js';
 import { BODIES, ESCAPE_RADIUS, bodyState, childrenOf, upAngle, normalizeAngle } from './body.js';
 import { SCENARIOS } from './scenario.js';
 import { elementsOf } from './orbit.js';
@@ -14,11 +14,15 @@ import { propagate } from './kepler.js';
 import { RAILS, railsAllowed } from './warp.js';
 import { progradeAngle } from './craft.js';
 
-// A touchdown is safe when all three hold at the moment of contact.
+// A touchdown is safe when all three hold at the moment of contact. Under
+// a parachute the capsule may come down harder and at any angle; on water
+// a little harder still.
 export const LANDING_LIMITS = Object.freeze({
   verticalSpeed: 3,            // m/s
   horizontalSpeed: 1,          // m/s
   tilt: (10 * Math.PI) / 180,  // radians
+  chuteVerticalSpeed: 8,       // m/s, under a canopy
+  splashVerticalSpeed: 10,     // m/s, under a canopy into the sea
 });
 
 // A periapsis this far above the mean radius clears every crater rim: orbit.
@@ -53,12 +57,13 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
     prev: null,
     debris: [],               // dropped stages still falling: { stage, x, y, vx, vy, angle, angVel, age }
     events: [],               // { tick, type, ... } in order: liftoff, staged, fuelOut, orbit, landed, crashed, escaped
-    stats: { maxSpeed: 0, maxAltitude: 0, fuelStart: 0, touchdown: null, orbit: null },
+    stats: { maxSpeed: 0, maxAltitude: 0, fuelStart: 0, touchdown: null, orbit: null, maxHeat: 0, burned: false },
     elements: null,           // orbital elements at the last tick
     radius() { return Math.hypot(flight.state.x, flight.state.y); },
     up() { return upAngle(flight.state.x, flight.state.y); },
     tilt() { return normalizeAngle(flight.state.angle - flight.up()); },
     drag() { return dragFactor(flight.state, cfg); },
+    heat() { return heatFlux(flight.state, flight.body) / heatLimit(flight.state, cfg); },
     // Height of the base plane above the ground directly below (radar altitude).
     altitude() { return flight.radius() - flight.terrain.groundRadiusAt(flight.state.x, flight.state.y); },
     // Vertical (positive up) and horizontal (positive clockwise, +x at the pad) speed over the ground.
@@ -104,10 +109,22 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
       handoff(flight);
       const speed = Math.hypot(s.vx, s.vy);
       if (speed > flight.stats.maxSpeed) flight.stats.maxSpeed = speed;
+      // Re-entry heating: the fraction of what the craft can take.
+      const heat = heatFlux(s, flight.body) / heatLimit(s, cfg);
+      s.heat = heat;
+      if (heat > flight.stats.maxHeat) flight.stats.maxHeat = heat;
+      if (heat >= 1) {
+        flight.stats.burned = true;
+        flight.phase = 'crashed';
+        s.throttle = 0; s.thrust = 0;
+        flight.events.push({ tick: flight.tick, type: 'burned' });
+        flight.events.push({ tick: flight.tick, type: 'crashed' });
+        return;
+      }
       const alt = flight.altitude();
       if (alt > flight.stats.maxAltitude) flight.stats.maxAltitude = alt;
       flight.elements = elementsOf(s, body);
-      if (!flight.stats.orbit && flight.elements.e < 1 && flight.elements.peAlt > ORBIT_MARGIN) {
+      if (!flight.stats.orbit && !flight.startedInOrbit && flight.elements.e < 1 && flight.elements.peAlt > ORBIT_MARGIN) {
         flight.stats.orbit = { tick: flight.tick, time: s.time, ap: flight.elements.apAlt, pe: flight.elements.peAlt };
         flight.events.push({ tick: flight.tick, type: 'orbit' });
       }
@@ -120,6 +137,8 @@ export function createFlight({ seed = 1, scenario = 'descent', limits = LANDING_
   };
   flight.stats.fuelStart = cfg.stages.reduce((sum, st) => sum + st.fuelMass, 0);
   flight.elements = elementsOf(state, body);
+  // A start already in orbit is not an orbit reached.
+  flight.startedInOrbit = flight.elements.e < 1 && flight.elements.peAlt > ORBIT_MARGIN;
   flight.prev = { ...flight.state };
   return flight;
 }
@@ -227,30 +246,40 @@ function touchdown(flight) {
   const { vertical, horizontal } = flight.groundSpeeds();
   const vSpeed = -vertical;         // positive = descending
   const hSpeed = Math.abs(horizontal);
-  const safe = vSpeed < limits.verticalSpeed && hSpeed < limits.horizontalSpeed && Math.abs(tilt) < limits.tilt;
+  const arc = terrain.arcAt(s.x, s.y);
+  const water = terrain.isWater(arc);
+  const chute = s.chute === 1;
+  const vLimit = chute ? (water ? limits.splashVerticalSpeed : limits.chuteVerticalSpeed) : limits.verticalSpeed;
+  const hLimit = chute ? Infinity : limits.horizontalSpeed;
+  const tiltLimit = chute ? Infinity : limits.tilt;
+  const safe = vSpeed < vLimit && hSpeed < hLimit && Math.abs(tilt) < tiltLimit;
   flight.stats.touchdown = {
     verticalSpeed: vSpeed,
     horizontalSpeed: hSpeed,
     tilt,
     time: s.time,
     fuel: s.fuel,
-    arc: terrain.arcAt(s.x, s.y),
+    arc,
+    water,
+    chute,
+    limits: { verticalSpeed: vLimit, horizontalSpeed: hLimit, tilt: tiltLimit },
     safe,
     reasons: [
-      vSpeed >= limits.verticalSpeed ? 'verticalSpeed' : null,
-      hSpeed >= limits.horizontalSpeed ? 'horizontalSpeed' : null,
-      Math.abs(tilt) >= limits.tilt ? 'tilt' : null,
+      vSpeed >= vLimit ? 'verticalSpeed' : null,
+      hSpeed >= hLimit ? 'horizontalSpeed' : null,
+      Math.abs(tilt) >= tiltLimit ? 'tilt' : null,
     ].filter(Boolean),
   };
   // Rest on the lowest pad; a safe landing settles level, a crash stays as it hit.
   const ground = terrain.groundRadiusAt(s.x, s.y);
   let r;
   if (safe) { s.angle = up; r = ground; } else { s.angle = up + tilt; r = ground + Math.abs(Math.sin(tilt)) * footHalfWidth(s, cfg); }
+  if (water && safe) r = ground - 0.6; // afloat, a little low in the water
   s.x = Math.sin(up) * r;
   s.y = Math.cos(up) * r;
   s.vx = 0; s.vy = 0; s.angVel = 0; s.throttle = 0; s.thrust = 0;
   flight.phase = safe ? 'landed' : 'crashed';
-  flight.events.push({ tick: flight.tick, type: flight.phase });
+  flight.events.push({ tick: flight.tick, type: water && safe ? 'splashdown' : flight.phase });
   flight.prev = { ...s };
 }
 

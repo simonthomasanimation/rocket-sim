@@ -320,8 +320,8 @@ test('a flight on rails replays exactly and reaches the Moon', () => {
 
 test('the atmosphere thins with height and slows a falling stage to terminal speed', () => {
   assert.ok(Math.abs(densityAt(EARTH, EARTH.radius) - 1.225) < 1e-9);
-  assert.ok(Math.abs(densityAt(EARTH, EARTH.radius + 1500) - 1.225 / Math.E) < 1e-6);
-  assert.equal(densityAt(EARTH, EARTH.radius + 12000), 0);
+  assert.ok(Math.abs(densityAt(EARTH, EARTH.radius + 5000) - 1.225 / Math.E) < 1e-6);
+  assert.equal(densityAt(EARTH, EARTH.radius + 60000), 0);
   assert.equal(densityAt(MOON, MOON.radius), 0);
   // A KP-3 third stage dropped from 8 km, engine off, reaches a steady fall.
   const f = createFlight({ seed: 1, scenario: 'earthLaunch' });
@@ -377,6 +377,33 @@ test('a burn from Earth orbit reaches the Moon in the prediction', () => {
   assert.ok(p.segments.length >= 2 && p.segments[1].body === 'moon');
   // The craft then flies on in the Moon's frame: either round it or out again.
   assert.ok(p.impact || p.exit || p.closed || p.points.length >= 4000);
+});
+
+test('a capsule rides the heat shield-first, opens the chute and splashes down or lands', () => {
+  const f = createFlight({ seed: 1, scenario: 'reentry' });
+  let n = 0; let opened = false; let maxHeat = 0;
+  while (f.phase === 'flying' && n < 60 * 3600) {
+    const v = Math.hypot(f.state.vx, f.state.vy);
+    const chute = !opened && v < 200 && f.altitude() < 20000 ? 1 : 0;
+    if (chute) opened = true;
+    f.step({ ...NONE, hold: 2, chute });
+    if (f.state.heat > maxHeat) maxHeat = f.state.heat;
+    n += 1;
+  }
+  assert.equal(f.phase, 'landed', `ended ${f.phase}: ${JSON.stringify(f.stats.touchdown && f.stats.touchdown.reasons)} heat ${f.stats.maxHeat.toFixed(2)}`);
+  assert.ok(maxHeat > 0.1 && maxHeat < 1, `peak heat ${maxHeat.toFixed(2)} of the shielded limit`);
+  assert.equal(f.state.chute, 1);
+  assert.ok(f.stats.touchdown.verticalSpeed < 10, `came down at ${f.stats.touchdown.verticalSpeed.toFixed(1)} m/s`);
+  // Nose first it burns; with the chute opened too early it tears and the capsule hits hard.
+  const g = createFlight({ seed: 1, scenario: 'reentry' });
+  n = 0;
+  while (g.phase === 'flying' && n < 60 * 3600) { g.step({ ...NONE, hold: 1 }); n += 1; }
+  assert.ok(g.stats.burned, 'prograde entry burns up');
+  const h = createFlight({ seed: 1, scenario: 'reentry' });
+  n = 0;
+  while (h.phase === 'flying' && n < 60 * 3600) { h.step({ ...NONE, hold: 2, chute: n === 10 ? 1 : 0 }); n += 1; }
+  assert.equal(h.state.chute, 2, 'opened at orbital speed the chute tears');
+  assert.equal(h.phase, 'crashed');
 });
 
 let failed = 0;

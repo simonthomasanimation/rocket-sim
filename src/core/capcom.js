@@ -19,6 +19,12 @@ export const LINES = {
   escaped: 'You have left lunar space. Flight terminated.',
   soiMoon: 'Entering the Moon\'s sphere of influence. Lunar gravity has you now.',
   soiEarth: 'Back in Earth\'s sphere of influence.',
+  entry: 'Entry interface. Keep the shield into the wind.',
+  heat: 'Heating is near the limit. Hold retrograde.',
+  chute: 'Good canopy.',
+  chuteTorn: 'The canopy has torn away. Too fast.',
+  splashdown: 'Splashdown. Recovery is on the way.',
+  burned: 'We have lost the vehicle on entry.',
   alt500: 'Five hundred metres.',
   alt200: 'Two hundred metres.',
   alt100: 'One hundred metres.',
@@ -49,13 +55,19 @@ export function createCapcom() {
         else if (ev.type === 'staged') say('staged', t);
         else if (ev.type === 'orbit' && flight.stats.orbit) say('orbit', t, false, `Orbit confirmed. Periapsis ${(flight.stats.orbit.pe / 1000).toFixed(1)} km.`);
         else if (ev.type === 'soi') say(`soi${ev.tick}`, t, false, LINES[ev.to === 'moon' ? 'soiMoon' : 'soiEarth']);
+        else if (ev.type === 'burned') say('burned', t, true);
+        else if (ev.type === 'splashdown') say('splashdown', t);
       }
-      if (flight.phase === 'landed') { say('landed', t); return; }
+      if (flight.phase === 'landed') { if (!(flight.stats.touchdown && flight.stats.touchdown.water)) say('landed', t); return; }
       if (flight.phase === 'crashed') { say('crashed', t, true); return; }
       if (flight.phase === 'escaped') { say('escaped', t, true); return; }
       if (alerts.fuel === 'critical') say('fuelOut', t, true);
       else if (alerts.fuel === 'caution' && flight.state.fuel <= 0) say('stageDry', t);
       else if (alerts.fuel === 'caution') say('fuelLow', t);
+      if (alerts.heatFrac > 0.05 && alerts.heatFrac < 0.5) say('entry', t);
+      if (alerts.heat === 'critical') say('heat', t, true);
+      if (alerts.chute === 1) say('chute', t);
+      if (alerts.chute === 2) say('chuteTorn', t, true);
       if (alerts.descent === 'critical') say('rate', t, true);
       if (alerts.drift === 'caution') say('drift', t);
       if (alerts.vSpeed > 0.5) {

@@ -10,8 +10,8 @@ export const PHYSICS_LADDER = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
 
 // Rails levels with the lowest altitude (m) they are allowed at, per body.
 export const RAILS = [
-  { rate: 100, floors: { earth: 14000, moon: 5000 } },
-  { rate: 1000, floors: { earth: 50000, moon: 20000 } },
+  { rate: 100, floors: { earth: 62000, moon: 5000 } },
+  { rate: 1000, floors: { earth: 80000, moon: 20000 } },
   { rate: 10000, floors: { earth: 200000, moon: 100000 } },
   { rate: 100000, floors: { earth: 500000, moon: 500000 } },
 ];

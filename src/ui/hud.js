@@ -94,6 +94,7 @@ export function createHud() {
     readout(ctx, L.rx, top + 3 * G, L.rw, 'V-SPD', signed(-alerts.vSpeed) + ' M/S', tone(alerts.descent));
     readout(ctx, L.rx, top + 6 * G, L.rw, 'H-SPD', signed(alerts.hSpeed * Math.sign(info.hDirection || 1)) + ' M/S', tone(alerts.drift));
     readout(ctx, L.rx, top + 9 * G, L.rw, 'TILT', signed((alerts.tiltAngle * 180) / Math.PI, 0) + ' DEG', tone(alerts.tilt));
+    readout(ctx, L.rx, top + 12 * G, L.rw, 'HEAT', `${Math.round((alerts.heatFrac || 0) * 100)}%`, tone(alerts.heat || 'none'));
 
     // Orbit readouts; the periapsis goes accent while it lies underground.
     const oy = top + L.row2;
@@ -110,6 +111,7 @@ export function createHud() {
     readout(ctx, L.sx, oy + 3 * G, L.sw, 'STAGE', info.stageText, 'none');
     readout(ctx, L.sx, oy + 6 * G, L.sw, 'DV', `${Math.round(info.dv)} M/S`, 'none');
     readout(ctx, L.sx, oy + 9 * G, L.sw, 'TWR', info.twr.toFixed(1), 'none');
+    if (info.capsule) readout(ctx, L.sx, oy + 12 * G, L.sw, 'CHUTE', ['STOWED', 'OPEN', 'TORN'][alerts.chute || 0], alerts.chute === 2 ? 'marker' : 'none');
     if (info.stages) stack(ctx, L.stack, oy + 11 * G, info.stages);
 
     // CAPCOM line: in the strip when there is room, else top left of the

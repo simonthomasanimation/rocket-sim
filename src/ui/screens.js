@@ -209,6 +209,19 @@ export function reportPage(flight) {
     ['MAX ALTITUDE', km(flight.stats.maxAltitude)],
   ];
   if (orbit) common.push(['ORBIT REACHED', `AP ${km(orbit.ap)}  PE ${km(orbit.pe)}`]);
+  if (flight.stats.maxHeat > 0.02) common.push(['PEAK HEATING', `${Math.round(flight.stats.maxHeat * 100)}% OF LIMIT`, flight.stats.maxHeat >= 1 ? 'spot' : null]);
+  if (flight.stats.burned) {
+    return {
+      section,
+      title: 'FLIGHT REPORT',
+      page: 'PAGE 2',
+      stamp: { text: 'LOST', tone: 'spot' },
+      rows: [['OUTCOME', 'Burned up on entry', 'spot'], ...common],
+      figure: 'FIG. 2',
+      caption: s.stage < flight.cfg.stages.length - 1 ? 'The heat shield is on the capsule; the stage still attached under it took the heat instead. Drop it before entry.' : 'The capsule met the air sideways. Hold retrograde so the shield faces the flow.',
+      buttons: REPORT_BUTTONS,
+    };
+  }
   if (!td) {
     // No touchdown: the flight left lunar space.
     return {
@@ -222,22 +235,26 @@ export function reportPage(flight) {
       buttons: REPORT_BUTTONS,
     };
   }
+  const tl = td.limits || limits;
+  const lim = (v) => (Number.isFinite(v) ? `  (LIMIT ${v.toFixed(0)})` : '');
+  const where = td.water ? 'the sea' : 'the surface';
   const rows = [
-    ['OUTCOME', landed ? 'Landed on the surface' : 'Crashed on the surface', landed ? null : 'spot'],
+    ['OUTCOME', landed ? (td.water ? 'Splashed down' : 'Landed on the surface') : `Crashed on ${where}`, landed ? null : 'spot'],
     ...common,
-    ['TOUCHDOWN V-SPEED', `${td.verticalSpeed.toFixed(1)} M/S  (LIMIT ${limits.verticalSpeed.toFixed(0)})`, td.reasons.includes('verticalSpeed') ? 'spot' : null],
-    ['TOUCHDOWN H-SPEED', `${td.horizontalSpeed.toFixed(1)} M/S  (LIMIT ${limits.horizontalSpeed.toFixed(0)})`, td.reasons.includes('horizontalSpeed') ? 'spot' : null],
-    ['TOUCHDOWN TILT', `${Math.abs((td.tilt * 180) / Math.PI).toFixed(0)} DEG  (LIMIT ${deg.toFixed(0)})`, td.reasons.includes('tilt') ? 'spot' : null],
-    ['DOWNRANGE', `${(td.arc / 1000).toFixed(td.arc > 10000 ? 0 : 1)} KM FROM PAD 1`],
+    ['TOUCHDOWN V-SPEED', `${td.verticalSpeed.toFixed(1)} M/S${lim(tl.verticalSpeed)}`, td.reasons.includes('verticalSpeed') ? 'spot' : null],
+    ['TOUCHDOWN H-SPEED', `${td.horizontalSpeed.toFixed(1)} M/S${lim(tl.horizontalSpeed)}`, td.reasons.includes('horizontalSpeed') ? 'spot' : null],
+    ['TOUCHDOWN TILT', `${Math.abs((td.tilt * 180) / Math.PI).toFixed(0)} DEG${Number.isFinite(tl.tilt) ? `  (LIMIT ${deg.toFixed(0)})` : ''}`, td.reasons.includes('tilt') ? 'spot' : null],
+    ['PARACHUTE', td.chute ? 'Open' : s.chute === 2 ? 'Torn away' : 'Not used'],
+    ['DOWNRANGE', `${(Math.abs(td.arc) / 1000).toFixed(Math.abs(td.arc) > 10000 ? 0 : 1)} KM FROM PAD 1`],
   ];
   const caption = landed
-    ? 'Descent within limits. Crew reports the surface is firm.'
+    ? (td.water ? 'Capsule afloat and upright. Recovery is on the way.' : 'Descent within limits. Crew reports the surface is firm.')
     : `${td.reasons.map((r) => REASON_TEXT[r]).join('; ')}. Vehicle lost.`;
   return {
     section,
     title: 'FLIGHT REPORT',
     page: 'PAGE 2',
-    stamp: { text: landed ? 'LANDED' : 'CRASHED', tone: landed ? 'ink' : 'spot' },
+    stamp: { text: landed ? (td.water ? 'RECOVERED' : 'LANDED') : 'CRASHED', tone: landed ? 'ink' : 'spot' },
     rows,
     figure: 'FIG. 2',
     caption,
@@ -289,7 +306,7 @@ export function startPage(keys = {}) {
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T holds prograde, G holds retrograde.`,
       'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry. SPACE pauses. The same arrows shuttle a replay.',
       'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom, 0 resets. Mouse wheel and pinch zoom too.',
-      'R restarts. N returns to this plan. V replays the last flight. M mutes.',
+      'P opens the parachute (capsule only, under 250 m/s). R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
     figure: 'FIG. 1',

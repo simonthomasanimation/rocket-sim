@@ -831,13 +831,69 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
     const bell = cfg.drawing === 'lander' ? 0.95 : st.radius * 0.8;
     drawFlame(ctx, k, s.thrust / st.maxThrust, s.time, bell, cfg.drawing === 'lander' ? 0.5 : 0.1);
   }
+  if (phase === 'flying' && s.heat > 0.03) drawPlasma(ctx, k, s, cfg);
   ctx.strokeStyle = BLUEPRINT.ink;
   ctx.lineWidth = STROKE.structure;
   if (phase === 'crashed') ctx.setLineDash([3, 3]); // a broken drawing for a broken craft
   if (cfg.drawing === 'lander') drawLander(ctx, k, s, cfg);
   else drawRocketStack(ctx, k, s, cfg, s.stage, 0, BLUEPRINT.ink, STROKE.structure);
   ctx.setLineDash([]);
+  if (s.chute) drawChute(ctx, k, s, cfg);
   ctx.restore();
+}
+
+// Entry heating: short strokes streaming back from the base, more and
+// longer as the heat climbs; accent only when it is near the limit.
+function drawPlasma(ctx, k, s, cfg) {
+  const st = activeStage(s, cfg);
+  const w = (st.radius || 2.4) * 1.3;
+  const n = 4 + Math.round(Math.min(1, s.heat) * 10);
+  const len = (1 + 6 * Math.min(1, s.heat)) * w;
+  ctx.strokeStyle = s.heat >= 0.8 ? BLUEPRINT.accent : BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = -w + (2 * w * (i + 0.5)) / n;
+    const flick = 0.7 + 0.3 * Math.abs(Math.sin(s.time * 23 + i * 1.7));
+    ctx.moveTo(x * k, -0.1 * k);
+    ctx.lineTo(x * 1.4 * k, len * flick * k);
+  }
+  ctx.stroke();
+}
+
+// The parachute above the capsule: canopy as an arc with gore lines and
+// shrouds to the craft's top; torn, only a few loose lines remain.
+function drawChute(ctx, k, s, cfg) {
+  const h = craftHeight(s, cfg);
+  const top = h;
+  if (s.chute === 2) {
+    ctx.strokeStyle = BLUEPRINT.inkPale;
+    ctx.lineWidth = STROKE.annotation;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    for (const dx of [-0.5, 0.2, 0.6]) { ctx.moveTo(dx * k, -top * k); ctx.lineTo((dx * 2) * k, -(top + 3) * k); }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    return;
+  }
+  const r = 7;                 // canopy radius, metres
+  const cy = top + 14;         // canopy centre above the base plane
+  ctx.strokeStyle = BLUEPRINT.ink;
+  ctx.lineWidth = STROKE.structure;
+  ctx.beginPath();
+  ctx.arc(0, -cy * k, r * k, Math.PI, 2 * Math.PI);
+  ctx.lineTo(-r * k, -cy * k);
+  ctx.stroke();
+  ctx.strokeStyle = BLUEPRINT.inkPale;
+  ctx.lineWidth = STROKE.annotation;
+  ctx.beginPath();
+  for (let i = 1; i < 6; i++) {
+    const a = Math.PI + (i / 6) * Math.PI;
+    ctx.moveTo(0, -(cy - r * 0.2) * k);
+    ctx.lineTo(Math.cos(a) * r * k, -(cy - Math.sin(a) * r) * k);
+  }
+  for (const f of [-1, -0.5, 0, 0.5, 1]) { ctx.moveTo(f * r * k, -cy * k); ctx.lineTo(0, -top * k); }
+  ctx.stroke();
 }
 
 // Screen position of a dropped stage's top end.

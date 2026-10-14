@@ -122,6 +122,7 @@ function stepGame(dt) {
   for (; seenEvents < flight.events.length; seenEvents++) {
     const ev = flight.events[seenEvents];
     if (ev.type === 'staged') sfx.stage();
+    else if (ev.type === 'splashdown') stampTitleBlock(titleBlock, 'RECOVERED');
     else if (ev.type === 'orbit') stampTitleBlock(titleBlock, 'ORBIT');
     else if (ev.type === 'soi') { camera.bodyRadius = flight.body.radius; camera.snap(flight.state); flashSoi(); }
   }
@@ -426,6 +427,7 @@ function render(alpha, frameDt) {
   const info = {
     bodyName: body.name,
     stageText: `${view.stage + 1}/${src.cfg.stages.length}`,
+    capsule: !!activeStage(view, src.cfg).capsule,
     stages: src.cfg.stages.map((st, i) => ({ name: st.name, frac: i === view.stage ? view.fuel / st.fuelMass : i > view.stage ? 1 : 0, state: i < view.stage ? 'dropped' : i === view.stage ? 'live' : 'full' })),
     dv: deltaV(view, src.cfg),
     twr: twr(view, src.cfg, body),

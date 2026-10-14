@@ -126,6 +126,7 @@ export function createCraftState(cfg, { x = 0, y = 0, vx = 0, vy = 0, angle = 0,
     fuel: fuel === null ? cfg.stages[stage].fuelMass : fuel, // kg left in the live stage
     thrust: 0,      // N produced on the last step, for the drawing and HUD
     chute: 0,       // 0 stowed, 1 out, 2 torn away
+    heat: 0,        // entry heating as a fraction of what the craft can take
     time: 0,        // s since the flight began
   };
 }
@@ -177,6 +178,8 @@ export function stepCraft(s, cmd, dt, cfg, body) {
     s.fuel = cfg.stages[s.stage].fuelMass;
   }
   const thrust = runEngine(s, cmd, dt, cfg);
+  // The parachute: once, on the capsule stage; too fast and it tears away.
+  if (cmd.chute && s.chute === 0 && activeStage(s, cfg).capsule) s.chute = Math.hypot(s.vx, s.vy) > CHUTE_MAX_SPEED ? 2 : 1;
 
   // Rotation: a rate command reached with bounded angular acceleration. The
   // attitude hold steers towards prograde or retrograde when the pilot is
@@ -212,7 +215,38 @@ export function dragFactor(s, cfg) {
   if (s.chute === 1 && st.capsule) cdA += CHUTE_CDA;
   return cdA / (2 * totalMass(s, cfg));
 }
-export const CHUTE_CDA = 300; // m^2, the main canopy
+export const CHUTE_CDA = 420; // m^2, the main canopy: about 6 m/s at the sea with the capsule
+export const CHUTE_MAX_SPEED = 250; // m/s; opened faster than this it tears away
+
+// Heating limits for rho * v^3: a bare stack chars at the first, a capsule
+// flying shield-first holds to the second (a return from the Moon reaches
+// about 60 % of it).
+export const HEAT_BARE = 3e7;
+export const HEAT_SHIELDED = 2.5e8;
+
+// Heat flux measure rho * v^3 at the craft.
+export function heatFlux(s, body) {
+  const rho = densityAt(body, Math.hypot(s.x, s.y));
+  if (rho <= 0) return 0;
+  const v = Math.hypot(s.vx, s.vy);
+  return rho * v * v * v;
+}
+
+// The heat shield counts only on the capsule stage, flying alone, with its
+// base within 60 degrees of retrograde.
+export function isShielded(s, cfg) {
+  const st = activeStage(s, cfg);
+  if (!st.capsule) return false;
+  const v = Math.hypot(s.vx, s.vy);
+  if (v < 1) return true;
+  const retro = Math.atan2(-s.vx, -s.vy);
+  const err = Math.abs(normalizeAngle(s.angle - retro));
+  return err < Math.PI / 3;
+}
+
+export function heatLimit(s, cfg) {
+  return isShielded(s, cfg) ? HEAT_SHIELDED : HEAT_BARE;
+}
 
 // Classical fourth-order Runge-Kutta over (x, y, vx, vy) with gravity from
 // the body, a constant extra acceleration (tx, ty): the thrust for the

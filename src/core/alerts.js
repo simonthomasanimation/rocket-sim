@@ -31,9 +31,14 @@ export function computeAlerts(flight, prediction) {
     : 'none';
   const drift = !flying ? 'none' : alt < 30 && hSpeed >= limits.horizontalSpeed ? 'caution' : 'none';
   const tilt = !flying ? 'none' : alt < 30 && Math.abs(tiltAngle) >= limits.tilt ? 'caution' : 'none';
-  const worst = ['critical', 'caution', 'none'].find((l) => [fuel, descent, drift, tilt].includes(l));
+  // Re-entry heating against what the craft can take.
+  const heatFrac = flying ? flight.heat() : 0;
+  const heat = heatFrac >= 0.8 ? 'critical' : heatFrac >= 0.5 ? 'caution' : 'none';
+  const worst = ['critical', 'caution', 'none'].find((l) => [fuel, descent, drift, tilt, heat].includes(l));
   return {
-    fuel, descent, drift, tilt,
+    fuel, descent, drift, tilt, heat,
+    heatFrac,
+    chute: s.chute,
     overall: worst,
     altitude: alt,
     vSpeed, hSpeed, tiltAngle, fuelFrac,

@@ -26,8 +26,9 @@ export const EARTH = Object.freeze({
   parent: null,
   orbitRadius: 0,
   soi: Infinity,
-  // Thin atmosphere: 12 km to the top, density falling by e every 1.5 km.
-  atmosphere: { height: 12000, scaleHeight: 1500, rho0: 1.225 },
+  // Atmosphere: 60 km to the top (a tenth of the radius, as on the real
+  // Earth), density falling by e every 5 km from 1.225 kg/m^3 at the sea.
+  atmosphere: { height: 60000, scaleHeight: 5000, rho0: 1.225 },
   texture: 'earth',
 });
 
