@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -2 30 7" data-part="decoupler-m" data-size="M" data-height="3" data-half-width="13" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>DECOUPLER M</title>
+<g id="structure" stroke-width="1.5">
+<rect x="-13" y="0" width="26" height="3" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<line x1="-14.5" y1="1.5" x2="14.5" y2="1.5" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>
+<line x1="-8.67" y1="0.4" x2="-8.67" y2="2.6" vector-effect="non-scaling-stroke"/>
+<line x1="-4.33" y1="0.4" x2="-4.33" y2="2.6" vector-effect="non-scaling-stroke"/>
+<line x1="0" y1="0.4" x2="0" y2="2.6" vector-effect="non-scaling-stroke"/>
+<line x1="4.33" y1="0.4" x2="4.33" y2="2.6" vector-effect="non-scaling-stroke"/>
+<line x1="8.67" y1="0.4" x2="8.67" y2="2.6" vector-effect="non-scaling-stroke"/>
+<line x1="13" y1="0.4" x2="13" y2="2.6" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="3" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

@@ -136,6 +136,35 @@ test('stacking rules: nodes, radial hosts, and the red-pencil warnings', () => {
   assert.ok(compileDesign(glued).warnings.some((w) => w.code === 'no-decoupler'));
 });
 
+test('every part has a drawing in art/parts that keeps the brief\'s rules', async () => {
+  const fs = await import('node:fs');
+  for (const p of PARTS) {
+    const file = `art/parts/${p.id}.svg`;
+    assert.ok(fs.existsSync(file), `${file} missing`);
+    const svg = fs.readFileSync(file, 'utf8');
+    assert.ok(svg.length < 12000, `${file}: ${svg.length} bytes`);
+    assert.ok(svg.startsWith('<svg ') && svg.trimEnd().endsWith('</svg>'), `${file}: not an svg`);
+    assert.ok(svg.includes('stroke="currentColor"') && svg.includes(`<title>${p.name}</title>`), `${file}: currentColor and title`);
+    const widths = [...svg.matchAll(/stroke-width="([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(widths.length && widths.every((w) => w === '1.5' || w === '0.75'), `${file}: stroke widths ${widths}`);
+    const fills = [...svg.matchAll(/fill="([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(fills.every((v) => v === 'none'), `${file}: fills ${fills}`);
+    assert.ok(!/<(linearGradient|radialGradient|filter|image|text)\b/.test(svg), `${file}: gradients, filters, images and text are not allowed`);
+    const strokes = (svg.match(/<(rect|line|polyline|polygon|path|circle)\b/g) || []).length;
+    const nonScaling = (svg.match(/vector-effect="non-scaling-stroke"/g) || []).length;
+    assert.equal(nonScaling, strokes, `${file}: every stroke non-scaling`);
+    const vb = svg.match(/viewBox="([^"]+)"/)[1].split(' ').map(Number);
+    assert.ok(Math.abs(vb[3] - (p.height * 10 + 4)) < 0.01, `${file}: viewBox height ${vb[3]} for ${p.height} m`);
+    const has = (n) => svg.includes(`id="node-${n}"`);
+    if (p.nodes.radial === 'attach') assert.ok(has('attach') && !has('top') && !has('bottom'), `${file}: a radial part has node-attach only`);
+    else {
+      assert.equal(has('top'), !!p.nodes.top, `${file}: node-top`);
+      assert.equal(has('bottom'), !!p.nodes.bottom, `${file}: node-bottom`);
+      assert.equal(has('left') && has('right'), p.nodes.radial === 'host', `${file}: radial nodes`);
+    }
+  }
+});
+
 test('fixed loop steps in whole ticks and caps catch-up', () => {
   let n = 0;
   const loop = createFixedLoop({ hz: 60, maxStepsPerFrame: 8, step: () => { n += 1; } });

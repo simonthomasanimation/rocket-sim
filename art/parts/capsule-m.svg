@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -2 30 28" data-part="capsule-m" data-size="M" data-height="24" data-half-width="13" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>MK-2 CAPSULE</title>
+<g id="structure" stroke-width="1.5">
+<path d="M-13,24 L-13,21.12 L-4.16,0 L4.16,0 L13,21.12 L13,24 Z" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<polygon points="-6.89,10.08 -2.21,10.08 -1.69,14.4 -7.41,14.4" vector-effect="non-scaling-stroke"/>
+<polygon points="2.21,10.08 6.89,10.08 7.41,14.4 1.69,14.4" vector-effect="non-scaling-stroke"/>
+<line x1="-11.05" y1="22.56" x2="11.05" y2="22.56" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>
+<rect x="-2.5" y="2.4" width="4.99" height="4.32" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="24" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

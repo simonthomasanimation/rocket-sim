@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { bundle, buildSnapshot } from './snapshot.js';
+import { PARTS } from '../src/core/parts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shotDir = process.argv.includes('--shot') ? process.argv[process.argv.indexOf('--shot') + 1] : null;
@@ -49,6 +50,22 @@ async function openAndWatch(browser, url, label) {
     return c ? { w: c.width, h: c.height } : null;
   });
   if (!canvas || canvas.w === 0 || canvas.h === 0) problems.push(`${label}: no sized canvas on the page`);
+  // Every part drawing decodes as an image, from the inlined map on the
+  // snapshot and over the wire on the dev page.
+  const bad = await page.evaluate(async (ids) => {
+    const out = [];
+    for (const id of ids) {
+      const key = `art/parts/${id}.svg`;
+      let text = window.__KP_ASSETS && window.__KP_ASSETS[key];
+      if (!text) { const r = await fetch(key); if (!r.ok) { out.push(`${id}: ${r.status}`); continue; } text = await r.text(); }
+      const img = new Image();
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text.replace('<svg ', '<svg width="64" height="64" ').split('currentColor').join('#1E1C1A'))}`;
+      try { await img.decode(); } catch { out.push(`${id}: does not decode`); continue; }
+      if (!(img.naturalWidth > 0)) out.push(`${id}: empty image`);
+    }
+    return out;
+  }, PARTS.map((p) => p.id));
+  for (const b of bad) problems.push(`${label}: part art ${b}`);
   if (shotDir) {
     fs.mkdirSync(shotDir, { recursive: true });
     await page.screenshot({ path: path.join(shotDir, `${label}.png`) });

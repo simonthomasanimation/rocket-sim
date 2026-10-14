@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -2 30 12" data-part="adapter-s-m" data-size="M" data-height="8" data-half-width="13" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>ADAPTER S-M</title>
+<g id="structure" stroke-width="1.5">
+<polygon points="-13,8 -10,0 10,0 13,8" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<line x1="-11.5" y1="4" x2="11.5" y2="4" vector-effect="non-scaling-stroke"/>
+<line x1="-10" y1="0.3" x2="-13" y2="7.7" vector-effect="non-scaling-stroke"/>
+<line x1="0" y1="0.3" x2="0" y2="7.7" vector-effect="non-scaling-stroke"/>
+<line x1="10" y1="0.3" x2="13" y2="7.7" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="8" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

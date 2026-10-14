@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -2 40 34" data-part="engine-l-cluster" data-size="L" data-height="30" data-half-width="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>KV-600 CLUSTER</title>
+<g id="structure" stroke-width="1.5">
+<rect x="-16.2" y="0" width="32.4" height="6" vector-effect="non-scaling-stroke"/>
+<path d="M-5.04,6 C-5.04,20.4 -13.5,22.8 -13.5,30 L13.5,30 C13.5,22.8 5.04,20.4 5.04,6 Z" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<rect x="-8.06" y="1.2" width="6.05" height="3.6" vector-effect="non-scaling-stroke"/>
+<line x1="3.02" y1="1.5" x2="8.06" y2="1.5" vector-effect="non-scaling-stroke"/>
+<line x1="3.02" y1="3.9" x2="8.06" y2="3.9" vector-effect="non-scaling-stroke"/>
+<line x1="-12.42" y1="28.8" x2="12.42" y2="28.8" vector-effect="non-scaling-stroke"/>
+<line x1="-6.08" y1="14.4" x2="6.08" y2="14.4" vector-effect="non-scaling-stroke"/>
+<line x1="-7.6" y1="19.2" x2="7.6" y2="19.2" vector-effect="non-scaling-stroke"/>
+<line x1="-9.8" y1="24" x2="9.8" y2="24" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="30" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

@@ -87,6 +87,18 @@ export function bundle(entryRel) {
   return `(function () {\n'use strict';\nconst __modules = {};\nconst __m = (id) => __modules[id];\n${order.map((id) => modules.get(id)).join('\n\n')}\n})();\n`;
 }
 
+// Small code-drawn assets folded into the single file: the part drawings in
+// art/parts, keyed by their path so the loader finds them without a fetch.
+export function inlineAssets() {
+  const assets = {};
+  const dir = path.join(root, 'art', 'parts');
+  if (!fs.existsSync(dir)) return assets;
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (name.endsWith('.svg')) assets[`art/parts/${name}`] = fs.readFileSync(path.join(dir, name), 'utf8');
+  }
+  return assets;
+}
+
 export function buildSnapshot() {
   let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const generated = [];
@@ -101,7 +113,7 @@ export function buildSnapshot() {
   html = html.replace(/<script\s+type="module"\s+src="([^"]+)"\s*><\/script>/g, (_, src) => {
     const js = bundle(src);
     generated.push(src);
-    return `<script type="module">\n${js}</script>`;
+    return `<script>window.__KP_ASSETS = ${JSON.stringify(inlineAssets())};</script>\n<script type="module">\n${js}</script>`;
   });
 
   fs.mkdirSync(distDir, { recursive: true });

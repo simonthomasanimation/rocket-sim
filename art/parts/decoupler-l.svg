@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -2 40 8" data-part="decoupler-l" data-size="L" data-height="4" data-half-width="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>DECOUPLER L</title>
+<g id="structure" stroke-width="1.5">
+<rect x="-18" y="0" width="36" height="4" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<line x1="-19.5" y1="2" x2="19.5" y2="2" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>
+<line x1="-12" y1="0.4" x2="-12" y2="3.6" vector-effect="non-scaling-stroke"/>
+<line x1="-6" y1="0.4" x2="-6" y2="3.6" vector-effect="non-scaling-stroke"/>
+<line x1="0" y1="0.4" x2="0" y2="3.6" vector-effect="non-scaling-stroke"/>
+<line x1="6" y1="0.4" x2="6" y2="3.6" vector-effect="non-scaling-stroke"/>
+<line x1="12" y1="0.4" x2="12" y2="3.6" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="4" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

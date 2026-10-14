@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -2 24 22" data-part="tank-s-short" data-size="S" data-height="18" data-half-width="10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>TANK S/1</title>
+<g id="structure" stroke-width="1.5">
+<rect x="-10" y="0" width="20" height="18" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<path d="M-7.8,4.46 Q-7.8,1.44 -4.78,1.44 L4.78,1.44 Q7.8,1.44 7.8,4.46 L7.8,13.54 Q7.8,16.56 4.78,16.56 L-4.78,16.56 Q-7.8,16.56 -7.8,13.54 Z" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="3.25" x2="-7.02" y2="3.25" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="6.25" x2="-4.02" y2="3.25" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="9.25" x2="-1.02" y2="3.25" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="12.25" x2="1.98" y2="3.25" vector-effect="non-scaling-stroke"/>
+<line x1="-6.51" y1="14.75" x2="4.98" y2="3.25" vector-effect="non-scaling-stroke"/>
+<line x1="-3.51" y1="14.75" x2="7.02" y2="4.21" vector-effect="non-scaling-stroke"/>
+<line x1="-0.51" y1="14.75" x2="7.02" y2="7.21" vector-effect="non-scaling-stroke"/>
+<line x1="2.49" y1="14.75" x2="7.02" y2="10.21" vector-effect="non-scaling-stroke"/>
+<line x1="5.49" y1="14.75" x2="7.02" y2="13.21" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="18" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-left" class="node" cx="-10" cy="9" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-right" class="node" cx="10" cy="9" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

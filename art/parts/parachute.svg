@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -2 24 7" data-part="parachute" data-size="S" data-height="3" data-half-width="10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>PARACHUTE</title>
+<g id="structure" stroke-width="1.5">
+<path d="M-5.5,3 L-5.5,1.5 Q-5.5,0 0,0 Q5.5,0 5.5,1.5 L5.5,3 Z" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<path d="M-3.3,2.55 Q0,0.9 3.3,2.55" vector-effect="non-scaling-stroke"/>
+<path d="M-1.65,2.55 Q0,1.65 1.65,2.55" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-bottom" class="node" cx="0" cy="3" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

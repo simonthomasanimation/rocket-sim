@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -2 30 24" data-part="engine-m-lift" data-size="M" data-height="20" data-half-width="13" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>KV-120 LIFTER</title>
+<g id="structure" stroke-width="1.5">
+<rect x="-11.7" y="0" width="23.4" height="6" vector-effect="non-scaling-stroke"/>
+<path d="M-3.64,6 C-3.64,14.4 -9,15.8 -9,20 L9,20 C9,15.8 3.64,14.4 3.64,6 Z" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<rect x="-5.82" y="1.2" width="4.37" height="3.6" vector-effect="non-scaling-stroke"/>
+<line x1="2.18" y1="1.5" x2="5.82" y2="1.5" vector-effect="non-scaling-stroke"/>
+<line x1="2.18" y1="3.9" x2="5.82" y2="3.9" vector-effect="non-scaling-stroke"/>
+<line x1="-8.28" y1="18.8" x2="8.28" y2="18.8" vector-effect="non-scaling-stroke"/>
+<line x1="-4.3" y1="10.9" x2="4.3" y2="10.9" vector-effect="non-scaling-stroke"/>
+<line x1="-5.26" y1="13.7" x2="5.26" y2="13.7" vector-effect="non-scaling-stroke"/>
+<line x1="-6.65" y1="16.5" x2="6.66" y2="16.5" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="20" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

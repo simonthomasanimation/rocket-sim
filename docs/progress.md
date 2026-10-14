@@ -66,7 +66,7 @@ Rules: work top to bottom. Tick a task only when it is committed and the deploye
 
 ## M4 Builder
 - [x] Part model and ~30 parts in one data file (mass, tank masses, thrust, Isp, nodes, category, size class): src/core/parts.js holds 33 parts in seven categories and three sizes, the stacking rules, and the compiler that turns a design into the stage list the flight core flies with the red-pencil warnings; src/core/designs.js holds the KP-3 as the first preset (it compiles to within 3 % of the hand-tuned rocket)
-- [ ] Part SVGs in art/parts per CLAUDE.md rules; catalog icon from same file
+- [x] Part SVGs in art/parts per CLAUDE.md rules; catalog icon from same file: 33 drawings written by tools/parts-svg.js from the part data (two non-scaling stroke weights, currentColor, no fills, named nodes), src/render/partart.js recolours and rasterises one file at any size for the catalog icon, the drafting table and the flight drawing, the snapshot build inlines them, the test suite lints them and the deploy check decodes every one on both pages
 - [ ] Vellum document: catalog column, drag-and-drop stacking, radial boosters, decouplers define stages, reorderable staging list
 - [ ] Stats panel: mass, launch TWR, dV per stage and total; red-pencil warnings
 - [ ] Saved designs with names; six presets; JSON export/import

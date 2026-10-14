@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6.5 -2 13 20" data-part="legs-s" data-size="S" data-height="16" data-half-width="4.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>LEG PAIR S</title>
+<g id="structure" stroke-width="1.5">
+<line x1="-3" y1="2.4" x2="3" y2="16" vector-effect="non-scaling-stroke"/>
+<line x1="-3" y1="9.6" x2="1.5" y2="12" vector-effect="non-scaling-stroke"/>
+<line x1="0.5" y1="16" x2="5.5" y2="16" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<line x1="-3" y1="2.4" x2="-3" y2="9.6" vector-effect="non-scaling-stroke"/>
+<line x1="-1.2" y1="6.4" x2="-1.2" y2="16" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-attach" class="node" cx="-3" cy="6.4" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

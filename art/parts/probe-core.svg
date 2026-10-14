@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-13.5 -2 27 10" data-part="probe-core" data-size="S" data-height="6" data-half-width="11.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>PROBE CORE</title>
+<g id="structure" stroke-width="1.5">
+<rect x="-8" y="0" width="16" height="6" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<rect x="-5.5" y="1.5" width="11" height="3" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>
+<line x1="-8" y1="3" x2="-11.5" y2="3" vector-effect="non-scaling-stroke"/>
+<line x1="8" y1="3" x2="11.5" y2="3" vector-effect="non-scaling-stroke"/>
+<line x1="-11.5" y1="1.2" x2="-11.5" y2="4.8" vector-effect="non-scaling-stroke"/>
+<line x1="11.5" y1="1.2" x2="11.5" y2="4.8" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="6" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

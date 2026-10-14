@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-7 -2 14 44" data-part="booster-s" data-size="S" data-height="40" data-half-width="5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>SRB-50</title>
+<g id="structure" stroke-width="1.5">
+<path d="M-5,8.8 Q-5,2.64 0,0 Q5,2.64 5,8.8 L5,36 L-5,36 Z" vector-effect="non-scaling-stroke"/>
+<path d="M-1.75,36 C-1.75,38.4 -3.75,38.8 -3.75,40 L3.75,40 C3.75,38.8 1.75,38.4 1.75,36 Z" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<line x1="-3.5" y1="15.3" x2="1.5" y2="10.3" vector-effect="non-scaling-stroke"/>
+<line x1="-3.5" y1="20.3" x2="3.5" y2="13.3" vector-effect="non-scaling-stroke"/>
+<line x1="-3.5" y1="25.3" x2="3.5" y2="18.3" vector-effect="non-scaling-stroke"/>
+<line x1="-3.5" y1="30.3" x2="3.5" y2="23.3" vector-effect="non-scaling-stroke"/>
+<line x1="-2.7" y1="34.5" x2="3.5" y2="28.3" vector-effect="non-scaling-stroke"/>
+<line x1="2.3" y1="34.5" x2="3.5" y2="33.3" vector-effect="non-scaling-stroke"/>
+<line x1="-5" y1="17.87" x2="5" y2="17.87" vector-effect="non-scaling-stroke"/>
+<line x1="-5" y1="26.93" x2="5" y2="26.93" vector-effect="non-scaling-stroke"/>
+<line x1="-5" y1="10.8" x2="-7.5" y2="10.8" vector-effect="non-scaling-stroke"/>
+<line x1="-5" y1="34" x2="-7.5" y2="34" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-attach" class="node" cx="-5" cy="20" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

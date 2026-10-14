@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -2 24 38" data-part="tank-s-long" data-size="S" data-height="34" data-half-width="10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>TANK S/2</title>
+<g id="structure" stroke-width="1.5">
+<rect x="-10" y="0" width="20" height="34" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<path d="M-7.8,6.62 Q-7.8,2.72 -3.9,2.72 L3.9,2.72 Q7.8,2.72 7.8,6.62 L7.8,27.38 Q7.8,31.28 3.9,31.28 L-3.9,31.28 Q-7.8,31.28 -7.8,27.38 Z" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="5.06" x2="-7.02" y2="5.06" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="8.57" x2="-3.51" y2="5.06" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="12.08" x2="0" y2="5.06" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="15.59" x2="3.51" y2="5.06" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="19.1" x2="7.02" y2="5.06" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="22.61" x2="7.02" y2="8.57" vector-effect="non-scaling-stroke"/>
+<line x1="-7.02" y1="26.12" x2="7.02" y2="12.08" vector-effect="non-scaling-stroke"/>
+<line x1="-6.33" y1="28.94" x2="7.02" y2="15.59" vector-effect="non-scaling-stroke"/>
+<line x1="-2.82" y1="28.94" x2="7.02" y2="19.1" vector-effect="non-scaling-stroke"/>
+<line x1="0.69" y1="28.94" x2="7.02" y2="22.61" vector-effect="non-scaling-stroke"/>
+<line x1="4.2" y1="28.94" x2="7.02" y2="26.12" vector-effect="non-scaling-stroke"/>
+<line x1="-10" y1="25" x2="10" y2="25" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="34" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-left" class="node" cx="-10" cy="17" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-right" class="node" cx="10" cy="17" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>

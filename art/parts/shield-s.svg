@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -2 24 7" data-part="shield-s" data-size="S" data-height="3" data-half-width="10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<title>HEAT SHIELD S</title>
+<g id="structure" stroke-width="1.5">
+<path d="M-10,0 L10,0 L10,1.2 Q0,5.7 -10,1.2 Z" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="annotation" stroke-width="0.75">
+<path d="M-8,1.2 Q0,4.5 8,1.2" vector-effect="non-scaling-stroke"/>
+<line x1="-7.5" y1="1.35" x2="-7.5" y2="1.58" vector-effect="non-scaling-stroke"/>
+<line x1="-5" y1="1.35" x2="-5" y2="1.95" vector-effect="non-scaling-stroke"/>
+<line x1="-2.5" y1="1.35" x2="-2.5" y2="2.33" vector-effect="non-scaling-stroke"/>
+<line x1="0" y1="1.35" x2="0" y2="2.7" vector-effect="non-scaling-stroke"/>
+<line x1="2.5" y1="1.35" x2="2.5" y2="2.33" vector-effect="non-scaling-stroke"/>
+<line x1="5" y1="1.35" x2="5" y2="1.95" vector-effect="non-scaling-stroke"/>
+<line x1="7.5" y1="1.35" x2="7.5" y2="1.58" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="nodes" stroke-width="0.75">
+<circle id="node-top" class="node" cx="0" cy="0" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+<circle id="node-bottom" class="node" cx="0" cy="3" r="2" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>
+</g>
+</svg>
