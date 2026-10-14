@@ -2764,6 +2764,7 @@ function createCamera() {
     groundClearance: 96, // px kept between the surface and the bottom of the flight area, room for the strata
     heldScale: null,     // px per metre the player set, or null for automatic
     offX: 0, offY: 0,    // world metres the view is panned off the craft
+    locked: false,       // the craft pinned to the middle of the sheet at any zoom
     bodyRadius: 1,
     groundRadius: null,  // radius of the ground under the craft (terrain), or null for the body's
   };
@@ -2809,7 +2810,9 @@ function createCamera() {
     const low = extent && extent.down > alt + R / 4 ? Math.max(r + R, extent.down) : r + R;
     const asDisc = Math.min(low * scale + c, H - 48);
     const t = clamp(1 - (R * scale - H / 3) / (H - H / 3), 0, 1);
-    const lift = asLine + (asDisc - asLine) * t;
+    // Locked: the craft sits dead centre whatever the zoom; otherwise the
+    // ground is pinned low and the disc framed as above.
+    const lift = cam.locked ? H / 2 : asLine + (asDisc - asLine) * t;
     return { x: state.x + cam.offX, y: state.y + cam.offY, rot, scale, lift };
   }
 
@@ -2839,6 +2842,8 @@ function createCamera() {
     cam.offX = clamp(cam.offX, -limit, limit); cam.offY = clamp(cam.offY, -limit, limit);
   };
   cam.isHeld = () => cam.heldScale !== null || cam.offX !== 0 || cam.offY !== 0;
+  // L: lock the view on the craft, in the middle of the sheet at any zoom.
+  cam.toggleLock = () => { cam.locked = !cam.locked; cam.offX = 0; cam.offY = 0; };
   // C: back onto the craft, keeping the zoom. 0: that and the automatic zoom too.
   cam.centre = () => { cam.offX = 0; cam.offY = 0; };
   cam.resetZoom = () => { cam.heldScale = null; cam.offX = 0; cam.offY = 0; };
@@ -3031,7 +3036,10 @@ function drawScaleBar(ctx, cam, x, y) {
   ctx.moveTo(x + px / 2 + 0.5, y); ctx.lineTo(x + px / 2 + 0.5, y + 3);
   ctx.stroke();
   label(ctx, `SCALE ${formatDistance(step)}`, x, y - 4, 'left', BLUEPRINT.inkPale);
-  if (cam.isHeld && cam.isHeld()) label(ctx, 'VIEW HELD — C CENTRES ON THE CRAFT, 0 RESETS THE ZOOM TOO', x, y + 16, 'left', BLUEPRINT.inkPale);
+  const notes = [];
+  if (cam.locked) notes.push('LOCKED ON THE CRAFT — L UNLOCKS');
+  if (cam.isHeld && cam.isHeld()) notes.push('VIEW HELD — C CENTRES ON THE CRAFT, 0 RESETS THE ZOOM TOO');
+  notes.forEach((n, i) => label(ctx, n, x, y + 16 + i * 14, 'left', BLUEPRINT.inkPale));
 }
 
 // Altitude ruler down the left edge: ticks in metres above the ground
@@ -3867,19 +3875,25 @@ function drawPrediction(ctx, cam, prediction, body) {
   ctx.strokeStyle = critical ? BLUEPRINT.accent : BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
   ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  let last = null; let k = 0;
-  for (let i = 0; i < points.length; i++) {
-    let broke = i === 0;
-    while (k + 1 < segs.length && segs[k + 1].from <= i) { k += 1; broke = true; }
+  // One stroke per segment, each later one fainter: after a change of
+  // sphere the path is further off in time and less certain, and when
+  // several loops lie over each other the fading says which comes first.
+  for (let k = 0; k < segs.length; k++) {
+    const from = segs[k].from; const to = k + 1 < segs.length ? segs[k + 1].from : points.length;
     const o = segs[k].offset;
-    const p = cam.toScreen(points[i].x + o.x, points[i].y + o.y);
-    if (broke) ctx.moveTo(p.x, p.y);
-    else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1.5) ctx.lineTo(p.x, p.y);
-    else continue;
-    last = p;
+    ctx.globalAlpha = Math.max(0.3, 1 - 0.3 * k);
+    ctx.beginPath();
+    let last = null;
+    for (let i = from; i < to; i++) {
+      const p = cam.toScreen(points[i].x + o.x, points[i].y + o.y);
+      if (i === from) ctx.moveTo(p.x, p.y);
+      else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1.5) ctx.lineTo(p.x, p.y);
+      else continue;
+      last = p;
+    }
+    ctx.stroke();
   }
-  ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.setLineDash([]);
   // Ghosts of the other bodies where the path meets them, and the
   // encounter and exit markers (accent dot: a marker, per the brief).
@@ -3888,15 +3902,17 @@ function drawPrediction(ctx, cam, prediction, body) {
     const b = BODIES[sg.body];
     if (!b || sg.body === body.id) continue;
     const c = cam.toScreen(sg.offset.x, sg.offset.y);
-    const rp = b.radius * cam.scale;
-    if (rp >= 1.5 && rp < 4000) {
+    // Even when the body is a dot at this zoom the ghost gets a disc and a
+    // name: without them the path's loop round the body reads as a knot.
+    const rp = Math.max(3, b.radius * cam.scale);
+    if (rp < 4000 && c.x > -40 && c.x < cam.width + 40 && c.y > cam.top - 40 && c.y < cam.top + cam.height + 40) {
       ctx.strokeStyle = BLUEPRINT.inkPale;
       ctx.lineWidth = STROKE.annotation;
       ctx.setLineDash([3, 5]);
       ctx.beginPath(); ctx.arc(c.x, c.y, rp, 0, Math.PI * 2); ctx.stroke();
-      if (Number.isFinite(b.soi)) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, b.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
+      if (Number.isFinite(b.soi) && b.soi * cam.scale > rp + 6) { ctx.setLineDash([2, 8]); ctx.beginPath(); ctx.arc(c.x, c.y, b.soi * cam.scale, 0, Math.PI * 2); ctx.stroke(); }
       ctx.setLineDash([]);
-      label(ctx, `${b.name} AT T-${formatTime(sg.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale, labelAlpha(rp));
+      label(ctx, `${b.name} WILL BE HERE AT T-${formatTime(sg.t)}`, c.x, c.y + rp + 14, 'center', BLUEPRINT.inkPale);
     }
   }
   if (prediction.encounter) {
@@ -4460,7 +4476,8 @@ const G = 8;
 // The map's own camera: centred on the frame, zoom from the fit plus the
 // player's bias, eased so a change of frame does not snap.
 function createMapCamera() {
-  const cam = { cx: 0, cy: 0, scale: 1e-4, zoomBias: 0, offX: 0, offY: 0, width: 1, height: 1 };
+  const cam = { cx: 0, cy: 0, scale: 1e-4, zoomBias: 0, offX: 0, offY: 0, locked: false, width: 1, height: 1 };
+  cam.toggleLock = () => { cam.locked = !cam.locked; cam.offX = 0; cam.offY = 0; };
   cam.zoom = (steps) => { cam.zoomBias = Math.max(-8, Math.min(8, cam.zoomBias + steps)); };
   cam.pan = (dx, dy) => { cam.offX -= dx / cam.scale; cam.offY += dy / cam.scale; };
   cam.isHeld = () => cam.zoomBias !== 0 || cam.offX !== 0 || cam.offY !== 0;
@@ -4468,10 +4485,11 @@ function createMapCamera() {
   cam.resetZoom = () => { cam.zoomBias = 0; cam.offX = 0; cam.offY = 0; };
   cam.toScreen = (wx, wy) => ({ x: cam.width / 2 + (wx - cam.cx) * cam.scale, y: cam.height / 2 - (wy - cam.cy) * cam.scale });
   // Fit a box [minX, maxX] x [minY, maxY] (world) with a margin, eased.
-  cam.fit = (box, dt, snap = false) => {
+  // `focus` is the craft: when the view is locked it sits at the centre.
+  cam.fit = (box, dt, snap = false, focus = null) => {
     // Symmetric about the frame body (the origin), so it sits at the centre.
     const w = 2 * Math.max(1, Math.abs(box.minX), Math.abs(box.maxX)); const h = 2 * Math.max(1, Math.abs(box.minY), Math.abs(box.maxY));
-    const tx = cam.offX; const ty = cam.offY;
+    const tx = cam.offX + (cam.locked && focus ? focus.x : 0); const ty = cam.offY + (cam.locked && focus ? focus.y : 0);
     let ts = Math.min((cam.width - 12 * G) / w, (cam.height - 24 * G) / h) * Math.pow(2, cam.zoomBias);
     ts = Math.max(1e-6, Math.min(2, ts));
     const far = Math.hypot(tx - cam.cx, ty - cam.cy) * cam.scale > cam.width;
@@ -4553,7 +4571,7 @@ function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
     }
   }
   for (const o of others) if (o.body.parent === body.id) { grow(o.x, o.y, o.body.soi); grow(0, 0, o.body.orbitRadius); }
-  cam.fit(box, frameDt, snap);
+  cam.fit(box, frameDt, snap, state);
 
   ctx.save();
   ctx.lineJoin = 'round';
@@ -4646,19 +4664,23 @@ function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
   if (prediction && prediction.points.length > 1) {
     const pts = prediction.points;
     const segs = prediction.segments || [{ body: body.id, from: 0, offset: { x: 0, y: 0 } }];
-    glowStroke(ctx, () => {
-      let last = null; let k = 0;
-      for (let i = 0; i < pts.length; i++) {
-        let broke = i === 0;
-        while (k + 1 < segs.length && segs[k + 1].from <= i) { k += 1; broke = true; }
-        const o = segs[k].offset;
-        const p = cam.toScreen(pts[i].x + o.x, pts[i].y + o.y);
-        if (broke) ctx.moveTo(p.x, p.y);
-        else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1) ctx.lineTo(p.x, p.y);
-        else continue;
-        last = p;
-      }
-    }, CRT.ink, 1, 3);
+    // One stroke per segment, later ones fainter (see the blueprint's path).
+    for (let k = 0; k < segs.length; k++) {
+      const from = segs[k].from; const to = k + 1 < segs.length ? segs[k + 1].from : pts.length;
+      const o = segs[k].offset;
+      ctx.globalAlpha = Math.max(0.3, 1 - 0.3 * k);
+      glowStroke(ctx, () => {
+        let last = null;
+        for (let i = from; i < to; i++) {
+          const p = cam.toScreen(pts[i].x + o.x, pts[i].y + o.y);
+          if (i === from) ctx.moveTo(p.x, p.y);
+          else if (!last || Math.abs(p.x - last.x) + Math.abs(p.y - last.y) >= 1) ctx.lineTo(p.x, p.y);
+          else continue;
+          last = p;
+        }
+      }, CRT.ink, 1, 3);
+    }
+    ctx.globalAlpha = 1;
     const segOf = (i) => { let j = 0; while (j + 1 < segs.length && segs[j + 1].from <= i) j += 1; return segs[j]; };
     const tick = (wx, wy, name, t, colour = CRT.ink) => {
       const p = cam.toScreen(wx, wy);
@@ -5035,7 +5057,7 @@ function startPage(keys = {}) {
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
       'TIME: Right arrow runs time faster, Left arrow slower, a notch per press: ×1 to ×64 with physics (less near the ground), then ×100 to ×100,000 on rails (engine off, clear of any air, high enough). E warps to the next event: AP, PE, a change of sphere of influence, atmosphere entry, and under the parachutes the main chute and then touchdown. Under a canopy the full ×64 is allowed at any height. SPACE pauses. The same arrows shuttle a replay.',
-      'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom (mouse wheel and pinch too), and a zoom you set holds until you press 0. Drag the sheet with the mouse or a finger to look around, at the Moon’s path for instance; C centres the view on the craft again (keeping your zoom), 0 does that and hands the zoom back to the automatic one.',
+      'TAB turns the page to the CRT map (the whole system, north up) and back. ENTER stages. + and − zoom (mouse wheel and pinch too), and a zoom you set holds until you press 0. Drag the sheet with the mouse or a finger to look around, at the Moon’s path for instance; C centres the view on the craft again (keeping your zoom), 0 does that and hands the zoom back to the automatic one. L locks the view on the craft, dead centre at any zoom; L again unlocks.',
       'ENTER also opens the parachutes once only the capsule is left (under 250 m/s; P works too): the drogue comes out first, and the main follows on its own under 90 m/s and 3 km above the ground, reefed for four seconds, then full. R restarts. N returns to this plan. V replays the last flight. M mutes.',
       'On a phone, use the stamped buttons.',
     ],
@@ -5091,9 +5113,9 @@ const KEYS = {
   KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
-const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', p: 'chute', c: 'centre', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7' };
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', e: 'warpTo', p: 'chute', c: 'centre', l: 'lock', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7' };
 const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut', Tab: 'map' };
-const REPLAY_BY_KEY = { r: 'restart', m: 'mute', c: 'centre', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
+const REPLAY_BY_KEY = { r: 'restart', m: 'mute', c: 'centre', l: 'lock', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
   ArrowLeft: 'rev', ArrowRight: 'fwd', Tab: 'map',
   Space: 'toggle', Home: 'start', End: 'end', Escape: 'exit', Enter: 'exit', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut',
@@ -5130,6 +5152,7 @@ const BUTTONS = [
   { id: 'map', label: 'MAP', cluster: 'left', tap: true },
   { id: 'warpTo', label: 'EVENT', cluster: 'left', tap: true },
   { id: 'centre', label: 'CENTRE', cluster: 'left', tap: true },
+  { id: 'lock', label: 'LOCK', cluster: 'left', tap: true },
   { id: 'thrUp', label: 'THR +', cluster: 'right' },
   { id: 'thrDown', label: 'THR −', cluster: 'right' },
   { id: 'full', label: 'FULL', cluster: 'right' },
@@ -6342,6 +6365,7 @@ function onTransport(action, value) {
     case 'zoomOut': zoomBy(-0.5); break;
     case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
     case 'centre': (doc === 'crt' ? mapCamera : camera).centre(); break;
+    case 'lock': (doc === 'crt' ? mapCamera : camera).toggleLock(); break;
     case 'zoom': zoomBy(value); break;
     case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
     case 'map': turnPage(); break;
@@ -6597,6 +6621,7 @@ function frame(nowMs) {
       case 'zoomOut': zoomBy(-0.5); break;
       case 'zoomReset': (doc === 'crt' ? mapCamera : camera).resetZoom(); break;
       case 'centre': (doc === 'crt' ? mapCamera : camera).centre(); break;
+      case 'lock': (doc === 'crt' ? mapCamera : camera).toggleLock(); break;
       case 'zoom': zoomBy(value); break;
       case 'pan': (doc === 'crt' ? mapCamera : camera).pan(value.dx, value.dy); break;
       case 'map': turnPage(); break;
