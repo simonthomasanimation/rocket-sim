@@ -131,10 +131,11 @@ let sinceShort = 99;
 let seenEvents = 0;
 function stepGame(dt) {
   let cmd = input.command();
-  // ENTER is the next step down the stack: with only the capsule left and
-  // the chute still stowed, it opens the chute.
+  // ENTER is the next step down the stack: with only the last stage left,
+  // a parachute on it and the chute still stowed, it opens the chute
+  // (whatever that stage is: a capsule or a probe core under a canister).
   const st = flight.cfg.stages[flight.state.stage];
-  if (cmd.stage && st.capsule && flight.state.stage === flight.cfg.stages.length - 1 && flight.state.chute === 0) cmd = { ...cmd, stage: 0, chute: 1 };
+  if (cmd.stage && st.chute && flight.state.stage === flight.cfg.stages.length - 1 && flight.state.chute === 0) cmd = { ...cmd, stage: 0, chute: 1 };
   flight.step(cmd, dt);
   // The alert rules look ten seconds ahead; a short prediction every third
   // tick is plenty. The drawing predicts the whole path from the view.
@@ -530,7 +531,7 @@ function render(alpha, frameDt) {
   const info = {
     bodyName: body.name,
     stageText: `${view.stage + 1}/${src.cfg.stages.length}`,
-    capsule: !!activeStage(view, src.cfg).capsule,
+    capsule: !!activeStage(view, src.cfg).chute, // the CHUTE readout: any stage that carries a parachute
     stages: src.cfg.stages.map((st, i) => ({ name: st.name, frac: i === view.stage ? view.fuel / st.fuelMass : i > view.stage ? 1 : 0, state: i < view.stage ? 'dropped' : i === view.stage ? 'live' : 'full' })),
     dv: deltaV(view, src.cfg),
     twr: twr(view, src.cfg, body),

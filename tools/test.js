@@ -247,6 +247,14 @@ test('a design from the sheet flies: it lifts off, stages, records its rocket, a
   const e = createFlight({ seed: 1, scenario: 'designMoon', design: { name: 'NOTHING', stack: [] } });
   for (let i = 0; i < 120; i++) e.step(FULL);
   assert.equal(e.phase, 'pad');
+  // A probe core under a parachute opens it like a capsule would: the chute is the part, not the crew.
+  const probe = createFlight({ seed: 1, scenario: 'designEarth', design: { name: 'PROBE', stack: ['engine-s-vac', 'tank-s-short', 'decoupler-s', 'probe-core', 'parachute'] } });
+  assert.equal(probe.cfg.stages[1].capsule, false);
+  assert.equal(probe.cfg.stages[1].chute, true);
+  probe.step({ ...FULL, stage: 0 }); probe.step({ ...NONE, stage: 1, warp: 0, chute: 0 });
+  assert.equal(probe.state.stage, 1);
+  probe.step({ ...NONE, warp: 0, chute: 1 });
+  assert.ok(probe.state.chute === 3 || probe.state.chute === 4, 'the chute is out on a probe core');
   // The capsule's shield and chute come from its parts: a capsule without a shield burns like a bare stack.
   const bare = createFlight({ seed: 1, scenario: 'designEarth', design: { name: 'BARE', stack: ['engine-s-vac', 'tank-s-short', 'capsule-s'] } });
   assert.equal(bare.cfg.stages[0].capsule, true);
