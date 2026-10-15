@@ -1229,6 +1229,25 @@ function heatLimit(s, cfg) {
 // accurate per step than Euler, which is what keeps an orbit closed for
 // hours of play and lets the predictor take big steps.
 function rk4Step(s, dt, body, tx = 0, ty = 0, drag = 0) {
+  // Under a parachute the drag is stiff: it can take the whole speed off in
+  // a fraction of the step, and a step longer than that time constant makes
+  // the integrator blow up (a predicted path billions of metres long, and a
+  // camera zooming out to fit it). Take as many sub-steps as the stiffness
+  // asks for; the flight and the prediction share the rule.
+  if (drag > 0 && body.atmosphere) {
+    const rho = densityAt(body, Math.hypot(s.x, s.y));
+    const stiffness = drag * rho * Math.hypot(s.vx, s.vy) * dt;
+    if (stiffness > STIFF_STEP) {
+      const n = Math.min(400, Math.ceil(stiffness / STIFF_STEP));
+      for (let i = 0; i < n; i++) rk4Single(s, dt / n, body, tx, ty, drag);
+      return;
+    }
+  }
+  rk4Single(s, dt, body, tx, ty, drag);
+}
+const STIFF_STEP = 0.2; // the share of the speed drag may take off in one sub-step
+
+function rk4Single(s, dt, body, tx, ty, drag) {
   const ax = (x, y, vx, vy) => {
     const g = gravityAt(body, x, y);
     let dx = 0; let dy = 0;

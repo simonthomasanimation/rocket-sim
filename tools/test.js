@@ -255,6 +255,20 @@ test('a design from the sheet flies: it lifts off, stages, records its rocket, a
   assert.equal(probe.state.stage, 1);
   probe.step({ ...NONE, warp: 0, chute: 1 });
   assert.ok(probe.state.chute === 3 || probe.state.chute === 4, 'the chute is out on a probe core');
+  // A light probe under the full main: the predicted path stays on the sheet
+  // (the stiff drag used to blow the predictor up and the camera with it).
+  const light = createFlight({ seed: 1, scenario: 'designEarth', design: { name: 'PROBE', stack: ['engine-s-vac', 'tank-s-short', 'decoupler-s', 'probe-core', 'parachute'] } });
+  light.phase = 'flying'; light.state.stage = 1; light.state.fuel = 0; light.state.y = EARTH.radius + light.terrain.height(0) + 2000; light.state.vy = -60;
+  light.step({ ...NONE, warp: 0, chute: 1 });
+  for (let i = 0; i < 60 * 8; i++) light.step({ ...NONE, warp: 0, chute: 0 });
+  assert.equal(light.state.chute, 1, 'the main is full');
+  assert.ok(light.state.vy < -2 && light.state.vy > -4, `steady under the main at ${light.state.vy.toFixed(2)} m/s`);
+  const path = predictCoast(light.state, light.body, light.terrain, { drag: light.drag(), clock: light.clock, terrainOf: light.terrainOf });
+  const r0 = Math.hypot(light.state.x, light.state.y);
+  let reach = 0;
+  for (const q of path.points) reach = Math.max(reach, Math.abs(Math.hypot(q.x, q.y) - r0));
+  assert.ok(reach < 2500, `the path under the canopy reaches ${reach.toFixed(0)} m`);
+  assert.ok(path.impact && path.impact.t > 300 && path.impact.t < 1200, `touchdown predicted in ${path.impact && path.impact.t} s`);
   // The capsule's shield and chute come from its parts: a capsule without a shield burns like a bare stack.
   const bare = createFlight({ seed: 1, scenario: 'designEarth', design: { name: 'BARE', stack: ['engine-s-vac', 'tank-s-short', 'capsule-s'] } });
   assert.equal(bare.cfg.stages[0].capsule, true);
