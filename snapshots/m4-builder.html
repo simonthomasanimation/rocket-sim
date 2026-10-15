@@ -2449,6 +2449,12 @@ function compileDesign(design, { gravity = 9.80665 } = {}) {
         st.maxThrust += p.thrust; ispSum += p.thrust * p.isp;
         if (k > 0 && g.parts[k - 1].category !== 'decoupler') warnings.push({ code: 'buried-engine', stage: gi, text: `${label}: ${p.name} FIRES INTO THE ${g.parts[k - 1].name} UNDER IT` });
       }
+      // A size step inside a stage (a narrow tank on a wide one) wants an
+      // adapter; across a decoupler the next stage may be any size.
+      if (k > 0) {
+        const below = g.parts[k - 1];
+        if (below.category !== 'decoupler' && below.nodes.top && p.nodes.bottom && below.nodes.top !== p.nodes.bottom) warnings.push({ code: 'size-step', stage: gi, text: `${label}: ${p.name} ON A ${below.name}: SIZE STEP, FIT AN ADAPTER` });
+      }
       if (p.category === 'command') { st.capsule = st.capsule || p.crew > 0; st.crew += p.crew; }
       if (p.shield) st.shield = true;
       if (p.chute) st.chute = true;
@@ -3305,6 +3311,7 @@ const LINES = {
   alt100: 'One hundred metres.',
   alt50: 'Fifty metres.',
   alt20: 'Twenty metres.',
+  noEngine: 'No engine on this stage. Nothing to throttle.',
 };
 
 // Altitude callouts on the way down, read once each as the craft sinks past them.
@@ -3343,6 +3350,9 @@ function createCapcom() {
       if (flight.phase === 'landed') { if (!(flight.stats.touchdown && flight.stats.touchdown.water)) say('landed', t); return; }
       if (flight.phase === 'crashed') { say('crashed', t, true); return; }
       if (flight.phase === 'escaped') { say('escaped', t, true); return; }
+      // The throttle opened on a stage with nothing to burn (a tank under a probe core).
+      const live = flight.cfg.stages[flight.state.stage];
+      if (flight.state.throttle > 0 && live && !(live.maxThrust > 0)) say(`noEngine${flight.state.stage}`, t, false, LINES.noEngine);
       if (alerts.fuel === 'critical') say('fuelOut', t, true);
       else if (alerts.fuel === 'caution' && flight.state.fuel <= 0) say('stageDry', t);
       else if (alerts.fuel === 'caution') say('fuelLow', t);
@@ -3432,7 +3442,11 @@ const { computeAlerts } = __m("src/core/alerts.js");
 const { createCapcom } = __m("src/core/capcom.js");
 const { normalizeAngle } = __m("src/core/body.js");
 
-function buildTimeline(recording, { maxTicks = 60 * 60 * 90, maxFrames = 24000, dt = 1 / 60 } = {}) {
+// The tape is built in pieces so the page can keep drawing while a long
+// flight is run through: createTimelineBuilder gives a builder whose
+// work(ticks) runs up to that many ticks and reports progress; the
+// timeline is ready when `done`. buildTimeline runs it to the end at once.
+function createTimelineBuilder(recording, { maxTicks = 60 * 60 * 90, maxFrames = 24000, dt = 1 / 60 } = {}) {
   const playback = createPlayback(recording);
   const flight = playback.flight;
   const capcom = createCapcom();
@@ -3459,22 +3473,50 @@ function buildTimeline(recording, { maxTicks = 60 * 60 * 90, maxFrames = 24000, 
   capture(true);
   let n = 0;
   let running = true;
-  while (n < limit && running) { running = playback.step(dt); sinceLast += 1; capture(); n += 1; }
-  if (frames[frames.length - 1].tick !== flight.tick) capture(true);
-  if (flight.phase !== 'flying' && flight.phase !== 'pad') {
-    // A short tail so the result can be seen before the end of the tape.
-    for (let i = 0; i < 45; i++) { for (let k = 0; k < stride; k++) flight.step(undefined, dt); sinceLast += stride; capture(true); }
+  let tail = 0;       // the short tail after the end, frames captured so far
+  let finished = false;
+  let timeline = null;
+
+  function finish() {
+    if (frames[frames.length - 1].tick !== flight.tick) capture(true);
+    timeline = {
+      flight,
+      frames,
+      dt: dt * stride,
+      stride,
+      get length() { return frames.length; },
+      get duration() { return (frames.length - 1) * dt * stride; },
+      at(index) { return frames[Math.max(0, Math.min(frames.length - 1, index))]; },
+    };
+    finished = true;
   }
 
   return {
-    flight,
-    frames,
-    dt: dt * stride,
-    stride,
-    get length() { return frames.length; },
-    get duration() { return (frames.length - 1) * dt * stride; },
-    at(index) { return frames[Math.max(0, Math.min(frames.length - 1, index))]; },
+    get done() { return finished; },
+    get progress() { return finished ? 1 : Math.min(0.99, n / Math.max(1, limit)); },
+    get timeline() { return timeline; },
+    // Run up to `ticks` more ticks of the flight (and then the tail). True when the tape is complete.
+    work(ticks = 2000) {
+      if (finished) return true;
+      let budget = ticks;
+      while (budget > 0 && n < limit && running) { running = playback.step(dt); sinceLast += 1; capture(); n += 1; budget -= 1; }
+      if (budget <= 0) return false;
+      if (n < limit && running) return false;
+      if (frames[frames.length - 1].tick !== flight.tick) capture(true);
+      // A short tail so the result can be seen before the end of the tape.
+      const over = flight.phase !== 'flying' && flight.phase !== 'pad';
+      while (over && tail < 45 && budget > 0) { for (let k = 0; k < stride; k++) flight.step(undefined, dt); sinceLast += stride; capture(true); tail += 1; budget -= stride; }
+      if (over && tail < 45) return false;
+      finish();
+      return true;
+    },
   };
+}
+
+function buildTimeline(recording, opts = {}) {
+  const b = createTimelineBuilder(recording, opts);
+  while (!b.work(100000)) { /* to the end */ }
+  return b.timeline;
 }
 
 // The frame as seen `cursor` frames into the tape, interpolating between
@@ -3494,6 +3536,7 @@ function sampleTimeline(timeline, cursor) {
   return { ...a, state };
 }
 
+__exports.createTimelineBuilder = createTimelineBuilder;
 __exports.buildTimeline = buildTimeline;
 __exports.sampleTimeline = sampleTimeline;
 return __exports;
@@ -5585,7 +5628,13 @@ function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
       grow(pts[i].x + segs[k].offset.x, pts[i].y + segs[k].offset.y);
     }
   }
-  for (const o of others) if (o.body.parent === body.id) { grow(o.x, o.y, o.body.soi); grow(0, 0, o.body.orbitRadius); }
+  // The Moon's ring joins the frame once the flight reaches for it: the
+  // craft or its path beyond two and a half radii, or an encounter found.
+  // From the pad and in low orbit the map stays on the planet.
+  let farthest = Math.hypot(state.x, state.y);
+  if (prediction) { for (let i = 0; i < prediction.points.length; i += Math.max(1, Math.floor(prediction.points.length / 100))) farthest = Math.max(farthest, Math.hypot(prediction.points[i].x, prediction.points[i].y)); }
+  const reaching = farthest > 2.5 * body.radius || (prediction && prediction.encounter);
+  for (const o of others) if (o.body.parent === body.id && reaching) { grow(o.x, o.y, o.body.soi); grow(0, 0, o.body.orbitRadius); }
   cam.fit(box, frameDt, snap, state);
 
   ctx.save();
@@ -8173,7 +8222,7 @@ const { createFlight, interpolated } = __m("src/core/flight.js");
 const { predictCoast } = __m("src/core/predict.js");
 const { computeAlerts } = __m("src/core/alerts.js");
 const { createCapcom } = __m("src/core/capcom.js");
-const { buildTimeline, sampleTimeline } = __m("src/core/timeline.js");
+const { createTimelineBuilder, sampleTimeline } = __m("src/core/timeline.js");
 const { deltaV, twr, activeStage, progradeAngle, dragFactor, MAIN_HEIGHT } = __m("src/core/craft.js");
 const { SCENARIOS, SCENARIO_ORDER } = __m("src/core/scenario.js");
 const { WARP_LADDER, maxWarpIndex, railsLevel, warpLimitReason, burning } = __m("src/core/warp.js");
@@ -8441,6 +8490,7 @@ function sheetLabel() {
 
 function restart() {
   userPaused = false;
+  if (tapeBuilder) cancelTape();
   if (replay) exitReplay(false);
   else if (flight.tick > 0) lastRecording = flight.recording();
   flight = createFlight({ seed: 1, scenario: scenarioId, design: builder.design });
@@ -8472,19 +8522,41 @@ function restart() {
 // scrubbing. Same seed, same inputs, same landing spot.
 const transport = createTransport(document.getElementById('transport'), onTransport);
 
+// The tape is built over several frames (a long flight takes a moment to
+// run through); the title block counts it up, then the replay opens.
+let tapeBuilder = null;
 function startReplay() {
   if (!replay && flight.tick > 0) lastRecording = flight.recording();
-  if (!lastRecording) return;
-  const timeline = buildTimeline(lastRecording);
-  replay = { timeline, cursor: 0, speed: 1, playing: true };
+  if (!lastRecording || tapeBuilder) return;
   loop.pause();
   input.setMode('replay');
   input.setButtonsVisible(false);
+  tapeBuilder = createTimelineBuilder(lastRecording);
+  updateTitleBlock(titleBlock, { document: 'TAPE 0%' });
+  workOnTape();
+}
+function workOnTape() {
+  if (!tapeBuilder) return;
+  const t0 = performance.now();
+  while (!tapeBuilder.done && performance.now() - t0 < 8) tapeBuilder.work(20);
+  if (!tapeBuilder.done) { updateTitleBlock(titleBlock, { document: `TAPE ${Math.round(tapeBuilder.progress * 100)}%` }); return; }
+  const timeline = tapeBuilder.timeline;
+  tapeBuilder = null;
+  replay = { timeline, cursor: 0, speed: 1, playing: true };
   transport.show();
   layout();
   camera.snap(timeline.at(0).state);
   lastMetShown = -1;
   updateTitleBlock(titleBlock, { document: 'REPLAY' });
+}
+// Esc while the tape builds: back to the flight as it was.
+function cancelTape() {
+  if (!tapeBuilder) return;
+  tapeBuilder = null;
+  input.setMode('flight');
+  input.setButtonsVisible(true);
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
+  if (!pageOpen && !userPaused) loop.resume();
 }
 
 // Leave the replay; by default back to the flight report of that flight.
@@ -8774,6 +8846,7 @@ function frame(nowMs) {
       else builder.handleAction(action);
       continue;
     }
+    if (tapeBuilder) { if (action === 'exit' || action === 'restart') cancelTape(); continue; }
     if (replay) { onTransport(action, value); continue; }
     if (pageOpen === 'start') {
       const pick = /^pick(\d)$/.exec(action);
@@ -8821,6 +8894,7 @@ function frame(nowMs) {
       default: break;
     }
   }
+  if (tapeBuilder) workOnTape();
   if (warpTo && !replay && !pageOpen) steerWarpTo();
   // Rails levels run one tick per sixtieth of real time, each tick a long
   // jump along the orbit; physics levels run more ticks per frame.
@@ -8885,6 +8959,7 @@ window.__karman = {
   get flight() { return flight; },
   get phase() { return flight.phase; },
   get replay() { return replay; },
+  get tapeBuilding() { return !!tapeBuilder; },
   get scenario() { return scenarioId; },
   get camera() { return camera; },
   get warp() { return WARPS[warp]; },

@@ -7,7 +7,7 @@ import { createFlight } from '../src/core/flight.js';
 import { createRng } from '../src/core/rng.js';
 import { encodeCommand, decodeCommand } from '../src/core/recording.js';
 import { replayToEnd } from '../src/core/playback.js';
-import { buildTimeline, sampleTimeline } from '../src/core/timeline.js';
+import { buildTimeline, createTimelineBuilder, sampleTimeline } from '../src/core/timeline.js';
 import { createFixedLoop } from '../src/core/loop.js';
 import { BODIES, MOON, EARTH, circularSpeed, gravityAt, bodyState, orbitalPeriod, densityAt } from '../src/core/body.js';
 import { createCraftState, rk4Step, ROCKET, ROCKET3, deltaV } from '../src/core/craft.js';
@@ -282,6 +282,26 @@ test('the KP-3 built from parts flies the reference mission as well (about ten s
   assert.ok(report.moon.fuel > 0, 'landed on the Moon with fuel to spare');
   assert.equal(report.home.phase, 'landed', `came home ${report.home.phase}`);
   assert.ok(report.home.heat > 0.1 && report.home.heat < 1, `peak heat ${report.home.heat.toFixed(2)}`);
+});
+
+test('the replay tape built in pieces is the tape built at once, and a size step inside a stage is noted', () => {
+  const f = createFlight({ seed: 2, scenario: 'launch' });
+  const FULL = { ...NONE, full: 1, warp: 0, chute: 0 };
+  for (let i = 0; i < 60 * 30; i++) f.step({ ...FULL, rot: i > 300 && i < 500 ? 1 : 0, stage: f.state.fuel <= 0 && f.state.stage === 0 ? 1 : 0 });
+  const rec = f.recording();
+  const whole = buildTimeline(rec);
+  const b = createTimelineBuilder(rec);
+  let rounds = 0;
+  while (!b.work(97)) rounds += 1;
+  assert.ok(rounds > 10, 'the work came in pieces');
+  assert.equal(b.timeline.length, whole.length);
+  assert.ok(Math.abs(b.timeline.at(whole.length - 1).state.x - whole.at(whole.length - 1).state.x) < 1e-9);
+  assert.equal(b.progress, 1);
+  const stepped = createDesign('STEP', ['engine-s-vac', 'tank-s-short', 'tank-m-short', 'probe-core']);
+  assert.ok(compileDesign(stepped).warnings.some((w) => w.code === 'size-step'));
+  const adapted = createDesign('ADAPTED', ['engine-m-vac', 'tank-m-short', 'adapter-s-m', 'tank-s-short', 'probe-core']);
+  assert.ok(!compileDesign(adapted).warnings.some((w) => w.code === 'size-step'), 'an adapter makes the step');
+  assert.ok(!compileDesign(KP3_DESIGN).warnings.length, 'the KP-3 narrows only across decouplers');
 });
 
 test('fixed loop steps in whole ticks and caps catch-up', () => {

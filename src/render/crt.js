@@ -115,7 +115,13 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
       grow(pts[i].x + segs[k].offset.x, pts[i].y + segs[k].offset.y);
     }
   }
-  for (const o of others) if (o.body.parent === body.id) { grow(o.x, o.y, o.body.soi); grow(0, 0, o.body.orbitRadius); }
+  // The Moon's ring joins the frame once the flight reaches for it: the
+  // craft or its path beyond two and a half radii, or an encounter found.
+  // From the pad and in low orbit the map stays on the planet.
+  let farthest = Math.hypot(state.x, state.y);
+  if (prediction) { for (let i = 0; i < prediction.points.length; i += Math.max(1, Math.floor(prediction.points.length / 100))) farthest = Math.max(farthest, Math.hypot(prediction.points[i].x, prediction.points[i].y)); }
+  const reaching = farthest > 2.5 * body.radius || (prediction && prediction.encounter);
+  for (const o of others) if (o.body.parent === body.id && reaching) { grow(o.x, o.y, o.body.soi); grow(0, 0, o.body.orbitRadius); }
   cam.fit(box, frameDt, snap, state);
 
   ctx.save();

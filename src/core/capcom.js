@@ -35,6 +35,7 @@ export const LINES = {
   alt100: 'One hundred metres.',
   alt50: 'Fifty metres.',
   alt20: 'Twenty metres.',
+  noEngine: 'No engine on this stage. Nothing to throttle.',
 };
 
 // Altitude callouts on the way down, read once each as the craft sinks past them.
@@ -73,6 +74,9 @@ export function createCapcom() {
       if (flight.phase === 'landed') { if (!(flight.stats.touchdown && flight.stats.touchdown.water)) say('landed', t); return; }
       if (flight.phase === 'crashed') { say('crashed', t, true); return; }
       if (flight.phase === 'escaped') { say('escaped', t, true); return; }
+      // The throttle opened on a stage with nothing to burn (a tank under a probe core).
+      const live = flight.cfg.stages[flight.state.stage];
+      if (flight.state.throttle > 0 && live && !(live.maxThrust > 0)) say(`noEngine${flight.state.stage}`, t, false, LINES.noEngine);
       if (alerts.fuel === 'critical') say('fuelOut', t, true);
       else if (alerts.fuel === 'caution' && flight.state.fuel <= 0) say('stageDry', t);
       else if (alerts.fuel === 'caution') say('fuelLow', t);

@@ -322,6 +322,12 @@ export function compileDesign(design, { gravity = 9.80665 } = {}) {
         st.maxThrust += p.thrust; ispSum += p.thrust * p.isp;
         if (k > 0 && g.parts[k - 1].category !== 'decoupler') warnings.push({ code: 'buried-engine', stage: gi, text: `${label}: ${p.name} FIRES INTO THE ${g.parts[k - 1].name} UNDER IT` });
       }
+      // A size step inside a stage (a narrow tank on a wide one) wants an
+      // adapter; across a decoupler the next stage may be any size.
+      if (k > 0) {
+        const below = g.parts[k - 1];
+        if (below.category !== 'decoupler' && below.nodes.top && p.nodes.bottom && below.nodes.top !== p.nodes.bottom) warnings.push({ code: 'size-step', stage: gi, text: `${label}: ${p.name} ON A ${below.name}: SIZE STEP, FIT AN ADAPTER` });
+      }
       if (p.category === 'command') { st.capsule = st.capsule || p.crew > 0; st.crew += p.crew; }
       if (p.shield) st.shield = true;
       if (p.chute) st.chute = true;

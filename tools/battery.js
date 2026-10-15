@@ -58,16 +58,18 @@ async function main() {
     await page.waitForTimeout(600);
     // Frame monitor: counts frames and long gaps between them.
     await page.evaluate(() => {
-      window.__frames = { n: 0, slow: 0, worst: 0, last: performance.now() };
-      const tick = (t) => { const d = t - window.__frames.last; window.__frames.last = t; window.__frames.n += 1; if (d > 100) window.__frames.slow += 1; if (d > window.__frames.worst) window.__frames.worst = d; requestAnimationFrame(tick); };
+      window.__frames = { n: 0, slow: 0, worst: 0, last: performance.now(), log: [], keys: [] };
+      const tick = (t) => { const d = t - window.__frames.last; window.__frames.last = t; window.__frames.n += 1; if (d > 100) { window.__frames.slow += 1; window.__frames.log.push({ at: t, gap: Math.round(d), key: window.__frames.keys[window.__frames.keys.length - 1] || null }); } if (d > window.__frames.worst) window.__frames.worst = d; requestAnimationFrame(tick); };
       requestAnimationFrame(tick);
     });
     const k = () => page.evaluate(() => { const K = window.__karman; return { doc: K.doc, phase: K.phase, scenario: K.scenario, replay: !!K.replay, paused: K.paused, warp: K.warp, builder: K.builder.isOpen, page: !!document.querySelector('#page.is-open'), stage: K.flight.state.stage, alt: K.flight.altitude() }; });
     const shot = async (name) => { if (shotDir) { fs.mkdirSync(shotDir, { recursive: true }); await page.screenshot({ path: path.join(shotDir, `${label}-${name}.png`) }); } };
+    const noteKey = (key) => page.evaluate((k2) => { const K = window.__karman; window.__frames.keys.push(`${k2} (${K.doc}${K.replay ? ' replay' : ''}${K.tapeBuilding ? ' tape' : ''})`); }, key);
     const mash = async (ms) => {
       const end = Date.now() + ms;
       while (Date.now() < end) {
         const key = pick(FLIGHT_KEYS);
+        await noteKey(key);
         if (key === 'w' || key === 's' || key === 'a' || key === 'd') { await page.keyboard.down(key); await page.waitForTimeout(60 + rnd() * 240); await page.keyboard.up(key); }
         else { await page.keyboard.press(key); await page.waitForTimeout(40 + rnd() * 120); }
         const s = await k();
@@ -90,7 +92,7 @@ async function main() {
       if (s.replay) { await page.keyboard.press('Escape'); }
       // Replay the flight, scrub, exit.
       await page.keyboard.press('Escape'); await page.waitForTimeout(100);
-      await page.keyboard.press('v'); await page.waitForTimeout(300);
+      await noteKey('v'); await page.keyboard.press('v'); await page.waitForTimeout(300);
       s = await k();
       if (!s.replay && !s.page) notes.push(`${label}: start ${i}: V did not open a replay (${s.phase})`);
       if (s.replay) {
@@ -182,6 +184,7 @@ async function main() {
     const fr = await page.evaluate(() => window.__frames);
     const ms = fr.n ? (fr.slow / fr.n * 100).toFixed(1) : '?';
     console.log(`  frames ${fr.n}, slow (>100 ms) ${fr.slow} (${ms} %), worst ${fr.worst.toFixed(0)} ms`);
+    if (args.includes('--trace')) for (const e of fr.log) console.log(`    slow frame ${e.gap} ms after ${e.key}`);
     if (fr.n > 0 && fr.slow / fr.n > 0.05) notes.push(`${label}: ${ms} % of frames over 100 ms (worst ${fr.worst.toFixed(0)} ms)`);
     await page.close();
   }

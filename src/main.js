@@ -7,7 +7,7 @@ import { createFlight, interpolated } from './core/flight.js';
 import { predictCoast } from './core/predict.js';
 import { computeAlerts } from './core/alerts.js';
 import { createCapcom } from './core/capcom.js';
-import { buildTimeline, sampleTimeline } from './core/timeline.js';
+import { createTimelineBuilder, sampleTimeline } from './core/timeline.js';
 import { deltaV, twr, activeStage, progradeAngle, dragFactor, MAIN_HEIGHT } from './core/craft.js';
 import { SCENARIOS, SCENARIO_ORDER } from './core/scenario.js';
 import { WARP_LADDER, maxWarpIndex, railsLevel, warpLimitReason, burning } from './core/warp.js';
@@ -275,6 +275,7 @@ function sheetLabel() {
 
 function restart() {
   userPaused = false;
+  if (tapeBuilder) cancelTape();
   if (replay) exitReplay(false);
   else if (flight.tick > 0) lastRecording = flight.recording();
   flight = createFlight({ seed: 1, scenario: scenarioId, design: builder.design });
@@ -306,19 +307,41 @@ function restart() {
 // scrubbing. Same seed, same inputs, same landing spot.
 const transport = createTransport(document.getElementById('transport'), onTransport);
 
+// The tape is built over several frames (a long flight takes a moment to
+// run through); the title block counts it up, then the replay opens.
+let tapeBuilder = null;
 function startReplay() {
   if (!replay && flight.tick > 0) lastRecording = flight.recording();
-  if (!lastRecording) return;
-  const timeline = buildTimeline(lastRecording);
-  replay = { timeline, cursor: 0, speed: 1, playing: true };
+  if (!lastRecording || tapeBuilder) return;
   loop.pause();
   input.setMode('replay');
   input.setButtonsVisible(false);
+  tapeBuilder = createTimelineBuilder(lastRecording);
+  updateTitleBlock(titleBlock, { document: 'TAPE 0%' });
+  workOnTape();
+}
+function workOnTape() {
+  if (!tapeBuilder) return;
+  const t0 = performance.now();
+  while (!tapeBuilder.done && performance.now() - t0 < 8) tapeBuilder.work(20);
+  if (!tapeBuilder.done) { updateTitleBlock(titleBlock, { document: `TAPE ${Math.round(tapeBuilder.progress * 100)}%` }); return; }
+  const timeline = tapeBuilder.timeline;
+  tapeBuilder = null;
+  replay = { timeline, cursor: 0, speed: 1, playing: true };
   transport.show();
   layout();
   camera.snap(timeline.at(0).state);
   lastMetShown = -1;
   updateTitleBlock(titleBlock, { document: 'REPLAY' });
+}
+// Esc while the tape builds: back to the flight as it was.
+function cancelTape() {
+  if (!tapeBuilder) return;
+  tapeBuilder = null;
+  input.setMode('flight');
+  input.setButtonsVisible(true);
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT' });
+  if (!pageOpen && !userPaused) loop.resume();
 }
 
 // Leave the replay; by default back to the flight report of that flight.
@@ -608,6 +631,7 @@ function frame(nowMs) {
       else builder.handleAction(action);
       continue;
     }
+    if (tapeBuilder) { if (action === 'exit' || action === 'restart') cancelTape(); continue; }
     if (replay) { onTransport(action, value); continue; }
     if (pageOpen === 'start') {
       const pick = /^pick(\d)$/.exec(action);
@@ -655,6 +679,7 @@ function frame(nowMs) {
       default: break;
     }
   }
+  if (tapeBuilder) workOnTape();
   if (warpTo && !replay && !pageOpen) steerWarpTo();
   // Rails levels run one tick per sixtieth of real time, each tick a long
   // jump along the orbit; physics levels run more ticks per frame.
@@ -719,6 +744,7 @@ window.__karman = {
   get flight() { return flight; },
   get phase() { return flight.phase; },
   get replay() { return replay; },
+  get tapeBuilding() { return !!tapeBuilder; },
   get scenario() { return scenarioId; },
   get camera() { return camera; },
   get warp() { return WARPS[warp]; },
