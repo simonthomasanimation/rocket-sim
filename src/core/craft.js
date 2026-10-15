@@ -150,7 +150,8 @@ export function runEngine(s, cmd, dt, cfg) {
   if (s.throttle > 1) s.throttle = 1;
   const st = activeStage(s, cfg);
   let thrust = 0;
-  if (s.throttle > 0 && s.fuel > 0) {
+  // A stage with fuel but no engine (a tank under a probe core) burns nothing.
+  if (s.throttle > 0 && s.fuel > 0 && st.maxThrust > 0 && st.isp > 0) {
     thrust = st.maxThrust * s.throttle;
     const flow = thrust / exhaustSpeed(st);     // kg/s
     const burned = Math.min(s.fuel, flow * dt);

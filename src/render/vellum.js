@@ -81,7 +81,7 @@ export function layoutStack(design, area, { scale = null } = {}) {
   }
   const room = Math.max(1, area.h - 10 * G);
   // Fit the stack and a part's worth of growth, between 0.6 and 3 px per unit.
-  const k = scale || Math.max(0.6, Math.min(3, room / Math.max(total + 40, 120), (area.w - 12 * G) / (2 * widest + 20)));
+  const k = scale || Math.max(0.6, Math.min(4, room / Math.max(total + 40, 120), (area.w - 12 * G) / (2 * widest + 20)));
   const axisX = Math.round(area.x + area.w / 2);
   const baseY = Math.round(area.y + area.h - 5 * G);
   const out = { k, axisX, baseY, totalUnits: total, parts: [], radials: [] };
@@ -247,7 +247,12 @@ export function drawStack(ctx, layout, design, opts = {}) {
       ctx.setLineDash([]);
     }
     if (opts.figures && !opts.hide) {
-      const left = axisX - width - G;
+      // Notes down the left of the stack; on a narrow sheet with no room
+      // there, down the right of the dimension line instead.
+      const leftRoom = axisX - width - G - (opts.areaX || 0);
+      const onRight = leftRoom < 150;
+      const left = onRight ? axisX + width + 3 * G : axisX - width - G;
+      const align = onRight ? 'left' : 'right';
       let lastY = Infinity;
       opts.stages.forEach((st, i) => {
         const f = opts.figures[i];
@@ -260,8 +265,8 @@ export function drawStack(ctx, layout, design, opts = {}) {
         lastY = y;
         const line1 = `${i + 1}  ${st.name}`;
         const line2 = f.deltaV > 0 ? `${Math.round(f.deltaV)} M/S · TWR ${f.twr.toFixed(2)}` : st.capsule ? 'RIDES HOME' : 'NO ENGINE';
-        text(ctx, line1, left, y - 7, { size: 10, align: 'right', colour: st.kind === 'boosters' ? VELLUM.pencil : VELLUM.ink });
-        text(ctx, line2, left, y + 7, { size: 10, align: 'right', colour: f.thrust > 0 && f.twr < 1 && i === 0 ? VELLUM.pencil : VELLUM.inkPale });
+        text(ctx, line1, left, y - 7, { size: 10, align, colour: st.kind === 'boosters' ? VELLUM.pencil : VELLUM.ink });
+        text(ctx, line2, left, y + 7, { size: 10, align, colour: f.thrust > 0 && f.twr < 1 && i === 0 ? VELLUM.pencil : VELLUM.inkPale });
       });
     }
   }

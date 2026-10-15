@@ -538,7 +538,7 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
       else gapAt = insertionIndexAt(layout, drag.y);
     }
     const figures = drag ? null : designStats(design, { gravity: EARTH.gravity }).stages;
-    drawStack(ctx, layout, drag && drag.from === 'stack' ? reducedDesign() : design, { selected: drag ? null : selected, hover: drag ? null : hover, gapAt, hostHint, stages: cfg.stages, figures });
+    drawStack(ctx, layout, drag && drag.from === 'stack' ? reducedDesign() : design, { selected: drag ? null : selected, hover: drag ? null : hover, gapAt, hostHint, stages: cfg.stages, figures, areaX: area.x });
     if (drag && (!inArea(drag.x, drag.y) || true)) { /* the HTML ghost follows the pointer */ }
     if (noteText && performance.now() >= noteUntil) { noteText = ''; showNote(); }
   }

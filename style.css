@@ -178,6 +178,9 @@ body.doc-crt .stamp-button.is-down { background: #5CFF8A; color: #050806; }
 /* Narrow sheets (phones): the title block moves to the top right corner so
    the instrument strip and the on-screen controls keep the bottom. */
 @media (max-width: 720px) {
+  /* A plan's choices stack: the button over its text, the text full width. */
+  .manual-choice { flex-direction: column; gap: 4px; }
+  .manual-choice .manual-button { align-self: flex-start; }
   .title-block {
     bottom: auto;
     top: calc(var(--grid) * 2 + env(safe-area-inset-top, 0px));

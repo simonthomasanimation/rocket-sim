@@ -208,6 +208,8 @@ function openBuilder() {
   if (replay) exitReplay(false);
   if (pageOpen) { pageOpen = null; unmountPage(pageRoot); }
   loop.pause();
+  warpTo = null;
+  setWarp(0); // the vellum shows no warp; the flight waits at x1
   turnTo('vellum');
   builder.open();
   input.setMode('builder');

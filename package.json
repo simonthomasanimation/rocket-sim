@@ -2,13 +2,15 @@
   "name": "karman-program",
   "version": "0.0.1",
   "private": true,
-  "description": "Kármán Program — a 2D browser rocket simulator set in the paperwork of a 1960s space program.",
+  "description": "K\u00e1rm\u00e1n Program \u2014 a 2D browser rocket simulator set in the paperwork of a 1960s space program.",
   "type": "module",
   "scripts": {
     "dev": "npx serve -l 5173 .",
     "snapshot": "node tools/snapshot.js",
     "check": "node tools/check.js",
-    "test": "node tools/test.js"
+    "test": "node tools/test.js",
+    "stress": "node tools/stress.js",
+    "battery": "node tools/battery.js"
   },
   "license": "UNLICENSED"
 }

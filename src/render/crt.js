@@ -203,12 +203,15 @@ export function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
     }
     ctx.globalAlpha = 1;
     const segOf = (i) => { let j = 0; while (j + 1 < segs.length && segs[j + 1].from <= i) j += 1; return segs[j]; };
+    const craftP = cam.toScreen(state.x, state.y);
     const tick = (wx, wy, name, t, colour = CRT.ink) => {
       const p = cam.toScreen(wx, wy);
       if (p.x < -40 || p.x > cam.width + 40 || p.y < -40 || p.y > cam.height + 40) return;
       ctx.strokeStyle = colour; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(p.x - 5, p.y - 5); ctx.lineTo(p.x + 5, p.y + 5); ctx.moveTo(p.x + 5, p.y - 5); ctx.lineTo(p.x - 5, p.y + 5); ctx.stroke();
-      text(ctx, `${name}  T-${formatTime(t)}`, p.x + 9, p.y - 7, { size: 10, colour });
+      // A tick on top of the craft (an impact seen from far out) prints below it, clear of the craft's name.
+      const near = Math.hypot(p.x - craftP.x, p.y - craftP.y) < 24;
+      text(ctx, `${name}  T-${formatTime(t)}`, p.x + 9, near ? p.y + 16 : p.y - 7, { size: 10, colour });
     };
     const el = prediction.elements;
     const ap = prediction.closed || (prediction.impact && el.timeToAp !== null && el.timeToAp < prediction.impact.t) || (!prediction.impact && !prediction.closed && el.timeToAp !== null);

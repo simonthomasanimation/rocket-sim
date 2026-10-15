@@ -190,6 +190,9 @@ body.doc-crt .stamp-button.is-down { background: #5CFF8A; color: #050806; }
 /* Narrow sheets (phones): the title block moves to the top right corner so
    the instrument strip and the on-screen controls keep the bottom. */
 @media (max-width: 720px) {
+  /* A plan's choices stack: the button over its text, the text full width. */
+  .manual-choice { flex-direction: column; gap: 4px; }
+  .manual-choice .manual-button { align-self: flex-start; }
   .title-block {
     bottom: auto;
     top: calc(var(--grid) * 2 + env(safe-area-inset-top, 0px));
@@ -1085,7 +1088,8 @@ function runEngine(s, cmd, dt, cfg) {
   if (s.throttle > 1) s.throttle = 1;
   const st = activeStage(s, cfg);
   let thrust = 0;
-  if (s.throttle > 0 && s.fuel > 0) {
+  // A stage with fuel but no engine (a tank under a probe core) burns nothing.
+  if (s.throttle > 0 && s.fuel > 0 && st.maxThrust > 0 && st.isp > 0) {
     thrust = st.maxThrust * s.throttle;
     const flow = thrust / exhaustSpeed(st);     // kg/s
     const burned = Math.min(s.fuel, flow * dt);
@@ -5669,12 +5673,15 @@ function drawCrt(ctx, cam, scene, hud, frameDt, snap = false) {
     }
     ctx.globalAlpha = 1;
     const segOf = (i) => { let j = 0; while (j + 1 < segs.length && segs[j + 1].from <= i) j += 1; return segs[j]; };
+    const craftP = cam.toScreen(state.x, state.y);
     const tick = (wx, wy, name, t, colour = CRT.ink) => {
       const p = cam.toScreen(wx, wy);
       if (p.x < -40 || p.x > cam.width + 40 || p.y < -40 || p.y > cam.height + 40) return;
       ctx.strokeStyle = colour; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(p.x - 5, p.y - 5); ctx.lineTo(p.x + 5, p.y + 5); ctx.moveTo(p.x + 5, p.y - 5); ctx.lineTo(p.x - 5, p.y + 5); ctx.stroke();
-      text(ctx, `${name}  T-${formatTime(t)}`, p.x + 9, p.y - 7, { size: 10, colour });
+      // A tick on top of the craft (an impact seen from far out) prints below it, clear of the craft's name.
+      const near = Math.hypot(p.x - craftP.x, p.y - craftP.y) < 24;
+      text(ctx, `${name}  T-${formatTime(t)}`, p.x + 9, near ? p.y + 16 : p.y - 7, { size: 10, colour });
     };
     const el = prediction.elements;
     const ap = prediction.closed || (prediction.impact && el.timeToAp !== null && el.timeToAp < prediction.impact.t) || (!prediction.impact && !prediction.closed && el.timeToAp !== null);
@@ -5820,7 +5827,7 @@ function layoutStack(design, area, { scale = null } = {}) {
   }
   const room = Math.max(1, area.h - 10 * G);
   // Fit the stack and a part's worth of growth, between 0.6 and 3 px per unit.
-  const k = scale || Math.max(0.6, Math.min(3, room / Math.max(total + 40, 120), (area.w - 12 * G) / (2 * widest + 20)));
+  const k = scale || Math.max(0.6, Math.min(4, room / Math.max(total + 40, 120), (area.w - 12 * G) / (2 * widest + 20)));
   const axisX = Math.round(area.x + area.w / 2);
   const baseY = Math.round(area.y + area.h - 5 * G);
   const out = { k, axisX, baseY, totalUnits: total, parts: [], radials: [] };
@@ -5986,7 +5993,12 @@ function drawStack(ctx, layout, design, opts = {}) {
       ctx.setLineDash([]);
     }
     if (opts.figures && !opts.hide) {
-      const left = axisX - width - G;
+      // Notes down the left of the stack; on a narrow sheet with no room
+      // there, down the right of the dimension line instead.
+      const leftRoom = axisX - width - G - (opts.areaX || 0);
+      const onRight = leftRoom < 150;
+      const left = onRight ? axisX + width + 3 * G : axisX - width - G;
+      const align = onRight ? 'left' : 'right';
       let lastY = Infinity;
       opts.stages.forEach((st, i) => {
         const f = opts.figures[i];
@@ -5999,8 +6011,8 @@ function drawStack(ctx, layout, design, opts = {}) {
         lastY = y;
         const line1 = `${i + 1}  ${st.name}`;
         const line2 = f.deltaV > 0 ? `${Math.round(f.deltaV)} M/S · TWR ${f.twr.toFixed(2)}` : st.capsule ? 'RIDES HOME' : 'NO ENGINE';
-        text(ctx, line1, left, y - 7, { size: 10, align: 'right', colour: st.kind === 'boosters' ? VELLUM.pencil : VELLUM.ink });
-        text(ctx, line2, left, y + 7, { size: 10, align: 'right', colour: f.thrust > 0 && f.twr < 1 && i === 0 ? VELLUM.pencil : VELLUM.inkPale });
+        text(ctx, line1, left, y - 7, { size: 10, align, colour: st.kind === 'boosters' ? VELLUM.pencil : VELLUM.ink });
+        text(ctx, line2, left, y + 7, { size: 10, align, colour: f.thrust > 0 && f.twr < 1 && i === 0 ? VELLUM.pencil : VELLUM.inkPale });
       });
     }
   }
@@ -6696,7 +6708,7 @@ function createBuilder({ canvas, root, onAction, store = null }) {
       else gapAt = insertionIndexAt(layout, drag.y);
     }
     const figures = drag ? null : designStats(design, { gravity: EARTH.gravity }).stages;
-    drawStack(ctx, layout, drag && drag.from === 'stack' ? reducedDesign() : design, { selected: drag ? null : selected, hover: drag ? null : hover, gapAt, hostHint, stages: cfg.stages, figures });
+    drawStack(ctx, layout, drag && drag.from === 'stack' ? reducedDesign() : design, { selected: drag ? null : selected, hover: drag ? null : hover, gapAt, hostHint, stages: cfg.stages, figures, areaX: area.x });
     if (drag && (!inArea(drag.x, drag.y) || true)) { /* the HTML ghost follows the pointer */ }
     if (noteText && performance.now() >= noteUntil) { noteText = ''; showNote(); }
   }
@@ -8362,6 +8374,8 @@ function openBuilder() {
   if (replay) exitReplay(false);
   if (pageOpen) { pageOpen = null; unmountPage(pageRoot); }
   loop.pause();
+  warpTo = null;
+  setWarp(0); // the vellum shows no warp; the flight waits at x1
   turnTo('vellum');
   builder.open();
   input.setMode('builder');
