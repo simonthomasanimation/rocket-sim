@@ -65,20 +65,22 @@ function parse(text) {
 // as an image to draw with drawImage, or null while it loads. `showNodes`
 // keeps the dashed node circles (the drafting table); the icon and the
 // flight drawing drop them.
-export function partImage(id, color, pxPerUnit, showNodes = false) {
+// `dashed` is the broken drawing: a crashed craft or a torn piece, every
+// stroke dashed, as the canvas-drawn crafts are.
+export function partImage(id, color, pxPerUnit, showNodes = false, dashed = false) {
   const text = texts.get(id);
   if (!text) { loadPartText(id).catch(() => {}); return null; }
   // Sizes are quantised to quarter octaves (the stroke scales by under a
   // tenth between steps) so a continuous zoom does not rasterise a new
   // image every frame, and capped so a tank never becomes a huge bitmap.
   const k = Math.pow(2, Math.round(Math.log2(Math.max(0.2, Math.min(8, pxPerUnit))) * 4) / 4);
-  const key = `${id}|${color}|${k}|${showNodes ? 1 : 0}`;
+  const key = `${id}|${color}|${k}|${showNodes ? 1 : 0}|${dashed ? 1 : 0}`;
   let img = images.get(key);
   if (img) return img.complete && img.naturalWidth > 0 ? img : null;
   const { viewBox } = parsed.get(id);
   const w = Math.max(1, Math.round(viewBox[2] * k));
   const h = Math.max(1, Math.round(viewBox[3] * k));
-  let svg = text.replace('<svg ', `<svg width="${w}" height="${h}" `).split('currentColor').join(color);
+  let svg = text.replace('<svg ', `<svg width="${w}" height="${h}" ${dashed ? 'stroke-dasharray="3 3" ' : ''}`).split('currentColor').join(color);
   if (!showNodes) svg = svg.replace(/<g id="nodes"[\s\S]*?<\/g>/, '');
   img = new Image();
   img.decoding = 'async';
@@ -106,8 +108,8 @@ export function partIconSrc(id, color, box) {
 // Draw a part with its top node at (x, y) on the canvas at `pxPerUnit`,
 // mirrored when `flip` (the left-hand one of a radial pair). Returns true
 // when something was drawn.
-export function drawPart(ctx, id, color, x, y, pxPerUnit, { showNodes = false, flip = false } = {}) {
-  const img = partImage(id, color, pxPerUnit, showNodes);
+export function drawPart(ctx, id, color, x, y, pxPerUnit, { showNodes = false, flip = false, dashed = false } = {}) {
+  const img = partImage(id, color, pxPerUnit, showNodes, dashed);
   const geo = parsed.get(id);
   if (!img || !geo) return false;
   const [vx, vy, vw, vh] = geo.viewBox;

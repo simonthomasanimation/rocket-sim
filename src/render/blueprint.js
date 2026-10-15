@@ -1165,7 +1165,7 @@ function drawCraft(ctx, cam, s, cfg, phase = 'flying') {
   ctx.lineWidth = STROKE.structure;
   if (phase === 'crashed') ctx.setLineDash([3, 3]); // a broken drawing for a broken craft
   if (cfg.drawing === 'lander') drawLander(ctx, k, s, cfg);
-  else if (cfg.drawing === 'parts') drawPartsStack(ctx, k, s, cfg, s.stage, 0, BLUEPRINT.ink);
+  else if (cfg.drawing === 'parts') drawPartsStack(ctx, k, s, cfg, s.stage, 0, BLUEPRINT.ink, false, phase === 'crashed');
   else drawRocketStack(ctx, k, s, cfg, s.stage, 0, BLUEPRINT.ink, STROKE.structure);
   ctx.setLineDash([]);
   if (phase === 'flying' && s.heat > 0.08) drawHullHeat(ctx, k, s, cfg);
@@ -1354,7 +1354,7 @@ function drawDebris(ctx, cam, d, cfg, inset = false) {
   ctx.strokeStyle = BLUEPRINT.inkPale;
   ctx.lineWidth = STROKE.annotation;
   if (d.broken) ctx.setLineDash([3, 3]); // torn pieces
-  if (cfg.drawing === 'parts') drawPartsStack(ctx, cam.scale, { stage: d.stage, fuel: 0 }, cfg, d.stage, d.stage, BLUEPRINT.inkPale, true);
+  if (cfg.drawing === 'parts') drawPartsStack(ctx, cam.scale, { stage: d.stage, fuel: 0 }, cfg, d.stage, d.stage, BLUEPRINT.inkPale, true, !!d.broken);
   else drawRocketStack(ctx, cam.scale, { stage: d.stage, fuel: 0 }, cfg, d.stage, d.stage, BLUEPRINT.inkPale, STROKE.annotation, true);
   ctx.setLineDash([]);
   ctx.restore();
@@ -1504,7 +1504,7 @@ function stageBase(cfg, geo, i) {
   if (st.parts.length) return Math.min(...st.parts.map((idx) => geo.parts[idx].bottom));
   return i + 1 < cfg.stages.length ? stageBase(cfg, geo, i + 1) : 0;
 }
-function drawPartsStack(ctx, k, s, cfg, from, stop, ink, alone = false) {
+function drawPartsStack(ctx, k, s, cfg, from, stop, ink, alone = false, dashed = false) {
   if (!cfg.design) return;
   const geo = geometryOf(cfg);
   const top = alone ? stop : cfg.stages.length - 1;
@@ -1514,13 +1514,13 @@ function drawPartsStack(ctx, k, s, cfg, from, stop, ink, alone = false) {
     const st = cfg.stages[i];
     for (const idx of st.parts) {
       const g = geo.parts[idx];
-      drawPart(ctx, g.id, ink, 0, -(g.top - base) * k, u);
+      drawPart(ctx, g.id, ink, 0, -(g.top - base) * k, u, { dashed });
     }
     for (const r of st.radials) {
       const g = geo.radials.find((q) => q.index === r.on && q.id === r.id);
       if (!g) continue;
-      drawPart(ctx, g.id, ink, g.offset * k, -(g.top - base) * k, u);
-      drawPart(ctx, g.id, ink, -g.offset * k, -(g.top - base) * k, u, { flip: true });
+      drawPart(ctx, g.id, ink, g.offset * k, -(g.top - base) * k, u, { dashed });
+      drawPart(ctx, g.id, ink, -g.offset * k, -(g.top - base) * k, u, { flip: true, dashed });
     }
   }
   if (!alone && k >= 4) drawPartsFuel(ctx, k, s, cfg, geo, base);
