@@ -91,6 +91,7 @@ async function openAndWatch(browser, url, label) {
     if (!b.saved.CHECK || b.saved.CHECK.stack.length !== 6) return 'the design was not saved';
     const stored = k.store.read('designs');
     if (!stored || !stored.CHECK) return 'the store does not hold the saved design';
+    b.setView('designs');
     if (!document.querySelector('.vellum-designs b')) return 'the saved list is empty';
     const presets = document.querySelectorAll('.vellum-designs')[1];
     if (!presets || presets.querySelectorAll('li').length !== 6) return 'six presets expected in the list';
@@ -109,6 +110,7 @@ async function openAndWatch(browser, url, label) {
     // its boosters, and its recording carries the rocket.
     k.openBuilder();
     await new Promise((r) => setTimeout(r, 200));
+    b.setView('designs');
     const kp4 = Array.from(document.querySelectorAll('.vellum-designs li')).find((li) => li.textContent.includes('KP-4'));
     if (!kp4) return 'no KP-4 preset in the list';
     kp4.querySelector('button').click();

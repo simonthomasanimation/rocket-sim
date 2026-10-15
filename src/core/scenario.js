@@ -140,4 +140,5 @@ SCENARIOS.designMoon = {
   start: (body, terrain) => ({ x: 0, y: body.radius + terrain.height(0), vx: 0, vy: 0, angle: 0 }),
 };
 
-export const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'moonReturn', 'reentry', 'designEarth', 'designMoon'];
+// The flight plan's numbered starts; the design starts are reached from the builder's LAUNCH buttons.
+export const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'moonReturn', 'reentry'];

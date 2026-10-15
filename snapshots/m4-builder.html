@@ -1448,7 +1448,8 @@ SCENARIOS.designMoon = {
   start: (body, terrain) => ({ x: 0, y: body.radius + terrain.height(0), vx: 0, vy: 0, angle: 0 }),
 };
 
-const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'moonReturn', 'reentry', 'designEarth', 'designMoon'];
+// The flight plan's numbered starts; the design starts are reached from the builder's LAUNCH buttons.
+const SCENARIO_ORDER = ['descent', 'launch', 'orbit', 'earthLaunch', 'earthOrbit', 'moonReturn', 'reentry'];
 
 __exports.LOW_EARTH_ORBIT_ALTITUDE = LOW_EARTH_ORBIT_ALTITUDE;
 __exports.LOW_ORBIT_ALTITUDE = LOW_ORBIT_ALTITUDE;
@@ -6170,6 +6171,7 @@ function createBuilder({ canvas, root, onAction, store = null }) {
   let loadedPreset = false;
   let saved = {};
   if (store) { const s = store.read(SAVED_KEY); if (s && typeof s === 'object') saved = s; }
+  let view = 'sheet'; // 'sheet' (figures and staging) | 'designs' (save, load, presets, files)
   let selected = null;   // { kind: 'part', index } | { kind: 'radial', index, id }
   let hover = null;
   let drag = null;       // { id, from: 'catalog' | 'stack', kind, index, x, y, moved, radial }
@@ -6414,16 +6416,32 @@ function createBuilder({ canvas, root, onAction, store = null }) {
     panel.append(head);
     panel.append(el('h1', 'vellum-title', design.name));
 
+    // The name is always in reach, under the title; SAVE keeps the sheet under it.
+    const nameRow = el('div', 'vellum-namerow');
+    const nameField = el('input', 'vellum-name');
+    nameField.type = 'text'; nameField.maxLength = 32; nameField.value = design.name; nameField.setAttribute('aria-label', 'Design name'); nameField.spellcheck = false;
+    nameField.addEventListener('change', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); changed(); });
+    nameField.addEventListener('keydown', (e) => { if (e.key === 'Enter') { nameField.blur(); saveCurrent(); } });
+    nameRow.append(nameField);
+    nameRow.append(button('SAVE', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); saveCurrent(); }));
+    panel.append(nameRow);
+
     const bar = el('div', 'vellum-buttons');
-    bar.append(button('LAUNCH: EARTH', () => launch('designEarth')));
-    bar.append(button('LAUNCH: MOON', () => launch('designMoon')));
+    bar.append(button(view === 'designs' ? 'BACK TO SHEET' : 'LOAD', () => { view = view === 'designs' ? 'sheet' : 'designs'; refreshPanel(); }));
+    if (view !== 'designs') bar.append(button('PRESETS', () => { view = 'designs'; refreshPanel(); const h = panel.querySelector('[data-role="presets"]'); if (h) h.scrollIntoView({ block: 'start' }); }));
     bar.append(button('NEW', () => { design = createDesign('UNTITLED'); selected = null; changed(); }));
-    bar.append(button('FLIGHT PLAN', () => onAction('newStart'), 'N'));
     panel.append(bar);
+    const bar2 = el('div', 'vellum-buttons');
+    bar2.append(button('LAUNCH: EARTH', () => launch('designEarth')));
+    bar2.append(button('LAUNCH: MOON', () => launch('designMoon')));
+    bar2.append(button('FLIGHT PLAN', () => onAction('newStart'), 'N'));
+    panel.append(bar2);
 
     const note = el('p', 'vellum-note');
     note.dataset.role = 'note';
     panel.append(note);
+
+    if (view === 'designs') { designsView(); showNote(); return; }
 
 
     // Figures: the slide-rule panel. TWR against Earth's pad and the Moon's.
@@ -6509,16 +6527,12 @@ function createBuilder({ canvas, root, onAction, store = null }) {
         panel.append(b2);
       }
     }
-    // Designs: name and save, the saved list, the presets, export and import.
-    panel.append(el('h2', 'vellum-group-title', 'DESIGNS'));
-    const nameRow = el('div', 'vellum-namerow');
-    const nameField = el('input', 'vellum-name');
-    nameField.type = 'text'; nameField.maxLength = 32; nameField.value = design.name; nameField.setAttribute('aria-label', 'Design name'); nameField.spellcheck = false;
-    nameField.addEventListener('change', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); changed(); });
-    nameField.addEventListener('keydown', (e) => { if (e.key === 'Enter') { nameField.blur(); saveCurrent(); } });
-    nameRow.append(nameField);
-    nameRow.append(button('SAVE', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); saveCurrent(); }));
-    panel.append(nameRow);
+    panel.append(el('p', 'vellum-caption', 'Drag parts from the catalog onto the axis; a tap puts one on top. Boosters, fins and legs hang on a tank. Drag a part off the sheet to remove it. Decouplers divide the stages. LAUNCH (or Enter) takes the design to Pad 1 as it stands.'));
+    showNote();
+  }
+  // The designs view: saved designs, the presets, export and import.
+  function designsView() {
+    panel.append(el('h2', 'vellum-group-title', 'SAVED DESIGNS'));
     const names = Object.keys(saved).sort();
     if (names.length) {
       const list = el('ul', 'vellum-designs');
@@ -6528,14 +6542,16 @@ function createBuilder({ canvas, root, onAction, store = null }) {
         li.append(el('b', null, n));
         li.append(el('i', null, `${(st.mass / 1000).toFixed(1)} T · ${st.stages.length} STG · ${Math.round(st.deltaV)} M/S`));
         const ctl = el('span', 'vellum-designs-ctl');
-        ctl.append(button('LOAD', () => { design = cloneDesign(saved[n]); selected = null; changed(); note(`${n} ON THE SHEET`); }));
+        ctl.append(button('LOAD', () => { design = cloneDesign(saved[n]); selected = null; view = 'sheet'; changed(); note(`${n} ON THE SHEET`); }));
         ctl.append(button('DELETE', () => { delete saved[n]; persistSaved(); changed(); note(`${n} STRUCK OUT`); }));
         li.append(ctl);
         list.append(li);
       }
       panel.append(list);
     } else panel.append(el('p', 'vellum-caption', 'No saved designs yet. Name the sheet and press SAVE.'));
-    panel.append(el('h2', 'vellum-group-title', 'PRESETS'));
+    const ph = el('h2', 'vellum-group-title', 'PRESETS');
+    ph.dataset.role = 'presets';
+    panel.append(ph);
     const presets = el('ul', 'vellum-designs');
     for (const d of PRESETS) {
       const li = el('li');
@@ -6543,7 +6559,7 @@ function createBuilder({ canvas, root, onAction, store = null }) {
       li.append(el('b', null, d.name));
       li.append(el('i', null, `${(st.mass / 1000).toFixed(1)} T · ${st.stages.length} STG · ${Math.round(st.deltaV)} M/S`));
       const ctl = el('span', 'vellum-designs-ctl');
-      ctl.append(button('LOAD', () => { design = cloneDesign(d); selected = null; changed(); }));
+      ctl.append(button('LOAD', () => { design = cloneDesign(d); selected = null; view = 'sheet'; changed(); note(`${d.name} ON THE SHEET`); }));
       li.append(ctl);
       presets.append(li);
     }
@@ -6552,8 +6568,7 @@ function createBuilder({ canvas, root, onAction, store = null }) {
     io.append(button('EXPORT JSON', () => exportJson()));
     io.append(button('IMPORT JSON', () => importJson()));
     panel.append(io);
-    panel.append(el('p', 'vellum-caption', 'Drag parts from the catalog onto the axis; a tap puts one on top. Boosters, fins and legs hang on a tank. Drag a part off the sheet to remove it. Decouplers divide the stages. LAUNCH (or Enter) takes the design to Pad 1 as it stands.'));
-    showNote();
+    panel.append(el('p', 'vellum-caption', 'Saved designs stay in this browser. EXPORT JSON writes the sheet to a file you can keep or send; IMPORT JSON reads one back.'));
   }
   function button(label, fn, key) {
     const b = el('button', 'vellum-button');
@@ -6713,6 +6728,7 @@ function createBuilder({ canvas, root, onAction, store = null }) {
     save() { saveCurrent(); },
     importText,
     get saved() { return { ...saved }; },
+    setView(v) { view = v === 'designs' ? 'designs' : 'sheet'; refreshPanel(); },
     get stats() { return designStats(design); },
   };
 }
@@ -6987,6 +7003,7 @@ const REPORT_BUTTONS = [
   { label: 'FLY AGAIN', key: 'R', action: 'restart' },
   { label: 'FLIGHT PLAN', key: 'N', action: 'newStart' },
   { label: 'WATCH REPLAY', key: 'V', action: 'replay' },
+  { label: 'BUILDER', key: 'B', action: 'build' },
 ];
 
 // Builds the flight report page from a finished flight.
@@ -7098,7 +7115,10 @@ function startPage(keys = {}) {
     section: 'SECTION 2 — ORBITAL FLIGHT',
     title: 'FLIGHT PLAN',
     page: 'PAGE 1',
-    choices: SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: `${SCENARIOS[id].brief} GOAL — ${SCENARIOS[id].goalText}` })),
+    choices: [
+      ...SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: `${SCENARIOS[id].brief} GOAL — ${SCENARIOS[id].goalText}` })),
+      { label: 'BUILDER', key: String(SCENARIO_ORDER.length + 1), action: 'build', text: 'Draw your own rocket on the vellum sheet: parts, stages, boosters, figures. Save it, load a preset, then LAUNCH it from Earth or the Moon.' },
+    ],
     lines: [
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
@@ -7109,7 +7129,6 @@ function startPage(keys = {}) {
     ],
     figure: 'FIG. 1',
     caption: 'The dashed line is where you coast if the engine stays off; AP and PE mark its highest and lowest points.',
-    buttons: [{ label: 'BUILDER', key: 'B', action: 'build' }],
   };
 }
 
@@ -7160,7 +7179,7 @@ const KEYS = {
   KeyD: 'rotRight',
 };
 // Actions by typed character (layout-aware) and by physical code.
-const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', b: 'build', e: 'warpTo', p: 'chute', c: 'centre', l: 'lock', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7', '8': 'pick8', '9': 'pick9' };
+const ACTIONS_BY_KEY = { r: 'restart', m: 'mute', v: 'replay', t: 'holdPro', g: 'holdRet', n: 'newStart', b: 'build', e: 'warpTo', p: 'chute', c: 'centre', l: 'lock', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset', '1': 'pick1', '2': 'pick2', '3': 'pick3', '4': 'pick4', '5': 'pick5', '6': 'pick6', '7': 'pick7', '8': 'pick8' };
 const ACTIONS_BY_CODE = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'pause', Escape: 'back', ArrowLeft: 'warpDown', ArrowRight: 'warpUp', NumpadAdd: 'zoomIn', NumpadSubtract: 'zoomOut', Tab: 'map' };
 const REPLAY_BY_KEY = { r: 'restart', m: 'mute', c: 'centre', l: 'lock', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut', '_': 'zoomOut', '0': 'zoomReset' };
 const REPLAY_BY_CODE = {
@@ -8301,7 +8320,13 @@ function closePage() {
 
 function handleAction(action) {
   const pick = /^pick(\d)$/.exec(action);
-  if (pick) { const id = SCENARIO_ORDER[Number(pick[1]) - 1]; if (id) { closePage(); scenarioId = id; restart(); } return; }
+  if (pick) {
+    const n = Number(pick[1]);
+    if (n === SCENARIO_ORDER.length + 1) { openBuilder(); return; } // the plan's last choice is the builder
+    const id = SCENARIO_ORDER[n - 1];
+    if (id) { closePage(); scenarioId = id; restart(); }
+    return;
+  }
   if (action === 'begin') { closePage(); return; }
   if (action === 'restart') { closePage(); restart(); return; }
   if (action === 'newStart') { showPlan(); return; }
@@ -8327,7 +8352,7 @@ function closeBuilder() {
   builder.close();
   input.setMode('flight');
   turnTo('blueprint');
-  updateTitleBlock(titleBlock, { sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}` });
+  updateTitleBlock(titleBlock, { sheet: sheetLabel() });
   showPlan();
 }
 // LAUNCH on the vellum: straight to the pad with the design as it stands.
@@ -8373,6 +8398,12 @@ function warpUp() {
 }
 function warpDown() { warpTo = null; if (!userPaused) setWarp(warp - 1); }
 
+// The title block's SHEET cell: the plan's number, or DESIGN for a flight from the vellum.
+function sheetLabel() {
+  const i = SCENARIO_ORDER.indexOf(scenarioId);
+  return i >= 0 ? `${i + 1} OF ${SCENARIO_ORDER.length}` : 'DESIGN';
+}
+
 function restart() {
   userPaused = false;
   if (replay) exitReplay(false);
@@ -8397,7 +8428,7 @@ function restart() {
   lastMetShown = -1;
   stampTitleBlock(titleBlock, null);
   setWarp(0);
-  updateTitleBlock(titleBlock, { document: 'BLUEPRINT', sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}`, soi: flight.body.name });
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT', sheet: sheetLabel(), soi: flight.body.name });
 }
 
 // --- Replay -------------------------------------------------------------------

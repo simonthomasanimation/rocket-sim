@@ -187,7 +187,13 @@ function closePage() {
 
 function handleAction(action) {
   const pick = /^pick(\d)$/.exec(action);
-  if (pick) { const id = SCENARIO_ORDER[Number(pick[1]) - 1]; if (id) { closePage(); scenarioId = id; restart(); } return; }
+  if (pick) {
+    const n = Number(pick[1]);
+    if (n === SCENARIO_ORDER.length + 1) { openBuilder(); return; } // the plan's last choice is the builder
+    const id = SCENARIO_ORDER[n - 1];
+    if (id) { closePage(); scenarioId = id; restart(); }
+    return;
+  }
   if (action === 'begin') { closePage(); return; }
   if (action === 'restart') { closePage(); restart(); return; }
   if (action === 'newStart') { showPlan(); return; }
@@ -213,7 +219,7 @@ function closeBuilder() {
   builder.close();
   input.setMode('flight');
   turnTo('blueprint');
-  updateTitleBlock(titleBlock, { sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}` });
+  updateTitleBlock(titleBlock, { sheet: sheetLabel() });
   showPlan();
 }
 // LAUNCH on the vellum: straight to the pad with the design as it stands.
@@ -259,6 +265,12 @@ function warpUp() {
 }
 function warpDown() { warpTo = null; if (!userPaused) setWarp(warp - 1); }
 
+// The title block's SHEET cell: the plan's number, or DESIGN for a flight from the vellum.
+function sheetLabel() {
+  const i = SCENARIO_ORDER.indexOf(scenarioId);
+  return i >= 0 ? `${i + 1} OF ${SCENARIO_ORDER.length}` : 'DESIGN';
+}
+
 function restart() {
   userPaused = false;
   if (replay) exitReplay(false);
@@ -283,7 +295,7 @@ function restart() {
   lastMetShown = -1;
   stampTitleBlock(titleBlock, null);
   setWarp(0);
-  updateTitleBlock(titleBlock, { document: 'BLUEPRINT', sheet: `${SCENARIO_ORDER.indexOf(scenarioId) + 1} OF ${SCENARIO_ORDER.length}`, soi: flight.body.name });
+  updateTitleBlock(titleBlock, { document: 'BLUEPRINT', sheet: sheetLabel(), soi: flight.body.name });
 }
 
 // --- Replay -------------------------------------------------------------------

@@ -189,6 +189,7 @@ const REPORT_BUTTONS = [
   { label: 'FLY AGAIN', key: 'R', action: 'restart' },
   { label: 'FLIGHT PLAN', key: 'N', action: 'newStart' },
   { label: 'WATCH REPLAY', key: 'V', action: 'replay' },
+  { label: 'BUILDER', key: 'B', action: 'build' },
 ];
 
 // Builds the flight report page from a finished flight.
@@ -300,7 +301,10 @@ export function startPage(keys = {}) {
     section: 'SECTION 2 — ORBITAL FLIGHT',
     title: 'FLIGHT PLAN',
     page: 'PAGE 1',
-    choices: SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: `${SCENARIOS[id].brief} GOAL — ${SCENARIOS[id].goalText}` })),
+    choices: [
+      ...SCENARIO_ORDER.map((id, i) => ({ label: SCENARIOS[id].name, key: String(i + 1), action: `pick${i + 1}`, text: `${SCENARIOS[id].brief} GOAL — ${SCENARIOS[id].goalText}` })),
+      { label: 'BUILDER', key: String(SCENARIO_ORDER.length + 1), action: 'build', text: 'Draw your own rocket on the vellum sheet: parts, stages, boosters, figures. Save it, load a preset, then LAUNCH it from Earth or the Moon.' },
+    ],
     lines: [
       `THROTTLE: ${k.KeyW} raises, ${k.KeyS} lowers (Shift / Ctrl work too). ${k.KeyZ} full, ${k.KeyX} cut.`,
       `TILT: ${k.KeyA} and ${k.KeyD}. The engine pushes the way the nose points. T switches on automatic steering to prograde, G to retrograde (the rose reads AUTO PRO / AUTO RET); ${k.KeyA} or ${k.KeyD} takes over again.`,
@@ -311,6 +315,5 @@ export function startPage(keys = {}) {
     ],
     figure: 'FIG. 1',
     caption: 'The dashed line is where you coast if the engine stays off; AP and PE mark its highest and lowest points.',
-    buttons: [{ label: 'BUILDER', key: 'B', action: 'build' }],
   };
 }

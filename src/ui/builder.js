@@ -34,6 +34,7 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
   let loadedPreset = false;
   let saved = {};
   if (store) { const s = store.read(SAVED_KEY); if (s && typeof s === 'object') saved = s; }
+  let view = 'sheet'; // 'sheet' (figures and staging) | 'designs' (save, load, presets, files)
   let selected = null;   // { kind: 'part', index } | { kind: 'radial', index, id }
   let hover = null;
   let drag = null;       // { id, from: 'catalog' | 'stack', kind, index, x, y, moved, radial }
@@ -278,16 +279,32 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
     panel.append(head);
     panel.append(el('h1', 'vellum-title', design.name));
 
+    // The name is always in reach, under the title; SAVE keeps the sheet under it.
+    const nameRow = el('div', 'vellum-namerow');
+    const nameField = el('input', 'vellum-name');
+    nameField.type = 'text'; nameField.maxLength = 32; nameField.value = design.name; nameField.setAttribute('aria-label', 'Design name'); nameField.spellcheck = false;
+    nameField.addEventListener('change', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); changed(); });
+    nameField.addEventListener('keydown', (e) => { if (e.key === 'Enter') { nameField.blur(); saveCurrent(); } });
+    nameRow.append(nameField);
+    nameRow.append(button('SAVE', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); saveCurrent(); }));
+    panel.append(nameRow);
+
     const bar = el('div', 'vellum-buttons');
-    bar.append(button('LAUNCH: EARTH', () => launch('designEarth')));
-    bar.append(button('LAUNCH: MOON', () => launch('designMoon')));
+    bar.append(button(view === 'designs' ? 'BACK TO SHEET' : 'LOAD', () => { view = view === 'designs' ? 'sheet' : 'designs'; refreshPanel(); }));
+    if (view !== 'designs') bar.append(button('PRESETS', () => { view = 'designs'; refreshPanel(); const h = panel.querySelector('[data-role="presets"]'); if (h) h.scrollIntoView({ block: 'start' }); }));
     bar.append(button('NEW', () => { design = createDesign('UNTITLED'); selected = null; changed(); }));
-    bar.append(button('FLIGHT PLAN', () => onAction('newStart'), 'N'));
     panel.append(bar);
+    const bar2 = el('div', 'vellum-buttons');
+    bar2.append(button('LAUNCH: EARTH', () => launch('designEarth')));
+    bar2.append(button('LAUNCH: MOON', () => launch('designMoon')));
+    bar2.append(button('FLIGHT PLAN', () => onAction('newStart'), 'N'));
+    panel.append(bar2);
 
     const note = el('p', 'vellum-note');
     note.dataset.role = 'note';
     panel.append(note);
+
+    if (view === 'designs') { designsView(); showNote(); return; }
 
 
     // Figures: the slide-rule panel. TWR against Earth's pad and the Moon's.
@@ -373,16 +390,12 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
         panel.append(b2);
       }
     }
-    // Designs: name and save, the saved list, the presets, export and import.
-    panel.append(el('h2', 'vellum-group-title', 'DESIGNS'));
-    const nameRow = el('div', 'vellum-namerow');
-    const nameField = el('input', 'vellum-name');
-    nameField.type = 'text'; nameField.maxLength = 32; nameField.value = design.name; nameField.setAttribute('aria-label', 'Design name'); nameField.spellcheck = false;
-    nameField.addEventListener('change', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); changed(); });
-    nameField.addEventListener('keydown', (e) => { if (e.key === 'Enter') { nameField.blur(); saveCurrent(); } });
-    nameRow.append(nameField);
-    nameRow.append(button('SAVE', () => { design.name = (nameField.value.trim() || 'UNTITLED').toUpperCase().slice(0, 32); saveCurrent(); }));
-    panel.append(nameRow);
+    panel.append(el('p', 'vellum-caption', 'Drag parts from the catalog onto the axis; a tap puts one on top. Boosters, fins and legs hang on a tank. Drag a part off the sheet to remove it. Decouplers divide the stages. LAUNCH (or Enter) takes the design to Pad 1 as it stands.'));
+    showNote();
+  }
+  // The designs view: saved designs, the presets, export and import.
+  function designsView() {
+    panel.append(el('h2', 'vellum-group-title', 'SAVED DESIGNS'));
     const names = Object.keys(saved).sort();
     if (names.length) {
       const list = el('ul', 'vellum-designs');
@@ -392,14 +405,16 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
         li.append(el('b', null, n));
         li.append(el('i', null, `${(st.mass / 1000).toFixed(1)} T · ${st.stages.length} STG · ${Math.round(st.deltaV)} M/S`));
         const ctl = el('span', 'vellum-designs-ctl');
-        ctl.append(button('LOAD', () => { design = cloneDesign(saved[n]); selected = null; changed(); note(`${n} ON THE SHEET`); }));
+        ctl.append(button('LOAD', () => { design = cloneDesign(saved[n]); selected = null; view = 'sheet'; changed(); note(`${n} ON THE SHEET`); }));
         ctl.append(button('DELETE', () => { delete saved[n]; persistSaved(); changed(); note(`${n} STRUCK OUT`); }));
         li.append(ctl);
         list.append(li);
       }
       panel.append(list);
     } else panel.append(el('p', 'vellum-caption', 'No saved designs yet. Name the sheet and press SAVE.'));
-    panel.append(el('h2', 'vellum-group-title', 'PRESETS'));
+    const ph = el('h2', 'vellum-group-title', 'PRESETS');
+    ph.dataset.role = 'presets';
+    panel.append(ph);
     const presets = el('ul', 'vellum-designs');
     for (const d of PRESETS) {
       const li = el('li');
@@ -407,7 +422,7 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
       li.append(el('b', null, d.name));
       li.append(el('i', null, `${(st.mass / 1000).toFixed(1)} T · ${st.stages.length} STG · ${Math.round(st.deltaV)} M/S`));
       const ctl = el('span', 'vellum-designs-ctl');
-      ctl.append(button('LOAD', () => { design = cloneDesign(d); selected = null; changed(); }));
+      ctl.append(button('LOAD', () => { design = cloneDesign(d); selected = null; view = 'sheet'; changed(); note(`${d.name} ON THE SHEET`); }));
       li.append(ctl);
       presets.append(li);
     }
@@ -416,8 +431,7 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
     io.append(button('EXPORT JSON', () => exportJson()));
     io.append(button('IMPORT JSON', () => importJson()));
     panel.append(io);
-    panel.append(el('p', 'vellum-caption', 'Drag parts from the catalog onto the axis; a tap puts one on top. Boosters, fins and legs hang on a tank. Drag a part off the sheet to remove it. Decouplers divide the stages. LAUNCH (or Enter) takes the design to Pad 1 as it stands.'));
-    showNote();
+    panel.append(el('p', 'vellum-caption', 'Saved designs stay in this browser. EXPORT JSON writes the sheet to a file you can keep or send; IMPORT JSON reads one back.'));
   }
   function button(label, fn, key) {
     const b = el('button', 'vellum-button');
@@ -577,6 +591,7 @@ export function createBuilder({ canvas, root, onAction, store = null }) {
     save() { saveCurrent(); },
     importText,
     get saved() { return { ...saved }; },
+    setView(v) { view = v === 'designs' ? 'designs' : 'sheet'; refreshPanel(); },
     get stats() { return designStats(design); },
   };
 }
